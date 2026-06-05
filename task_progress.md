@@ -1,0 +1,6 @@
+- [ ] Task 1: Fix Console 404 URL Malformation - Add missing /api/telemetry/total-sessions endpoint
+- [ ] Task 2: Fix Workspace Timer & State Bleeding - Refactor timerStore for per-workspace isolation
+- [ ] Task 3: Configurable Workspace Pomodoro Timers - Add work_duration/break_duration to workspace schema
+- [ ] Task 4: AI Coach Autopilot (Function Calling) - Add tool-calling workspace creation
+- [ ] Task 5: High-Value Analytics Side Panel - Create analytics panel with Recharts
+- [ ] Update docs/CURRENT_STATE.md and run verification

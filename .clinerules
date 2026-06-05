@@ -1,0 +1,5 @@
+# PRODIFY: Core Agent Rules & Operational Constraints
+...
+## 5. TERMINAL & DIRECTORY EXECUTION RULES
+- For any React, Vite, or npm commands, you MUST execute them from inside the `frontend/` directory (e.g., `cd frontend && npm run dev`).
+- For any Python, FastAPI, uvicorn, or ML script commands, you MUST execute them from inside the `backend/` directory, ensuring the virtual environment is activated.

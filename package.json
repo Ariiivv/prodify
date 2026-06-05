@@ -1,0 +1,1 @@
+{ "dependencies": { "@hookform/resolvers": "^5.4.0", "react-hook-form": "^7.77.0", "react-toastify": "^11.1.0", "zod": "^4.4.3" }, "scripts": { "build": "vite build", "start": "vite" } }
