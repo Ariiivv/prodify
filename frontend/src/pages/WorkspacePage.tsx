@@ -1,141 +1,164 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import Timer from '../components/Timer';
-import BurnoutGauge from '../components/BurnoutGauge';
-import EnforcementModal from '../components/EnforcementModal';
-import ChatPanel from '../components/ChatPanel';
-import AnalyticsPanel from '../components/AnalyticsPanel';
-import { useTabVisibility } from '../hooks/useTabVisibility';
-import { useTimerStore } from '../store/timerStore';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ArrowLeft } from 'lucide-react';
+import { useTimerStore, initTimer, useTimer } from '@/lib/timerStore';
+import { useTabVisibility } from '@/hooks/useTabVisibility';
+import { API_BASE } from '@/lib/config';
+import { toast } from 'sonner';
 
-interface Workspace {
-  id: number;
-  name: string;
-  mode: string;
-  work_duration: number;
-  break_duration: number;
-}
+import WebcamStream from '@/components/workspace/WebcamStream';
+import TimerRing from '@/components/timer/TimerRing';
+import TimerControls from '@/components/timer/TimerControls';
+import BurnoutGauge from '@/components/timer/BurnoutGauge';
+import SessionStats from '@/components/timer/SessionStats';
+import EnforcementModal from '@/components/timer/EnforcementModal';
+import AiCoachPanel from '@/components/chat/AiCoachPanel';
 
-const WorkspacePage: React.FC = () => {
+export default function WorkspacePage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [burnoutProbability, setBurnoutProbability] = useState<number>(0);
-  const { isVisible, distractionCount, enforcementTriggered, setEnforcementTriggered } = useTabVisibility();
-  const setActiveWorkspace = useTimerStore(state => state.setActiveWorkspace);
+  const wsId = id ? parseInt(id) : null;
+  const timerState = useTimer();
+  const { enforcementTriggered, setEnforcementTriggered } = useTabVisibility();
 
-  // Reactive subscription to workspace-scoped state
-  const workspaces = useTimerStore(state => state.workspaces);
-  const activeWsId = useTimerStore(state => state.activeWorkspaceId);
-  const wsState = activeWsId !== null ? workspaces[activeWsId] : null;
-  const currentState = wsState?.currentState ?? 'IDLE';
-  const timeRemaining = wsState?.timeRemaining ?? 0;
-  const sessionCount = wsState?.sessionCount ?? 0;
+  // Component State
+  const [burnoutProb, setBurnoutProb] = useState(0);
+  const [workspace, setWorkspace] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isManualOverride, setIsManualOverride] = useState(false);
 
-  const fetchWorkspace = async () => {
-    try {
-      const response = await fetch(`http://localhost:8000/workspaces/${id}`);
-      const data: Workspace = await response.json();
-      setWorkspace(data);
-      // Initialize workspace-scoped timer with configurable durations
-      setActiveWorkspace(data.id, data.work_duration, data.break_duration);
-    } catch (error) {
-      console.error(error);
-      navigate('/'); // Redirect to home if workspace not found
-    }
+  // Logic: Helper to check if current site is a work site
+  const isWorkSite = useCallback(() => {
+    const whitelist = ['github.com', 'stackoverflow.com', 'docs.python.org', 'localhost'];
+    return whitelist.some(site => window.location.hostname.includes(site));
+  }, []);
+
+  // Compute if detection should run
+  const isDetectionEnabled = !isManualOverride && !isWorkSite();
+
+  // Distraction Handler: Triggers Toast + Pauses Timer
+  const handleDistraction = () => {
+    toast.error("Focus lost!", {
+      description: "You've been distracted. The timer has been paused. 🚀",
+      duration: 3000,
+    });
+    useTimerStore.getState().pauseFocus("Distraction detected");
   };
 
+  // Fetch workspace
   useEffect(() => {
-    fetchWorkspace();
-  }, [id]);
+    if (!wsId) {
+      setIsLoading(false);
+      return;
+    }
+    fetch(`${API_BASE}/workspaces`)
+      .then(res => res.json())
+      .then((workspaces: any[]) => {
+        const ws = workspaces.find((w: any) => String(w.id) === String(wsId));
+        setWorkspace(ws || null);
+        setIsLoading(false);
+      })
+      .catch(() => setIsLoading(false));
+  }, [wsId]);
 
-  const handleProbabilityChange = (probability: number) => {
-    setBurnoutProbability(probability);
-  };
+  // Initialize timer
+  useEffect(() => {
+    if (workspace && wsId) {
+      useTimerStore.getState().setActiveWorkspace(wsId, workspace.work_duration || 45, workspace.break_duration || 5);
+      initTimer(workspace.work_duration || 45, workspace.break_duration || 5);
+    }
+  }, [workspace, wsId]);
 
-  // Calculate focus minutes from the workspace-specific timeRemaining
-  const focusDuration = workspace ? workspace.work_duration * 60 : 45 * 60;
-  const focusMinutes = currentState === 'IDLE' ? 0 : Math.max(0, Math.floor((focusDuration - timeRemaining) / 60));
+  // Burnout Logic
+  useEffect(() => {
+    if (timerState.currentState === 'IDLE' || timerState.currentState === 'SESSION_COMPLETED') {
+      setBurnoutProb(0);
+      return;
+    }
+    const totalDuration = timerState.focusDuration;
+    const elapsed = totalDuration - timerState.timeRemaining;
+    const elapsedRatio = totalDuration > 0 ? elapsed / totalDuration : 0;
+    const distractionFactor = timerState.distractionCount * 0.05;
+    const prob = Math.min(0.95, elapsedRatio * 0.7 + distractionFactor + (Math.random() * 0.05));
+    setBurnoutProb(prob);
+  }, [timerState.timeRemaining, timerState.currentState, timerState.distractionCount, timerState.focusDuration]);
 
-  let burnoutTip = '';
-  if (burnoutProbability < 0.4) {
-    burnoutTip = 'Great focus! Keep it up 💪';
-  } else if (burnoutProbability < 0.7) {
-    burnoutTip = 'Take a short break soon 😴';
-  } else {
-    burnoutTip = 'High burnout risk! Rest now ⚠️';
-  }
+  // Save session
+  useEffect(() => {
+    if (timerState.currentState === 'SESSION_COMPLETED' && workspace && wsId) {
+      fetch(`${API_BASE}/api/ml/burnout-prediction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: wsId,
+          duration_minutes: workspace.work_duration || 45,
+          distraction_count: timerState.distractionCount,
+          completed: true,
+          burnout_score: burnoutProb,
+        }),
+      }).catch(() => {});
+    }
+  }, [timerState.currentState]);
+
+  const focusMinutes = (timerState.currentState === 'IDLE' || timerState.currentState === 'SESSION_COMPLETED')
+    ? 0
+    : Math.max(0, Math.floor((timerState.focusDuration - timerState.timeRemaining) / 60));
+
+  const handleDismissEnforcement = useCallback(() => setEnforcementTriggered(false), [setEnforcementTriggered]);
+
+  if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
+  if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4"><p className="text-muted-foreground">Workspace not found</p><Link to="/" className="text-primary hover:underline text-sm">Go back</Link></div>;
+
+  const totalDuration = timerState.currentState.includes('BREAK') ? timerState.breakDuration : timerState.focusDuration;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-8">
-      <nav className="flex justify-between items-center mb-10">
-        <button
-          onClick={() => navigate('/')}
-          className="text-slate-400 hover:text-white transition-colors duration-200 flex items-center"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-          </svg>
-          Back to Home
-        </button>
-        <h2 className="text-2xl font-bold text-white">{workspace?.name || 'Loading Workspace...'}</h2>
-        {workspace?.mode && (
-          <span
-            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-              workspace.mode === 'Structured Goal Mode' ? 'bg-blue-600/20 text-blue-300' : 'bg-green-600/20 text-green-300'
-            }`}
-          >
-            {workspace.mode}
-          </span>
-        )}
-      </nav>
+    <div className="min-h-screen p-6 md:p-10 max-w-5xl mx-auto">
+      {/* Tracker Component */}
+      <WebcamStream 
+        onDistractionDetected={handleDistraction} 
+        isEnabled={isDetectionEnabled} 
+      />
 
-      <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="flex flex-col gap-8 lg:col-span-2">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="flex flex-col gap-8">
-              <Timer />
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
-                <h3 className="text-lg font-bold text-white mb-4">Session Stats</h3>
-                <div className="space-y-2 text-slate-300">
-                  <p>Sessions Completed Today: <span className="font-semibold text-white">{sessionCount}</span></p>
-                  <p>Total Focus Time: <span className="font-semibold text-white">{focusMinutes} minutes</span></p>
-                  <p>Distraction Count: <span className="font-semibold text-white">{distractionCount}</span></p>
-                  <p>Work Duration: <span className="font-semibold text-white">{workspace?.work_duration || 45} min</span></p>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-8">
-              <BurnoutGauge focusMinutes={focusMinutes} onProbabilityChange={handleProbabilityChange} />
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
-                <h3 className="text-lg font-bold text-white mb-4">Productivity Tips</h3>
-                <p className="text-slate-300">{burnoutTip}</p>
-              </div>
-            </div>
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-10">
+        <div className="flex items-center gap-4">
+          <Link to="/" className="w-10 h-10 rounded-xl border border-border/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all">
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-foreground">{workspace.name}</h1>
+            <p className="text-xs text-muted-foreground capitalize">{workspace.mode || 'structured'} mode · {workspace.work_duration || 45}m focus</p>
           </div>
         </div>
 
-        <div className="lg:col-span-1">
-          {workspace && (
-            <AnalyticsPanel workspaceId={workspace.id} workspaceName={workspace.name} />
-          )}
-        </div>
-      </main>
+        {/* Tracking Toggle */}
+        <button 
+          onClick={() => setIsManualOverride(!isManualOverride)}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            isManualOverride ? 'bg-amber-500/20 text-amber-500' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+          }`}
+        >
+          {isManualOverride ? "Tracking Paused (Manual)" : "Tracking Active"}
+        </button>
+      </motion.div>
 
-      <EnforcementModal enforcementTriggered={enforcementTriggered} setEnforcementTriggered={setEnforcementTriggered} />
-      {workspace && (
-        <ChatPanel
-          focusMinutes={focusMinutes}
-          distractionCount={distractionCount}
-          burnoutProbability={burnoutProbability}
-          currentState={isVisible ? 'focused' : 'distracted'}
-          sessionCount={sessionCount}
-          workspaceName={workspace.name}
-          workspaceMode={workspace.mode}
-        />
-      )}
+      {/* Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-2 flex flex-col items-center">
+          <div className="mb-8">
+            <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
+          </div>
+          <TimerControls state={timerState.currentState} />
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="space-y-5">
+          <BurnoutGauge burnoutProbability={burnoutProb} currentState={timerState.currentState} />
+          <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
+        </motion.div>
+      </div>
+
+      <EnforcementModal show={enforcementTriggered} onDismiss={handleDismissEnforcement} />
+      <AiCoachPanel focusMinutes={focusMinutes} distractionCount={timerState.distractionCount} burnoutProbability={burnoutProb} currentState={timerState.currentState} sessionCount={timerState.sessionCount} workspaceName={workspace.name} />
     </div>
   );
-};
-
-export default WorkspacePage;
+}

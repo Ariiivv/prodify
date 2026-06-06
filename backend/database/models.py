@@ -59,6 +59,8 @@ class TelemetryLog(Base):
     metric_type = Column(String, nullable=False) # e.g., "PERCLOS", "TAB_SWITCH"
     value = Column(Float, nullable=True) # e.g., PERCLOS score, duration of distraction
     distraction_type = Column(String, nullable=True) # e.g., "TAB_SWITCH", "FATIGUE_EYE_CLOSURE"
+    reason = Column(String, nullable=True)          # e.g., "camera_absence", "tab_switch", "manual_override"
+    metadata_json = Column(String, nullable=True)   # JSON blob for extra context (perclos_score, grace_duration, etc.)
 
     workspace = relationship("Workspace")
     session = relationship("Session", back_populates="telemetry_logs")

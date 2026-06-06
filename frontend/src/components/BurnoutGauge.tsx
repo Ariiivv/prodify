@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useTimerStore } from '../store/timerStore';
+import { useTimerStore } from '@/store/timerStore';
 
 interface BurnoutGaugeProps {
   onProbabilityChange?: (probability: number) => void;

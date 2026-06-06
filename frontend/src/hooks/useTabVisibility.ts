@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { useTimerStore } from '../store/timerStore';
+import { useTimerStore } from '@/lib/timerStore';
+import { API_BASE } from '@/lib/config';
 
-export function useTabVisibility(workspaceId?: number) {
+export function useTabVisibility(_workspaceId?: number) {
   const [isVisible, setIsVisible] = useState(true);
   const [enforcementTriggered, setEnforcementTriggered] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const handler = () => {
+      // Support both standard 'visibilitychange' and Safari 'pagehide'
       const hidden = document.visibilityState === 'hidden';
       setIsVisible(!hidden);
 
@@ -24,7 +27,13 @@ export function useTabVisibility(workspaceId?: number) {
           timerRef.current = setTimeout(() => {
             useTimerStore.getState().pauseFocus('TAB_SWITCH');
             setEnforcementTriggered(true);
-            fetch('http://localhost:8000/api/telemetry/distraction', {
+
+            // Abort previous in-flight request if any, then fire new one
+            abortRef.current?.abort();
+            const controller = new AbortController();
+            abortRef.current = controller;
+
+            fetch(`${API_BASE}/api/telemetry/distraction`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -32,7 +41,8 @@ export function useTabVisibility(workspaceId?: number) {
                 distraction_type: 'TAB_SWITCH',
                 timestamp: new Date().toISOString()
               }),
-            });
+              signal: controller.signal,
+            }).catch(() => {}); // Swallow abort errors silently
             timerRef.current = null;
           }, 15000);
         }
@@ -45,7 +55,17 @@ export function useTabVisibility(workspaceId?: number) {
     };
 
     document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
+    // Safari bfcache fallback: pagehide fires even when navigating via bfcache
+    window.addEventListener('pagehide', handler);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handler);
+      window.removeEventListener('pagehide', handler);
+      abortRef.current?.abort();
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+    };
   }, []);
 
   const store = useTimerStore.getState();

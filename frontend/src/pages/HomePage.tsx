@@ -1,6 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import WorkspaceForm from '../components/WorkspaceForm';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Sparkles, Layers, Timer, TrendingUp, Flame, BarChart3 } from 'lucide-react';
+import { API_BASE } from '@/lib/config';
+
+import AnimatedBackground from '@/components/dashboard/AnimatedBackground';
+import ScrambleNumber from '@/components/dashboard/ScrambleNumber';
+import DailyGoalRing from '@/components/dashboard/DailyGoalRing';
+import RecentActivity from '@/components/dashboard/RecentActivity';
+import WorkspaceCard from '@/components/workspace/WorkspaceCard';
+import CreateWorkspaceDialog from '@/components/workspace/CreateWorkspaceDialog';
 
 interface Workspace {
   id: number;
@@ -8,112 +17,207 @@ interface Workspace {
   mode: string;
 }
 
+interface Session {
+  id: number;
+  workspace_id: number;
+  duration_minutes: number;
+  distraction_count: number;
+  burnout_score?: number;
+  created_date?: string;
+}
+
 const HomePage: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [totalSessions, setTotalSessions] = useState(0);
-  const navigate = useNavigate();
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const fetchWorkspaces = async () => {
+  const fetchData = async () => {
     try {
-      const response = await fetch("http://localhost:8000/workspaces");
-      const data: Workspace[] = await response.json();
-      setWorkspaces(data);
-    } catch (error) {
-      console.error(error);
-    }
-  };
+      const wsRes = await fetch(`${API_BASE}/workspaces`);
 
-  const fetchTotalSessions = async () => {
-    try {
-      const response = await fetch("http://localhost:8000/api/telemetry/total-sessions");
-      const data = await response.json();
-      setTotalSessions(data.total_sessions);
+      if (wsRes.ok) {
+        const wsData: Workspace[] = await wsRes.json();
+        setWorkspaces(wsData);
+      }
+
+      // Fetch recent sessions for the activity panel
+      const sessListRes = await fetch(`${API_BASE}/api/telemetry/sessions?limit=100`).catch(() => null);
+      if (sessListRes && sessListRes.ok) {
+        const sessData: Session[] = await sessListRes.json();
+        setSessions(sessData);
+      }
     } catch (error) {
-      console.error(error);
+      console.error('Error fetching data:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchWorkspaces();
-    fetchTotalSessions();
+    fetchData();
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) {
-      fetchWorkspaces();
-    }
-  }, [isOpen]);
+  const totalFocusMinutes = sessions.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+  const avgBurnout = sessions.length > 0
+    ? Math.round(sessions.reduce((s, r) => s + (r.burnout_score || 0), 0) / sessions.length * 100)
+    : 0;
 
-  const handleEnterWorkspace = (id: number) => {
-    navigate(`/workspace/${id}`);
+  const stats = [
+    { label: 'Workspaces',   value: String(workspaces.length),                   icon: Layers,   color: 'text-violet-400', glow: 'from-violet-500/10' },
+    { label: 'Sessions',     value: String(sessions.length),                      icon: Timer,    color: 'text-cyan-400',   glow: 'from-cyan-500/10' },
+    { label: 'Focus Hours',  value: (totalFocusMinutes / 60).toFixed(1) + 'h',   icon: TrendingUp,color:'text-green-400', glow: 'from-green-500/10' },
+    { label: 'Avg Burnout',  value: avgBurnout + '%',                             icon: Flame,    color: 'text-rose-400',   glow: 'from-rose-500/10' },
+  ];
+
+  const container = {
+    hidden: {},
+    show: { transition: { staggerChildren: 0.07 } },
+  };
+  const item = {
+    hidden: { opacity: 0, y: 20 },
+    show:   { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] } },
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-8">
-      <header className="flex justify-between items-center mb-12">
-        <div className="flex-grow text-center">
-          <h1 className="text-5xl font-extrabold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-            Prodify
-          </h1>
-          <p className="text-slate-400 font-medium">AI-Powered Focus & Burnout Prevention</p>
-        </div>
-        <button
-          className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-105"
-          onClick={() => setIsOpen(true)}
+    <>
+      <AnimatedBackground />
+
+      <div className="p-6 md:p-10 max-w-6xl mx-auto">
+
+        {/* ── Header ── */}
+        <motion.div
+          initial={{ opacity: 0, y: -14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="flex items-start justify-between mb-10"
         >
-          ＋ Create New Workspace
-        </button>
-      </header>
-
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12 max-w-4xl mx-auto">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-center">
-          <h3 className="text-slate-300 text-lg font-semibold mb-2">Total Workspaces</h3>
-          <p className="text-4xl font-bold text-violet-400">{workspaces.length}</p>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-center">
-          <h3 className="text-slate-300 text-lg font-semibold mb-2">Total Sessions</h3>
-          <p className="text-4xl font-bold text-emerald-400">{totalSessions}</p>
-        </div>
-      </section>
-
-      <section className="max-w-4xl mx-auto">
-        <h2 className="text-3xl font-bold text-white mb-6">Your Workspaces</h2>
-        {workspaces.length === 0 ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-slate-400 text-xl">
-            No workspaces yet. Create your first one!
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {workspaces.map((workspace) => (
-              <div
-                key={workspace.id}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between transform transition-all duration-200 ease-in-out hover:scale-[1.02] hover:shadow-lg"
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <motion.div
+                animate={{ rotate: [0, 15, -10, 0] }}
+                transition={{ duration: 3, repeat: Infinity, repeatDelay: 4 }}
               >
-                <div>
-                  <h3 className="text-xl font-bold text-white mb-2">{workspace.name}</h3>
-                  <span
-                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                      workspace.mode === 'Structured Goal Mode' ? 'bg-blue-600/20 text-blue-300' : 'bg-green-600/20 text-green-300'
-                    }`}
-                  >
-                    {workspace.mode}
-                  </span>
-                </div>
-                <button
-                  className="mt-4 self-end bg-violet-600 hover:bg-violet-700 text-white font-semibold py-2 px-5 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-105"
-                  onClick={() => handleEnterWorkspace(workspace.id)}
-                >
-                  Enter Workspace →
-                </button>
-              </div>
-            ))}
+                <Sparkles className="w-5 h-5 text-primary" />
+              </motion.div>
+              <span className="text-xs font-semibold text-primary tracking-[0.2em] uppercase">Prodify</span>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Your Workspace</h1>
+            <p className="text-sm text-muted-foreground mt-1">Focus smarter. Track burnout. Stay sharp.</p>
           </div>
-        )}
-      </section>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/analytics"
+              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] text-muted-foreground hover:text-foreground text-xs font-medium transition-all"
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              Analytics
+            </Link>
+            <CreateWorkspaceDialog />
+          </div>
+        </motion.div>
 
-      <WorkspaceForm isOpen={isOpen} setIsOpen={setIsOpen} />
-    </div>
+        {/* ── Hero Row: Goal Ring + Stats ── */}
+        <motion.div
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8"
+        >
+          {/* Daily Goal Card */}
+          <motion.div
+            variants={item}
+            className="relative rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-xl p-5 overflow-hidden group lg:col-span-1"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
+            <div className="relative z-10">
+              <DailyGoalRing focusMinutes={totalFocusMinutes} targetMinutes={240} />
+            </div>
+          </motion.div>
+
+          {/* Stat Cards */}
+          {stats.map(({ label, value, icon: Icon, color, glow }) => (
+            <motion.div
+              key={label}
+              variants={item}
+              whileHover={{ y: -4, transition: { duration: 0.18 } }}
+              className="relative rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-xl p-5 overflow-hidden group cursor-default"
+            >
+              <div className={`absolute inset-0 bg-gradient-to-br ${glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-400 rounded-2xl`} />
+              <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/[0.04]">
+                    <Icon className={`w-4 h-4 ${color}`} />
+                  </div>
+                  <span className="text-xs text-muted-foreground font-medium">{label}</span>
+                </div>
+                <span className="text-2xl md:text-3xl font-bold text-foreground font-mono">
+                  <ScrambleNumber value={value} duration={900} />
+                </span>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* ── Main Grid: Workspaces + Activity ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* Workspaces */}
+          <div className="lg:col-span-2">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-foreground">Workspaces</h2>
+              <span className="text-xs text-muted-foreground">{workspaces.length} total</span>
+            </div>
+
+            {isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 animate-pulse">
+                    <div className="w-10 h-10 rounded-xl bg-white/[0.05] mb-4" />
+                    <div className="h-4 bg-white/[0.05] rounded w-2/3 mb-2" />
+                    <div className="h-3 bg-white/[0.05] rounded w-1/3" />
+                  </div>
+                ))}
+              </div>
+            ) : workspaces.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center py-20 rounded-2xl border border-dashed border-white/[0.07]"
+              >
+                <Layers className="w-10 h-10 text-muted-foreground/20 mx-auto mb-4" />
+                <p className="text-muted-foreground text-sm">No workspaces yet.</p>
+                <p className="text-muted-foreground/60 text-xs mt-1">Create your first one to get started.</p>
+              </motion.div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {workspaces.map((ws, i) => (
+                  <WorkspaceCard key={ws.id} workspace={ws} index={i} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Recent Activity */}
+          <div className="lg:col-span-1 space-y-4">
+            <RecentActivity sessions={sessions} workspaces={workspaces} />
+
+            {/* Quick tip card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.55 }}
+              className="rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-xl p-5"
+            >
+              <p className="text-xs font-semibold text-muted-foreground tracking-widest uppercase mb-3">Pro Tip</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Work in <span className="text-foreground font-medium">focused sprints</span> of 45–90 min, then take a proper break. Your brain consolidates memory during rest, not during work.
+              </p>
+            </motion.div>
+          </div>
+
+        </div>
+      </div>
+    </>
   );
 };
 

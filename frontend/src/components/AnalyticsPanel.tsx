@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '@/lib/config';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend
+  Tooltip, ResponsiveContainer
 } from 'recharts';
 
 interface AnalyticsPanelProps {
@@ -36,9 +37,9 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ workspaceId, workspaceN
       setLoading(true);
       try {
         const [densityRes, velocityRes, volumetricRes] = await Promise.all([
-          fetch(`http://localhost:8000/api/telemetry/focus-density/${workspaceId}`),
-          fetch(`http://localhost:8000/api/telemetry/distraction-velocity/${workspaceId}`),
-          fetch(`http://localhost:8000/api/telemetry/volumetric-efficiency`),
+          fetch(`${API_BASE}/api/telemetry/focus-density/${workspaceId}`),
+          fetch(`${API_BASE}/api/telemetry/distraction-velocity/${workspaceId}`),
+          fetch(`${API_BASE}/api/telemetry/volumetric-efficiency`),
         ]);
 
         if (densityRes.ok) setFocusDensity(await densityRes.json());

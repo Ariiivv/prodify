@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE } from '@/lib/config';
 
 interface ChatPanelProps {
   focusMinutes: number;
@@ -36,7 +37,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ focusMinutes, distractionCount, b
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:8000/api/ai-coach/chat", {
+      const response = await fetch(`${API_BASE}/api/ai-coach/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -135,7 +136,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ focusMinutes, distractionCount, b
               placeholder="Type your message..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={(e) => {
+              onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   handleSendMessage(message);
                 }

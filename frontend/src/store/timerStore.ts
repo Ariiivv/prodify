@@ -105,11 +105,33 @@ export const useTimerStore = create<TimerStore>((set, get) => {
       }
     },
 
+    /** Create a drift-resistant interval using performance.now() delta tracking */
+    createDriftResistantInterval: () => {
+      let lastTick = performance.now();
+      return setInterval(() => {
+        const now = performance.now();
+        const elapsed = now - lastTick;
+        lastTick = now;
+        const ticksToProcess = Math.max(1, Math.round(elapsed / 1000));
+        for (let i = 0; i < ticksToProcess; i++) {
+          get().tick();
+        }
+      }, 1000);
+    },
     startFocus: () => {
       const existing = getWorkspaceState().intervalId;
       if (existing) clearInterval(existing);
-      const id = setInterval(() => get().tick(), 1000);
       const fd = get().getActiveFocusDuration();
+      let lastTick = performance.now();
+      const id = setInterval(() => {
+        const now = performance.now();
+        const elapsed = now - lastTick;
+        lastTick = now;
+        const ticksToProcess = Math.max(1, Math.round(elapsed / 1000));
+        for (let i = 0; i < ticksToProcess; i++) {
+          get().tick();
+        }
+      }, 1000);
       setWorkspaceState({
         currentState: 'FOCUS_RUNNING',
         intervalId: id,
@@ -128,7 +150,16 @@ export const useTimerStore = create<TimerStore>((set, get) => {
     },
 
     resumeFocus: () => {
-      const id = setInterval(() => get().tick(), 1000);
+      let lastTick = performance.now();
+      const id = setInterval(() => {
+        const now = performance.now();
+        const elapsed = now - lastTick;
+        lastTick = now;
+        const ticksToProcess = Math.max(1, Math.round(elapsed / 1000));
+        for (let i = 0; i < ticksToProcess; i++) {
+          get().tick();
+        }
+      }, 1000);
       setWorkspaceState({
         currentState: 'FOCUS_RUNNING',
         intervalId: id,
@@ -139,8 +170,17 @@ export const useTimerStore = create<TimerStore>((set, get) => {
     startBreak: () => {
       const existing = getWorkspaceState().intervalId;
       if (existing) clearInterval(existing);
-      const id = setInterval(() => get().tick(), 1000);
       const bd = get().getActiveBreakDuration();
+      let lastTick = performance.now();
+      const id = setInterval(() => {
+        const now = performance.now();
+        const elapsed = now - lastTick;
+        lastTick = now;
+        const ticksToProcess = Math.max(1, Math.round(elapsed / 1000));
+        for (let i = 0; i < ticksToProcess; i++) {
+          get().tick();
+        }
+      }, 1000);
       setWorkspaceState({
         currentState: 'BREAK_RUNNING',
         intervalId: id,
@@ -158,7 +198,16 @@ export const useTimerStore = create<TimerStore>((set, get) => {
     },
 
     resumeBreak: () => {
-      const id = setInterval(() => get().tick(), 1000);
+      let lastTick = performance.now();
+      const id = setInterval(() => {
+        const now = performance.now();
+        const elapsed = now - lastTick;
+        lastTick = now;
+        const ticksToProcess = Math.max(1, Math.round(elapsed / 1000));
+        for (let i = 0; i < ticksToProcess; i++) {
+          get().tick();
+        }
+      }, 1000);
       setWorkspaceState({
         currentState: 'BREAK_RUNNING',
         intervalId: id,

@@ -1,5 +1,5 @@
-import { useTimerStore } from '../store/timerStore';
-import { useTabVisibility } from '../hooks/useTabVisibility';
+import { useTimerStore } from '@/store/timerStore';
+import { useTabVisibility } from '@/hooks/useTabVisibility';
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60).toString().padStart(2, '0');
