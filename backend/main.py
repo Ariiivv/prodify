@@ -1,6 +1,6 @@
 import logging
 import json
-import traceback  # <-- Added to catch deep errors
+import traceback
 import vision
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.exceptions import RequestValidationError
@@ -17,6 +17,7 @@ from database.connection import create_db_and_tables, get_db
 from database import models
 import crud
 from routers import ai_coach, ml_predictions, telemetry
+from vision import FocusTracker
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -45,33 +46,36 @@ def on_startup():
     create_db_and_tables()
     logger.info("🚀 Prodify API Started")
 
-# --- WebSocket Bridge ---
-@app.websocket("/ws/vision")
-async def websocket_endpoint(websocket: WebSocket):
+# --- Vision Engine WebSocket ---
+tracker = FocusTracker(distraction_timeout=5.0)
+
+@app.websocket("/vision")
+async def vision_websocket(websocket: WebSocket):
     await websocket.accept()
     logger.info("🔌 Vision WebSocket connection accepted")
-    
+
     try:
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
-            
-            # --- DETAILED ERROR CATCHING ---
+
             try:
-                result = vision.process_frame(payload.get('image', ''))
+                result = tracker.process_frame(payload.get('image', ''))
+                # Only send when status changes OR every 10th frame to reduce bandwidth
                 await websocket.send_json(result)
             except Exception as e:
-                # This will print the full traceback of the crash!
-                logger.error("❌ CRITICAL ERROR IN VISION PROCESSING:")
-                logger.error(traceback.format_exc()) 
-                await websocket.send_json({"error": "Vision processing failed"})
-                # We break here so it doesn't loop infinitely if the logic is broken
-                break 
-                
+                logger.error("❌ Vision processing error:")
+                logger.error(traceback.format_exc())
+                await websocket.send_json({"status": "error", "error": "Processing failed"})
+                # Don't break — keep streaming; one bad frame shouldn't kill the session
+
     except WebSocketDisconnect:
         logger.info("🔌 Vision stream disconnected")
     except Exception as e:
         logger.error(f"❌ WebSocket unexpected error: {e}")
+    finally:
+        # No cleanup needed on tracker — it's lightweight and per-connection stateless
+        logger.info("🔌 Vision WebSocket closed")
 
 # --- Schemas & Routes (Unchanged) ---
 class WorkspaceCreate(BaseModel):
