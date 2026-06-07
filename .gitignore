@@ -1,48 +1,53 @@
 # ========================
-# Node & React (Frontend/Root)
+# Frontend (React / Vite / Node)
 # ========================
 node_modules/
-frontend/node_modules/
+dist/
+build/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.eslintcache
 
 # ========================
-# Python & FastAPI (Backend)
+# Backend (FastAPI / Python)
 # ========================
-venv/
-env/
-.venv/
-backend/venv/
-backend/env/
 __pycache__/
 *.py[cod]
 *$py.class
+venv/
+env/
+.venv/
+.pytest_cache/
 
 # ========================
-# Databases & Machine Learning
+# Machine Learning Models
+# ========================
+# Ignore heavy model files to prevent Git bloat/rejection
+*.tflite
+*.joblib
+*.pkl
+blaze_face_short_range.tflite
+
+# ========================
+# Databases
 # ========================
 *.db
 *.sqlite
 *.sqlite3
-# Ignore heavy ML model files to prevent GitHub rejection
-*.joblib
-*.pkl
 
 # ========================
-# Secrets & Environment Vars
+# Environment & Secrets
 # ========================
 .env
 .env.*
-backend/.env
-frontend/.env
 secrets.json
 
 # ========================
-# Build Outputs
+# OS & IDEs (Important)
 # ========================
-build/
-dist/
-frontend/dist/
-frontend/build/
-.next/backend/venv/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
