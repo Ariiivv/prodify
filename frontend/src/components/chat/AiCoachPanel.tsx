@@ -20,9 +20,20 @@ interface AiCoachPanelProps {
   currentState: string;
   sessionCount: number;
   workspaceName: string;
+  idleSeconds?: number;
+  timeRemainingString?: string;
 }
 
-export default function AiCoachPanel({ focusMinutes, distractionCount, burnoutProbability, currentState, sessionCount, workspaceName }: AiCoachPanelProps) {
+export default function AiCoachPanel({
+  focusMinutes,
+  distractionCount,
+  burnoutProbability,
+  currentState,
+  sessionCount,
+  workspaceName,
+  idleSeconds = 0,
+  timeRemainingString = '00:00',
+}: AiCoachPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
   const [input, setInput] = useState('');
@@ -49,21 +60,29 @@ export default function AiCoachPanel({ focusMinutes, distractionCount, burnoutPr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
-          context: {
-            workspaceName: workspaceName || 'Default',
-            currentState,
-            focusMinutes,
-            sessionCount,
-            distractionCount,
-            burnoutProbability: (burnoutProbability * 100).toFixed(1),
-          },
+          workspace_name: workspaceName || 'Default',
+          workspace_mode: currentState?.includes('BREAK') ? 'Break' : 'Structured',
+          focus_minutes: focusMinutes,
+          distraction_count: distractionCount,
+          idle_seconds: idleSeconds,
+          burnout_probability: burnoutProbability,
+          current_state: currentState,
+          session_count: sessionCount,
+          time_remaining: timeRemainingString,
         }),
       });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('AI Coach API error:', response.status, errText);
+        setMessages(prev => [...prev, { role: 'assistant', content: `I'm here to help you stay focused. (API returned ${response.status})` }]);
+        setIsLoading(false);
+        return;
+      }
       const data = await response.json();
-      const reply = data.response || data.message || data.reply || 'I am here to help!';
+      const reply = data.response || data.message || data.reply || `Your burnout probability is ${(burnoutProbability * 100).toFixed(0)}%. ${burnoutProbability > 0.7 ? 'Take a break — your risk is high.' : burnoutProbability > 0.4 ? 'Moderate risk. Consider a short pause.' : 'You are in a good zone. Keep going!'}`;
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: "I'm here to help you stay focused! Feel free to ask me anything about productivity." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `Your burnout probability is ${(burnoutProbability * 100).toFixed(0)}%. ${burnoutProbability > 0.7 ? 'Take a break immediately — your risk is high.' : burnoutProbability > 0.4 ? 'Moderate risk. Consider a short pause.' : 'You are in a good zone. Keep going!'}` }]);
     } finally {
       setIsLoading(false);
     }

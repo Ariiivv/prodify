@@ -208,16 +208,15 @@ export default function CreateWorkspaceDialog() {
                     <div>
                       <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Deadline</label>
                       <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant={'outline'}
-                            className={`w-full justify-start text-left font-normal bg-secondary/50 border-border/50 rounded-xl ${!deadline && 'text-muted-foreground'}`}
+                        <PopoverTrigger className="w-full">
+                          <span
+                            className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 w-full px-4 py-2 bg-secondary/50 border-border/50 rounded-xl ${!deadline ? 'text-muted-foreground' : ''}`}
                           >
                             <Calendar className="mr-2 h-4 w-4" />
                             {deadline ? format(deadline, 'PPP') : <span>Pick a date</span>}
-                          </Button>
+                          </span>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0 bg-slate-950 border border-slate-800 shadow-xl z-50 text-white">
+                        <PopoverContent className="w-auto p-0 bg-slate-950 border border-slate-800 shadow-xl z-[60] text-white">
                           <Calendar
                             mode="single"
                             selected={deadline}

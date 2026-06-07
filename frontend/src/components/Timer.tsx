@@ -27,8 +27,8 @@ export default function Timer() {
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 flex flex-col items-center w-full">
-      <span className="text-xs uppercase tracking-widest text-slate-400 mb-2">{currentState}</span>
-      <div className="text-7xl font-mono font-bold mb-6 text-white">{formatTime(timeRemaining)}</div>
+      <span className="text-xs uppercase tracking-widest text-slate-400 mb-2 select-none">{currentState}</span>
+      <div className="text-7xl font-mono font-bold mb-6 text-white select-none">{formatTime(timeRemaining)}</div>
 
       {currentState === 'IDLE' && (
         <button onClick={startFocus} className="px-8 py-3 bg-green-500 hover:bg-green-600 rounded-lg text-lg font-semibold text-white transition-all duration-200 ease-in-out transform hover:scale-105">
