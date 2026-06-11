@@ -1,27 +1,34 @@
 /**
  * Application configuration derived from environment variables.
- * Allows overriding API and WebSocket hosts for different environments
- * (development, production, Docker, etc.) without hardcoding.
+ * Accommodates both VITE_API_URL and VITE_API_BASE to prevent configuration mismatches.
  */
-export const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000';
-export const WS_BASE = import.meta.env.VITE_WS_BASE || 'ws://127.0.0.1:8000';
+export const API_BASE = 
+  import.meta.env.VITE_API_URL || 
+  import.meta.env.VITE_API_BASE || 
+  'http://127.0.0.1:8000';
 
 /**
- * Derives the WebSocket URL for a given path.
- * For local development, uses the explicit WS_BASE host:port to avoid
- * IPv6 localhost resolution issues (browsers resolve `localhost` to `::1`
- * while Uvicorn defaults to IPv4 `127.0.0.1`, causing silent WebSocket hangs).
+ * Derives the WebSocket base URL.
+ * Automatically switches to secure wss:// if the API base is secure (HTTPS).
+ */
+export const WS_BASE = (() => {
+  if (import.meta.env.VITE_WS_BASE) {
+    return import.meta.env.VITE_WS_BASE;
+  }
+  // Fallback: Dynamically compute WebSocket base from the API base URL
+  const wsProtocol = API_BASE.startsWith('https') ? 'wss' : 'ws';
+  const hostPort = API_BASE.replace(/^https?:\/\//, '');
+  return `${wsProtocol}://${hostPort}`;
+})();
+
+/**
+ * Derives the full WebSocket URL for a given path.
+ * Automatically handles protocol upgrades (ws -> wss) to avoid mixed-content blocking.
  *
- * Automatically upgrades to wss:// when the page is served over HTTPS,
- * avoiding mixed-content blocking in Firefox and Safari.
+ * @param path - The specific endpoint path (e.g., '/ws/vision' or '/workspaces/stream')
  */
 export function getWsUrl(path: string): string {
-  if (import.meta.env.VITE_WS_BASE) {
-    return `${import.meta.env.VITE_WS_BASE}${path}`;
-  }
-  // For production / non-VITE_WS_BASE environments, derive from API_BASE
-  const base = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000';
-  const wsProtocol = base.startsWith('https') ? 'wss' : 'ws';
-  const hostPort = base.replace(/^https?:\/\//, '');
-  return `${wsProtocol}://${hostPort}${path}`;
+  // Ensure the path begins with a leading slash if not present
+  const standardizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${WS_BASE}${standardizedPath}`;
 }

@@ -42,8 +42,11 @@ const BurnoutGauge: React.FC<BurnoutGaugeProps> = ({ onProbabilityChange, focusM
 
     const fetchBurnoutPrediction = async () => {
       try {
+        // dynamically check for the live cloud URL first, fallback to localhost
+        const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000';
+        
         const response = await fetch(
-          `http://127.0.0.1:8000/api/ml/burnout-prediction?current_hour=${currentHour}&current_focus_minutes=${focusMinutes}`
+          `${API_URL}/api/ml/burnout-prediction?current_hour=${currentHour}&current_focus_minutes=${focusMinutes}`
         );
         if (!response.ok) throw new Error('Failed to fetch ML data');
         const data = await response.json();
@@ -84,7 +87,7 @@ const BurnoutGauge: React.FC<BurnoutGaugeProps> = ({ onProbabilityChange, focusM
     if (progress <= 0.5) return { stroke: '#06b6d4', gradient: 'url(#cyanGrad)' };    // cyan-500
     if (progress <= 0.65) return { stroke: '#3b82f6', gradient: 'url(#blueGrad)' };   // blue-500
     if (progress <= 0.8) return { stroke: '#f59e0b', gradient: 'url(#amberGrad)' };   // amber-500
-    return { stroke: '#ef4444', gradient: 'url(#redGrad)' };                           // red-500
+    return { stroke: '#ef4444', gradient: 'url(#redGrad)' };                          // red-500
   }, [progress]);
 
   const circumference = 2 * Math.PI * 54; // r=54
