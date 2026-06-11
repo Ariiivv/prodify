@@ -18,6 +18,27 @@ import AiCoachPanel from '@/components/chat/AiCoachPanel';
 
 type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const staggerContainerVariants: any = {
+  hidden: {},
+  visible: {
+    transition: {
+      staggerChildren: 0.1,
+      delayChildren: 0.15,
+    },
+  },
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const columnVariants: any = {
+  hidden: { opacity: 0, y: 30 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5, ease: 'easeOut' as const },
+  },
+};
+
 export default function WorkspacePage() {
   const { id } = useParams<{ id: string }>();
   const wsId = id ? parseInt(id) : null;
@@ -165,7 +186,12 @@ export default function WorkspacePage() {
   const isCameraBlocked = cameraStatus === 'error';
 
   return (
-    <div className="min-h-screen p-6 md:p-10 max-w-5xl mx-auto">
+    <motion.div
+      className="min-h-screen p-6 md:p-10 max-w-5xl mx-auto"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
       {/* Camera Status Banner */}
       {isCameraBlocked && (
         <motion.div
@@ -213,9 +239,14 @@ export default function WorkspacePage() {
       </motion.div>
 
       {/* Main Layout: Timer + Sidebar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <motion.div
+        className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+        variants={staggerContainerVariants}
+        initial="hidden"
+        animate="visible"
+      >
         {/* Timer Column */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-2 flex flex-col items-center">
+        <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center">
           <div className="mb-8">
             <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
           </div>
@@ -223,7 +254,7 @@ export default function WorkspacePage() {
         </motion.div>
 
         {/* Sidebar */}
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="space-y-4">
+        <motion.div variants={columnVariants} className="space-y-4">
           {/* Camera Preview Card — Visible WebcamStream UI */}
           {isDetectionEnabled ? (
             <div className="rounded-xl border border-border/40 overflow-hidden bg-card">
@@ -319,7 +350,7 @@ export default function WorkspacePage() {
           <BurnoutGauge burnoutProbability={burnoutProb} currentState={timerState.currentState} />
           <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
         </motion.div>
-      </div>
+      </motion.div>
 
       <EnforcementModal show={enforcementTriggered} onDismiss={handleDismissEnforcement} />
       {(() => {
@@ -339,6 +370,6 @@ export default function WorkspacePage() {
           />
         );
       })()}
-    </div>
+    </motion.div>
   );
 }

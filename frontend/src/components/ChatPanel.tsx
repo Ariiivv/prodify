@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE } from '@/lib/config';
 
 interface ChatPanelProps {
@@ -16,6 +17,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ focusMinutes, distractionCount, b
   const [message, setMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<{ sender: string; text: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
 
   const quickActionChips = [
     "What's my current burnout risk?",
@@ -75,36 +77,46 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ focusMinutes, distractionCount, b
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      <button
-        className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 px-4 rounded-full shadow-lg transition-all duration-200 ease-in-out transform hover:scale-105"
+      <motion.button
+        className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 px-4 rounded-full shadow-lg transition-colors duration-200"
         onClick={togglePanel}
+        whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)' }}
+        whileTap={{ scale: 0.95 }}
       >
         {isOpen ? "Close Coach" : "Open Coach"}
-      </button>
+      </motion.button>
 
-      <div
-        className={`fixed bottom-20 right-6 w-80 h-96 bg-slate-900 border border-slate-800 rounded-lg shadow-xl flex flex-col transform transition-all duration-300 ${
-          isOpen
-            ? "translate-y-0 opacity-100 pointer-events-auto"
-            : "translate-y-4 opacity-0 pointer-events-none"
-        }`}
+      <motion.div
+        className="fixed bottom-20 right-6 w-80 h-96 bg-slate-900 border border-slate-800 rounded-lg shadow-xl flex flex-col"
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={isOpen ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+        style={{ pointerEvents: isOpen ? 'auto' : 'none' }}
       >
         <div className="p-4 bg-slate-800 text-white rounded-t-lg flex justify-between items-center border-b border-slate-700">
           <h3 className="font-bold">AI Coach</h3>
           <button onClick={togglePanel} className="text-slate-400 hover:text-white transition-colors duration-200">×</button>
         </div>
         <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
-          {chatHistory.map((msg, index) => (
-            <div key={index} className={`mb-2 ${msg.sender === "user" ? "text-right" : "text-left"}`}>
-              <span
-                className={`inline-block p-2 rounded-lg max-w-[75%] ${
-                  msg.sender === "user" ? "bg-violet-600 text-white" : "bg-slate-700 text-slate-100"
-                }`}
+          <AnimatePresence initial={false}>
+            {chatHistory.map((msg, index) => (
+              <motion.div
+                key={index}
+                className={`mb-2 ${msg.sender === "user" ? "text-right" : "text-left"}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
               >
-                {msg.text}
-              </span>
-            </div>
-          ))}
+                <span
+                  className={`inline-block p-2 rounded-lg max-w-[75%] ${
+                    msg.sender === "user" ? "bg-violet-600 text-white" : "bg-slate-700 text-slate-100"
+                  }`}
+                >
+                  {msg.text}
+                </span>
+              </motion.div>
+            ))}
+          </AnimatePresence>
           {isLoading && (
             <div className="text-left mb-2">
               <span className="inline-block p-2 rounded-lg bg-slate-700 text-slate-100">
@@ -130,27 +142,45 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ focusMinutes, distractionCount, b
             ))}
           </div>
           <div className="flex">
-            <input
-              type="text"
-              className="flex-1 p-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
-              placeholder="Type your message..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSendMessage(message);
-                }
-              }}
-            />
-            <button
-              className="ml-2 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 px-4 rounded-xl transition-all duration-200 ease-in-out transform hover:scale-105"
+            <div className="relative flex-1">
+              {isInputFocused && (
+                <motion.div
+                  className="absolute -inset-0.5 rounded-xl bg-gradient-to-r from-violet-500 via-purple-500 to-violet-500"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ filter: 'blur(3px)', zIndex: -1 }}
+                />
+              )}
+              <motion.input
+                type="text"
+                className="w-full p-3 bg-slate-800 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none"
+                placeholder="Type your message..."
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSendMessage(message);
+                  }
+                }}
+                animate={isInputFocused ? { borderColor: '#8b5cf6' } : { borderColor: '#475569' }}
+                transition={{ duration: 0.2 }}
+              />
+            </div>
+            <motion.button
+              className="ml-2 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 px-4 rounded-xl transition-colors duration-200"
               onClick={() => handleSendMessage(message)}
+              whileHover={{ scale: 1.05, boxShadow: '0 0 16px rgba(139, 92, 246, 0.3)' }}
+              whileTap={{ scale: 0.95 }}
             >
               Send
-            </button>
+            </motion.button>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

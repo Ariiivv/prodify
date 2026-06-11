@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { API_BASE } from '@/lib/config';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -71,15 +72,46 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ workspaceId, workspaceN
 
   const fdsPercent = focusDensity ? (focusDensity.focus_density_score * 100).toFixed(1) : '--';
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cardVariants: any = {
+    hidden: { opacity: 0, y: 24 },
+    visible: (i: number) => ({
+      opacity: 1,
+      y: 0,
+      transition: { delay: 0.1 * i, duration: 0.4, ease: 'easeOut' as const },
+    }),
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chartCardVariants: any = {
+    hidden: { opacity: 0, y: 20 },
+    visible: (i: number) => ({
+      opacity: 1,
+      y: 0,
+      transition: { delay: 0.12 * i, duration: 0.45, ease: 'easeOut' as const },
+    }),
+  };
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg w-full">
+    <motion.div
+      className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg w-full"
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
+    >
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-lg font-bold text-white tracking-tight">📊 Analytics</h2>
         {loading && <span className="text-xs text-slate-500 animate-pulse">Loading...</span>}
       </div>
 
       {/* Focus Density Score */}
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg p-4 mb-4 border border-slate-700/50">
+      <motion.div
+        className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg p-4 mb-4 border border-slate-700/50"
+        custom={0}
+        variants={cardVariants}
+        initial="hidden"
+        animate="visible"
+      >
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-slate-400 uppercase tracking-wider">Focus Density Score</span>
           <span className="text-2xl font-bold text-violet-400">{fdsPercent}%</span>
@@ -101,10 +133,16 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ workspaceId, workspaceN
           <span>{focusDensity?.total_focus_seconds ?? 0}s focus</span>
           <span>{focusDensity?.total_distractions ?? 0} distractions</span>
         </div>
-      </div>
+      </motion.div>
 
       {/* Distraction Velocity Chart */}
-      <div className="bg-slate-800/50 rounded-lg p-4 mb-4 border border-slate-700/50">
+      <motion.div
+        className="bg-slate-800/50 rounded-lg p-4 mb-4 border border-slate-700/50"
+        custom={1}
+        variants={chartCardVariants}
+        initial="hidden"
+        animate="visible"
+      >
         <h3 className="text-xs text-slate-400 uppercase tracking-wider mb-3">Distraction Velocity</h3>
         {velocityChartData.length > 0 ? (
           <div className="h-32">
@@ -133,10 +171,16 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ workspaceId, workspaceN
             Not enough data yet
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* Volumetric Efficiency Chart */}
-      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+      <motion.div
+        className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50"
+        custom={2}
+        variants={chartCardVariants}
+        initial="hidden"
+        animate="visible"
+      >
         <h3 className="text-xs text-slate-400 uppercase tracking-wider mb-3">Volumetric Efficiency</h3>
         {volumetricChartData.length > 0 ? (
           <div className="h-40">
@@ -163,8 +207,8 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ workspaceId, workspaceN
             Complete sessions to see data
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
 

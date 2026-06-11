@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { useTimerStore } from '@/store/timerStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 
@@ -8,6 +10,15 @@ const formatTime = (seconds: number) => {
 };
 
 const PAUSE_REASONS = ['Restroom', 'Urgent Call', 'Interruption'];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pulseVariants: any = {
+  running: {
+    scale: [1, 1.008, 1],
+    transition: { duration: 2.5, repeat: Infinity, ease: 'easeInOut' },
+  },
+  idle: { scale: 1 },
+};
 
 export default function Timer() {
   const {
@@ -25,10 +36,38 @@ export default function Timer() {
 
   const { distractionCount } = useTabVisibility();
 
+  const isRunning = currentState === 'FOCUS_RUNNING' || currentState === 'BREAK_RUNNING';
+
+  const borderGlowClass = useMemo(() => {
+    if (currentState === 'FOCUS_RUNNING') return 'border-violet-500/60 shadow-[0_0_20px_rgba(139,92,246,0.15)]';
+    if (currentState === 'BREAK_RUNNING') return 'border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.15)]';
+    return 'border-slate-800';
+  }, [currentState]);
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 flex flex-col items-center w-full">
-      <span className="text-xs uppercase tracking-widest text-slate-400 mb-2 select-none">{currentState}</span>
-      <div className="text-7xl font-mono font-bold mb-6 text-white select-none">{formatTime(timeRemaining)}</div>
+    <motion.div
+      className={`bg-slate-900 rounded-xl p-8 flex flex-col items-center w-full border-2 transition-colors duration-500 ${borderGlowClass}`}
+      variants={pulseVariants}
+      animate={isRunning ? 'running' : 'idle'}
+    >
+      <motion.span
+        className="text-xs uppercase tracking-widest text-slate-400 mb-2 select-none"
+        key={currentState}
+        initial={{ opacity: 0, y: -6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+      >
+        {currentState}
+      </motion.span>
+      <motion.div
+        className="text-7xl font-mono font-bold mb-6 text-white select-none"
+        key={timeRemaining}
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.2 }}
+      >
+        {formatTime(timeRemaining)}
+      </motion.div>
 
       {currentState === 'IDLE' && (
         <button onClick={startFocus} className="px-8 py-3 bg-green-500 hover:bg-green-600 rounded-lg text-lg font-semibold text-white transition-all duration-200 ease-in-out transform hover:scale-105">
@@ -77,6 +116,6 @@ export default function Timer() {
       <button onClick={resetTimer} className="mt-2 text-xs text-slate-600 hover:text-slate-400 transition-colors duration-200">
         Reset
       </button>
-    </div>
+    </motion.div>
   );
 }

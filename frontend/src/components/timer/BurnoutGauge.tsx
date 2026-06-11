@@ -25,8 +25,18 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
   }, [progress, currentState]);
 
   return (
-    <div className={`rounded-2xl border border-border/50 p-6 ${bgColor} backdrop-blur-sm`}>
-      <div className="flex items-center justify-between mb-4">
+    <motion.div
+      className={`rounded-2xl border border-border/50 p-6 ${bgColor} backdrop-blur-sm`}
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: 'spring' as const, stiffness: 200, damping: 20 }}
+    >
+      <motion.div
+        className="flex items-center justify-between mb-4"
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: 0.15, duration: 0.3 }}
+      >
         <div className="flex items-center gap-2">
           <StatusIcon className="w-4 h-4" style={{ color }} />
           <span className="text-sm font-semibold text-foreground">Focus Vitality</span>
@@ -34,7 +44,7 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
         <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ color, backgroundColor: `${color}20` }}>
           {label}
         </span>
-      </div>
+      </motion.div>
 
       <div className="flex items-center gap-6">
         {/* Circular gauge */}
@@ -50,13 +60,18 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
               strokeDasharray={circumference}
               initial={{ strokeDashoffset: circumference }}
               animate={{ strokeDashoffset }}
-              transition={{ duration: 1, ease: 'easeOut' }}
+              transition={{ type: 'spring' as const, stiffness: 120, damping: 18 }}
             />
           </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <motion.div
+            className="absolute inset-0 flex flex-col items-center justify-center"
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.25, type: 'spring' as const, stiffness: 150, damping: 14 }}
+          >
             <span className="text-2xl font-bold text-foreground">{(progress * 100).toFixed(0)}%</span>
             <span className="text-[10px] text-muted-foreground">Load</span>
-          </div>
+          </motion.div>
         </div>
 
         {/* Stats */}
@@ -72,7 +87,7 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
                 style={{ backgroundColor: color }}
                 initial={{ width: 0 }}
                 animate={{ width: `${progress * 100}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
+                transition={{ type: 'spring' as const, stiffness: 100, damping: 20 }}
               />
             </div>
           </div>
@@ -86,12 +101,12 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
                 className="h-full rounded-full bg-green-500"
                 initial={{ width: 0 }}
                 animate={{ width: `${vitality * 100}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
+                transition={{ type: 'spring' as const, stiffness: 100, damping: 20 }}
               />
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
