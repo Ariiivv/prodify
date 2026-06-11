@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from database.connection import create_db_and_tables, get_db
 from database import models
 import crud
-from routers import ai_coach, ml_predictions, telemetry
+from routers import ai_coach, telemetry
 from vision import FocusTracker
 
 # Setup Logging
@@ -110,6 +110,5 @@ def read_workspaces(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
     return crud.get_workspaces(db, skip=skip, limit=limit)
 
 # Include Routers
-app.include_router(ml_predictions.router, prefix="/api")
 app.include_router(ai_coach.router, prefix="/api")
 app.include_router(telemetry.router, prefix="/api")
