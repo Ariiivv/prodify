@@ -86,6 +86,7 @@ class WorkspaceCreate(BaseModel):
     deadline: Optional[date] = None
     work_duration: Optional[int] = 45
     break_duration: Optional[int] = 5
+    focus_keywords: Optional[str] = None
 
 class WorkspaceOut(BaseModel):
     id: int
@@ -96,6 +97,7 @@ class WorkspaceOut(BaseModel):
     deadline: Optional[date] = None
     work_duration: int
     break_duration: int
+    focus_keywords: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     class Config:
@@ -108,6 +110,13 @@ def create_workspace(workspace: WorkspaceCreate, db: Session = Depends(get_db)):
 @app.get("/workspaces", response_model=list[WorkspaceOut])
 def read_workspaces(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.get_workspaces(db, skip=skip, limit=limit)
+
+@app.delete("/workspaces/{workspace_id}")
+def delete_workspace(workspace_id: int, db: Session = Depends(get_db)):
+    db_workspace = crud.delete_workspace(db, workspace_id=workspace_id)
+    if not db_workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return {"message": "Workspace deleted successfully"}
 
 # Include Routers
 app.include_router(ai_coach.router, prefix="/api")

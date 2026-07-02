@@ -5,6 +5,7 @@ import { ArrowLeft, CameraOff, AlertTriangle, Webcam } from 'lucide-react';
 import { useTimerStore, initTimer, useTimer } from '@/lib/timerStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { useIdleDetection } from '@/hooks/useIdleDetection';
+import { useAdaptiveFocus } from '@/hooks/useAdaptiveFocus';
 import { API_BASE } from '@/lib/config';
 import { toast } from 'sonner';
 
@@ -39,11 +40,30 @@ const columnVariants: any = {
   },
 };
 
+/** Parse workspace keywords from the DB, handling JSON arrays or raw strings */
+function parseKeywords(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // Clean each keyword — split on newlines/commas, trim, filter empties
+      return parsed.flatMap((k: string) =>
+        String(k)
+          .split(/[\n,]+/)
+          .map(s => s.trim())
+          .filter(Boolean)
+      );
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export default function WorkspacePage() {
   const { id } = useParams<{ id: string }>();
   const wsId = id ? parseInt(id) : null;
   const timerState = useTimer();
-  const { enforcementTriggered, setEnforcementTriggered } = useTabVisibility();
 
   // Component State
   const [burnoutProb, setBurnoutProb] = useState(0);
@@ -53,19 +73,51 @@ export default function WorkspacePage() {
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('disabled');
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
 
-  // Compute if detection should run (whitelist bypass removed — camera always tries to mount when not manually overridden)
+  // Compute workspace keywords as early as possible
+  const workspaceKeywords = parseKeywords(workspace?.focus_keywords);
+
+  // If keywords are defined, disable tab-visibility enforcement (trust camera/gaze)
+  const { enforcementTriggered, setEnforcementTriggered } = useTabVisibility({
+    disabled: workspaceKeywords.length > 0,
+  });
+
+  // Compute if detection should run
   const isDetectionEnabled = !isManualOverride;
 
-  // Distraction Handler: Triggers Toast + Increments Distraction Count + Pauses Timer
+  // Distraction Handler
   const handleDistraction = useCallback(() => {
+    const store = useTimerStore.getState();
+    const ws = store.workspaces[store.activeWorkspaceId ?? -1];
+    if (!ws || ws.currentState !== 'FOCUS_RUNNING') return; // prevent toast spam on breaks
     toast.error("Focus lost!", {
       description: "You've been distracted. The timer has been paused. 🚀",
       duration: 3000,
     });
-    const store = useTimerStore.getState();
     store.incrementDistraction();
     store.pauseFocus("Distraction detected");
   }, []);
+
+  // --- Adaptive Focus Tracking ---
+  const { currentTabTitle, isFocused: isTabFocused } = useAdaptiveFocus({
+    keywords: workspaceKeywords,
+    enabled: isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING',
+    onDistracted: () => {
+      if (isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING') {
+        toast.warning("Non-focus tab detected!", {
+          description: `Active tab doesn't match your focus keywords. Timer paused.`,
+          duration: 4000,
+        });
+        const store = useTimerStore.getState();
+        store.incrementDistraction();
+        store.pauseFocus("TAB_DISTRACTION");
+      }
+    },
+    onFocused: () => {
+      console.log('Tab is now focused:', currentTabTitle);
+    },
+  });
+
+  const isTabDistracted = !isTabFocused;
 
   // --- Idle Detection ---
   const handleIdle = useCallback(() => {
@@ -155,22 +207,18 @@ export default function WorkspacePage() {
     setBurnoutProb(prob);
   }, [timerState.timeRemaining, timerState.currentState, timerState.distractionCount, timerState.focusDuration]);
 
-  // Save session
+  // Log session completion
   useEffect(() => {
     if (timerState.currentState === 'SESSION_COMPLETED' && workspace && wsId) {
-      fetch(`${API_BASE}/api/ml/burnout-prediction`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspace_id: wsId,
-          duration_minutes: workspace.work_duration || 45,
-          distraction_count: timerState.distractionCount,
-          completed: true,
-          burnout_score: burnoutProb,
-        }),
-      }).catch(() => {});
+      console.log("Session completed successfully", {
+        workspace_id: wsId,
+        workspace_name: workspace.name,
+        duration_minutes: workspace.work_duration || 45,
+        distraction_count: timerState.distractionCount,
+        burnout_score: burnoutProb,
+      });
     }
-  }, [timerState.currentState]);
+  }, [timerState.currentState, workspace, wsId, burnoutProb, timerState.distractionCount]);
 
   const focusMinutes = (timerState.currentState === 'IDLE' || timerState.currentState === 'SESSION_COMPLETED')
     ? 0
@@ -182,7 +230,6 @@ export default function WorkspacePage() {
   if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4"><p className="text-muted-foreground">Workspace not found</p><Link to="/" className="text-primary hover:underline text-sm">Go back</Link></div>;
 
   const totalDuration = timerState.currentState.includes('BREAK') ? timerState.breakDuration : timerState.focusDuration;
-
   const isCameraBlocked = cameraStatus === 'error';
 
   return (
@@ -192,7 +239,6 @@ export default function WorkspacePage() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
-      {/* Camera Status Banner */}
       {isCameraBlocked && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
@@ -215,7 +261,6 @@ export default function WorkspacePage() {
         </motion.div>
       )}
 
-      {/* Header */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-10">
         <div className="flex items-center gap-4">
           <Link to="/" className="w-10 h-10 rounded-xl border border-border/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all">
@@ -227,7 +272,6 @@ export default function WorkspacePage() {
           </div>
         </div>
 
-        {/* Tracking Toggle */}
         <button 
           onClick={() => setIsManualOverride(!isManualOverride)}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -238,14 +282,12 @@ export default function WorkspacePage() {
         </button>
       </motion.div>
 
-      {/* Main Layout: Timer + Sidebar */}
       <motion.div
         className="grid grid-cols-1 lg:grid-cols-3 gap-8"
         variants={staggerContainerVariants}
         initial="hidden"
         animate="visible"
       >
-        {/* Timer Column */}
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center">
           <div className="mb-8">
             <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
@@ -253,12 +295,9 @@ export default function WorkspacePage() {
           <TimerControls state={timerState.currentState} />
         </motion.div>
 
-        {/* Sidebar */}
         <motion.div variants={columnVariants} className="space-y-4">
-          {/* Camera Preview Card — Visible WebcamStream UI */}
           {isDetectionEnabled ? (
             <div className="rounded-xl border border-border/40 overflow-hidden bg-card">
-              {/* Card header */}
               <div className="flex items-center justify-between px-3 py-2 border-b border-border/20">
                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                   <Webcam className="w-3.5 h-3.5" />
@@ -284,7 +323,6 @@ export default function WorkspacePage() {
                   {cameraStatus === 'disabled' && 'Off'}
                 </span>
               </div>
-              {/* Camera body — shows the WebcamStream fallback or a placeholder */}
               <div className="p-3">
                 <WebcamStream 
                   onDistractionDetected={handleDistraction} 
@@ -306,7 +344,6 @@ export default function WorkspacePage() {
               </div>
             </div>
           ) : (
-            /* Tracking disabled card */
             <div className="rounded-xl border border-border/40 p-4 bg-card">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
@@ -322,7 +359,6 @@ export default function WorkspacePage() {
             </div>
           )}
 
-          {/* Idle Status Card */}
           {isDetectionEnabled && (
             <div className="rounded-xl border border-border/40 p-3 bg-card">
               <div className="flex items-center justify-between">
@@ -367,6 +403,13 @@ export default function WorkspacePage() {
             workspaceName={workspace.name}
             idleSeconds={Math.floor(idleTime / 1000)}
             timeRemainingString={timerString}
+            workDuration={workspace.work_duration || 45}
+            breakDuration={workspace.break_duration || 5}
+            targetHours={workspace.target_hours || 0}
+            themeColor={workspace.theme_color || 'violet'}
+            currentTabTitle={currentTabTitle}
+            focusKeywords={workspaceKeywords}
+            isTabDistracted={isTabDistracted}
           />
         );
       })()}

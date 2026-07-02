@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Layers, Timer, ArrowRight, Flame } from 'lucide-react';
+import { Layers, Timer, ArrowRight, Flame, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { API_BASE } from '@/lib/config';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 
 interface Workspace {
   id: number;
@@ -13,10 +15,34 @@ interface Workspace {
 interface WorkspaceCardProps {
   workspace: Workspace;
   index?: number;
+  onDeleted?: (workspaceId: number) => void;
 }
 
-export default function WorkspaceCard({ workspace, index = 0 }: WorkspaceCardProps) {
+export default function WorkspaceCard({ workspace, index = 0, onDeleted }: WorkspaceCardProps) {
   const navigate = useNavigate();
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const response = await fetch(`${API_BASE}/workspaces/${workspace.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        console.error(err);
+        throw new Error(err.detail || `HTTP ${response.status}`);
+      }
+      // Optimistic UI update: remove from local state via callback
+      onDeleted?.(workspace.id);
+    } catch (err) {
+      console.error('Failed to delete workspace:', err);
+    }
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log('Edit triggered');
+  };
 
   return (
     <motion.div
@@ -33,7 +59,28 @@ export default function WorkspaceCard({ workspace, index = 0 }: WorkspaceCardPro
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Layers className="w-5 h-5 text-primary" />
           </div>
-          <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center gap-1">
+            <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                <button
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="rounded-xl border-border/50 bg-card shadow-xl">
+                <DropdownMenuItem onClick={handleEdit} className="cursor-pointer rounded-lg">
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDelete} className="cursor-pointer rounded-lg text-red-400 hover:text-red-300 focus:text-red-300">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <h3 className="text-sm font-semibold text-foreground mb-1">{workspace.name}</h3>
         <p className="text-xs text-muted-foreground line-clamp-2 mb-3">

@@ -13,6 +13,7 @@ def create_workspace(
     deadline: Optional[date] = None,
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
+    focus_keywords: Optional[str] = None,
 ) -> models.Workspace:
     """Create a new workspace for a given user."""
     workspace = models.Workspace(
@@ -23,6 +24,7 @@ def create_workspace(
         deadline=deadline,
         work_duration=work_duration,
         break_duration=break_duration,
+        focus_keywords=focus_keywords,
     )
     db.add(workspace)
     db.commit()
@@ -59,6 +61,7 @@ def update_workspace(
     deadline: Optional[date] = None,
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
+    focus_keywords: Optional[str] = None,
 ) -> models.Workspace:
     """Update an existing workspace's fields."""
     workspace = get_workspace(db, workspace_id=workspace_id)
@@ -72,10 +75,20 @@ def update_workspace(
     workspace.deadline = deadline
     workspace.work_duration = work_duration
     workspace.break_duration = break_duration
+    workspace.focus_keywords = focus_keywords
 
     db.commit()
     db.refresh(workspace)
     return workspace
+
+
+def delete_workspace(db: Session, workspace_id: int):
+    """Delete a workspace by its ID."""
+    db_workspace = db.query(models.Workspace).filter(models.Workspace.id == workspace_id).first()
+    if db_workspace:
+        db.delete(db_workspace)
+        db.commit()
+    return db_workspace
 
 
 def share_workspace(

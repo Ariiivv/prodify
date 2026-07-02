@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Float, Date
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Float, Date, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -28,6 +28,7 @@ class Workspace(Base):
     deadline = Column(Date, nullable=True) # For Structured Goal Mode
     work_duration = Column(Integer, nullable=False, default=45) # in minutes
     break_duration = Column(Integer, nullable=False, default=5)  # in minutes
+    focus_keywords = Column(String, nullable=True) # JSON array of focus keywords for adaptive tracking
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

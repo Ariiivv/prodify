@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
 
 interface CameraErrorInfo {
-  type: 'NotAllowedError' | 'NotFoundError' | 'NotReadableError' | 'ConnectionError' | 'Unknown';
+  type: 'NotAllowedError' | 'NotFoundError' | 'NotReadableError' | 'ConnectionError' | 'TimeoutError' | 'Unknown';
   message: string;
 }
 
@@ -19,6 +19,7 @@ interface WebcamStreamProps {
 }
 
 const FRAME_INTERVAL_MS = 2000; // Send a frame every 2 seconds
+const CAMERA_TIMEOUT_MS = 10_000; // Fail-fast if getUserMedia doesn't resolve in 10s
 
 export default function WebcamStream({ onDistractionDetected, onStatus, isEnabled }: WebcamStreamProps) {
   const webcamRef = useRef<Webcam>(null);
@@ -54,14 +55,31 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
     }
 
     let isMounted = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const startCamera = async () => {
       if (!isMounted) return;
       setCameraStatus('loading');
 
+      // Fail-safe: reject if camera enumeration / permission takes too long
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new DOMException(
+            `Camera not detected within ${CAMERA_TIMEOUT_MS / 1000}s. Check permissions or camera connection.`,
+            'TimeoutError'
+          ));
+        }, CAMERA_TIMEOUT_MS);
+      });
+
       try {
-        // Explicitly request camera to catch permission/hardware errors early
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        // Race getUserMedia against a timeout so we never hang on "Initializing..." forever
+        const stream: MediaStream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ video: true }),
+          timeoutPromise,
+        ]);
+
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+
         // If we got a stream, stop it immediately — react-webcam handles its own stream
         stream.getTracks().forEach(track => track.stop());
 
@@ -76,7 +94,7 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
         }
 
         const wsUrl = getWsUrl("/vision");
-        console.log("🔌 [SOCKET] Attempting to connect...");
+        console.log("🔌 [SOCKET] Attempting to connect to Vision WS:", wsUrl);
         const socket = new WebSocket(wsUrl);
         socketRef.current = socket;
 
@@ -92,17 +110,23 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
           }, FRAME_INTERVAL_MS);
         };
 
-        socket.onerror = (err) => {
-          console.error("❌ [SOCKET] Error:", err);
+        socket.onerror = (err: Event) => {
+          console.error("❌ [SOCKET] WebSocket error event:", err);
+          // Check if this is a network / CORS issue
+          console.error("❌ [SOCKET] wsUrl was:", wsUrl);
+          console.error("❌ [SOCKET] If you see this combined with 'Initializing...', the backend vision server");
+          console.error("❌ [SOCKET] at", wsUrl, "might be down or CORS is blocking the connection.");
           setCameraStatus('error', {
             type: 'ConnectionError',
-            message: 'Unable to connect to Vision Server. Check your connection or browser shields.',
+            message: 'Unable to connect to Vision Server. Check your connection or browser shields. ' +
+                     `(Target: ${wsUrl})`,
           });
         };
 
-        socket.onclose = () => {
+        socket.onclose = (closeEvent: CloseEvent) => {
           if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
           socketRef.current = null;
+          console.warn("🔌 [SOCKET] Closed:", closeEvent.code, closeEvent.reason);
           // Don't auto-reconnect — component will remount if still enabled
         };
 
@@ -123,30 +147,43 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
       } catch (err: any) {
         if (!isMounted) return;
 
+        // Clear the timeout if it's still pending
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+
         let errorInfo: CameraErrorInfo;
 
-        if (err.name === 'NotAllowedError') {
+        if (err.name === 'TimeoutError') {
+          errorInfo = {
+            type: 'TimeoutError',
+            message: err.message || `Camera initialization timed out after ${CAMERA_TIMEOUT_MS / 1000}s.`,
+          };
+          console.error("⏱️ [CAMERA] getUserMedia timed out. Is the camera connected and permissions granted?");
+        } else if (err.name === 'NotAllowedError') {
           errorInfo = {
             type: 'NotAllowedError',
             message: err.message?.includes('policy')
               ? 'Camera access blocked by browser policy. Check your browser settings.'
               : 'Camera permission denied. Please allow camera access in your browser settings and reload.',
           };
+          console.error("🚫 [CAMERA] Permission denied:", err.message);
         } else if (err.name === 'NotFoundError') {
           errorInfo = {
             type: 'NotFoundError',
             message: 'No camera found. Please check your hardware or plug in a webcam.',
           };
+          console.error("🔍 [CAMERA] No camera device found:", err.message);
         } else if (err.name === 'NotReadableError') {
           errorInfo = {
             type: 'NotReadableError',
             message: 'Camera is already in use by another application. Close other apps using the camera.',
           };
+          console.error("🔒 [CAMERA] Camera busy:", err.message);
         } else {
           errorInfo = {
             type: 'Unknown',
             message: `Camera error: ${err.message || 'An unexpected error occurred.'}`,
           };
+          console.error("❌ [CAMERA] Unknown error:", err);
         }
 
         setCameraStatus('error', errorInfo);
@@ -157,6 +194,7 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
 
     return () => {
       isMounted = false;
+      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
       if (socketRef.current) {
         socketRef.current.close();
@@ -170,6 +208,8 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
   const handleUserMediaError = useCallback((err: string | DOMException) => {
     const message = typeof err === 'string' ? err : err.message || 'Unknown camera error';
     const name = typeof err === 'object' && 'name' in err ? (err as DOMException).name : 'Unknown';
+
+    console.error("📷 [REACT-WEBCAM] UserMedia error:", name, message);
 
     let errorInfo: CameraErrorInfo;
 
@@ -188,6 +228,7 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
 
   // Handle successful media stream from react-webcam
   const handleUserMedia = useCallback(() => {
+    console.log("📷 [REACT-WEBCAM] Stream started successfully");
     setCameraStatus('streaming');
   }, [setCameraStatus]);
 
@@ -221,27 +262,29 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
     const isPermissionError = cameraError.type === 'NotAllowedError';
     const isNotFoundError = cameraError.type === 'NotFoundError';
     const isConnectionError = cameraError.type === 'ConnectionError';
+    const isTimeoutError = cameraError.type === 'TimeoutError';
 
     return (
       <div className={`rounded-xl border p-4 ${
-        isConnectionError
+        isConnectionError || isTimeoutError
           ? 'bg-amber-500/5 border-amber-500/30'
           : 'bg-red-500/5 border-red-500/30'
       }`}>
         <div className="flex items-start gap-3">
           <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-            isConnectionError ? 'bg-amber-500/15 text-amber-500' : 'bg-red-500/15 text-red-500'
+            isConnectionError || isTimeoutError ? 'bg-amber-500/15 text-amber-500' : 'bg-red-500/15 text-red-500'
           }`}>
             {isNotFoundError ? <CameraOff className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
           </div>
           <div className="flex-1 min-w-0">
             <p className={`text-sm font-semibold ${
-              isConnectionError ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
+              isConnectionError || isTimeoutError ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
             }`}>
               {isPermissionError && 'Camera Access Blocked'}
               {isNotFoundError && 'No Camera Detected'}
               {isConnectionError && 'Vision Service Unavailable'}
-              {!isPermissionError && !isNotFoundError && !isConnectionError && 'Camera Error'}
+              {isTimeoutError && 'Camera Timed Out'}
+              {!isPermissionError && !isNotFoundError && !isConnectionError && !isTimeoutError && 'Camera Error'}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">{cameraError.message}</p>
             <div className="flex items-center gap-2 mt-3">
@@ -293,3 +336,6 @@ function toastPermissionHint() {
     duration: 5000,
   });
 }
+
+// Export type for external use
+export type { CameraStatus, CameraErrorInfo };

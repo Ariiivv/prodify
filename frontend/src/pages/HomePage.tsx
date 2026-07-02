@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sparkles, Layers, Timer, TrendingUp, Flame, BarChart3 } from 'lucide-react';
@@ -31,7 +31,7 @@ const HomePage: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const wsRes = await fetch(`${API_BASE}/workspaces`);
 
@@ -51,10 +51,14 @@ const HomePage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  const handleDeleted = useCallback((workspaceId: number) => {
+    setWorkspaces(prev => prev.filter(ws => ws.id !== workspaceId));
   }, []);
 
   const totalFocusMinutes = sessions.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
@@ -112,7 +116,7 @@ const HomePage: React.FC = () => {
               <BarChart3 className="w-3.5 h-3.5" />
               Analytics
             </Link>
-            <CreateWorkspaceDialog />
+            <CreateWorkspaceDialog onCreated={fetchData} />
           </div>
         </motion.div>
 
@@ -191,7 +195,7 @@ const HomePage: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {workspaces.map((ws, i) => (
-                  <WorkspaceCard key={ws.id} workspace={ws} index={i} />
+                  <WorkspaceCard key={ws.id} workspace={ws} index={i} onDeleted={handleDeleted} />
                 ))}
               </div>
             )}

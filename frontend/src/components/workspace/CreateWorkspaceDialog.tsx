@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '@/lib/config';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Layers } from 'lucide-react';
+import { Plus, X, Layers, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -18,7 +18,11 @@ const THEME_COLORS = [
   { name: 'Rose', value: 'rose', bg: 'bg-rose-500', border: 'border-rose-400' },
 ];
 
-export default function CreateWorkspaceDialog() {
+interface CreateWorkspaceDialogProps {
+  onCreated?: () => void;
+}
+
+export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [mode, setMode] = useState('structured');
@@ -27,11 +31,17 @@ export default function CreateWorkspaceDialog() {
   const [breakDuration, setBreakDuration] = useState('5');
   const [targetHours, setTargetHours] = useState('20');
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
-  const queryClient = useQueryClient();
+  const [focusKeywords, setFocusKeywords] = useState('');
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    const keywordsArray = focusKeywords
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
 
     const payload = {
       name: name.trim(),
@@ -40,8 +50,9 @@ export default function CreateWorkspaceDialog() {
       work_duration: parseInt(focusDuration),
       break_duration: parseInt(breakDuration),
       target_hours: parseFloat(targetHours),
-      deadline: deadline ? deadline.toISOString() : null,
+      deadline: deadline ? deadline.toISOString().split('T')[0] : null,
       user_id: 1,
+      focus_keywords: keywordsArray.length > 0 ? JSON.stringify(keywordsArray) : null,
     };
 
     try {
@@ -57,7 +68,8 @@ export default function CreateWorkspaceDialog() {
         throw new Error(err.detail || `HTTP ${response.status}`);
       }
 
-      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      const workspace = await response.json();
+
       setOpen(false);
       // Reset form
       setName('');
@@ -67,9 +79,13 @@ export default function CreateWorkspaceDialog() {
       setBreakDuration('5');
       setTargetHours('20');
       setDeadline(undefined);
+      setFocusKeywords('');
+
+      // Refresh workspace list and navigate to the new workspace
+      onCreated?.();
+      navigate(`/workspace/${workspace.id}`);
     } catch (err) {
       console.error('Failed to create workspace:', err);
-      // Optionally, show an error message to the user
     }
   };
 
@@ -212,11 +228,11 @@ export default function CreateWorkspaceDialog() {
                           <span
                             className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 w-full px-4 py-2 bg-secondary/50 border-border/50 rounded-xl ${!deadline ? 'text-muted-foreground' : ''}`}
                           >
-                            <Calendar className="mr-2 h-4 w-4" />
+                            <CalendarDays className="mr-2 h-4 w-4" />
                             {deadline ? format(deadline, 'PPP') : <span>Pick a date</span>}
                           </span>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0 bg-slate-950 border border-slate-800 shadow-xl z-[60] text-white">
+                        <PopoverContent className="w-auto p-0 bg-slate-950 z-[9999] border border-slate-700 shadow-2xl relative">
                           <Calendar
                             mode="single"
                             selected={deadline}
@@ -228,6 +244,21 @@ export default function CreateWorkspaceDialog() {
                     </div>
                   </div>
                 )}
+
+                {/* Focus Keywords */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Focus Keywords (comma-separated)</label>
+                  <textarea
+                    value={focusKeywords}
+                    onChange={(e) => setFocusKeywords(e.target.value)}
+                    placeholder="e.g., VS Code, YouTube - Coder Coder, Notion, Terminal"
+                    rows={2}
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-secondary/50 border-border/50 rounded-xl resize-none"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Adaptive focus tracking will check if your active tab matches any of these keywords.
+                  </p>
+                </div>
 
                 {/* Actions */}
                 <div className="flex gap-3 pt-2">

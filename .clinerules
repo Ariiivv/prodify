@@ -1,5 +1,37 @@
 # PRODIFY: Core Agent Rules & Operational Constraints
-...
+
+## 1. PROJECT ARCHITECTURE & MONOREPO
+- `/frontend` -> React, Vite, TypeScript, TailwindCSS, Framer Motion.
+- `/backend` -> FastAPI, Python 3.12+, MediaPipe, WebSockets.
+- `Supabase` -> PostgreSQL, Auth, Row Level Security (RLS).
+- Maintain strict separation of concerns. The frontend handles UI/UX and state; the backend handles AI vision, WebSocket streaming, and secure database operations.
+
+## 2. FRONTEND DEVELOPMENT RULES
+- **No Hardcoded Localhost:** You are strictly forbidden from hardcoding `127.0.0.1` or `localhost` for API/WebSocket connections. Always use `import.meta.env.VITE_API_URL`.
+- Maintain the established premium, dark-mode aesthetic (e.g., Slate-900 backgrounds, emerald/cyan/rose accents).
+- Use Framer Motion for micro-interactions and smooth transitions.
+- Persist WebSocket connections carefully across React strict-mode re-renders using `useRef`.
+- Always securely attach the Supabase JWT token to the `Authorization` header for API requests.
+
+## 3. BACKEND & AI DEVELOPMENT RULES
+- Maintain lightweight and fast frame processing using MediaPipe Tasks API (`blaze_face_short_range.tflite`).
+- Handle low-light/pitch-black fallback gracefully within the vision logic so the focus tracker does not crash.
+- Verify Supabase JWTs securely on all protected CRUD endpoints.
+- Ensure robust WebSocket bi-directional JSON payload streaming.
+
+## 4. DATABASE & MIGRATION PROTOCOLS
+- Always link user-specific data to Supabase's `auth.users(id)` via a `user_id` UUID column.
+- Row Level Security (RLS) MUST be enabled on all tables containing user data, ensuring users can only SELECT, INSERT, UPDATE, or DELETE their own rows.
+- Always pause and ask for explicit user permission before executing SQL migration scripts.
+
 ## 5. TERMINAL & DIRECTORY EXECUTION RULES
-- For any React, Vite, or npm commands, you MUST execute them from inside the `frontend/` directory (e.g., `cd frontend && npm run dev`).
-- For any Python, FastAPI, uvicorn, or ML script commands, you MUST execute them from inside the `backend/` directory, ensuring the virtual environment is activated.
+- **Context Switching:** Never assume your current directory. Always run `pwd` if unsure. If transitioning between frontend and backend tasks, explicitly navigate using `cd`.
+- **Frontend Execution:** For any React, Vite, or npm commands, you MUST execute them from inside the `frontend/` directory (e.g., `cd frontend && npm run dev`). The frontend does NOT use a Python virtual environment. Never attempt to install Python packages there.
+- **Backend Execution:** For any Python, FastAPI, uvicorn, or ML script commands, you MUST execute them from inside the `backend/` directory.
+- **CRITICAL OS RESTRICTION (PEP 668):** The Ubuntu/WSL OS strictly enforces an externally managed environment. You are STRICTLY FORBIDDEN from running global `pip install` commands.
+- **Venv Activation:** Before running ANY `pip install` commands or executing Python scripts for the backend, you MUST explicitly activate the environment using: `source backend/venv/bin/activate`
+
+## 6. AGENT WORKFLOW & ANTI-HALLUCINATION RULES
+- **Read Before Write:** Do not blindly overwrite files. If asked to modify an existing component, you MUST read the file first to understand its current state and imports.
+- **Verify Dependencies:** Before importing a new library (e.g., `@supabase/supabase-js`, `pyjwt`), check `package.json` or `requirements.txt`/`pip list` to ensure it is actually installed. If not, install it first using the correct directory rules.
+- **Exact File Paths:** When creating new frontend components, place them exactly in `frontend/src/components/`, NOT in the root directory.

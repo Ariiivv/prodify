@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, RotateCcw, Coffee, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,14 @@ interface TimerControlsProps {
 }
 
 export default function TimerControls({ state }: TimerControlsProps) {
+  useEffect(() => {
+    if (state === 'SESSION_COMPLETED') {
+      new Audio('https://www.soundjay.com/buttons/beep-07.wav').play().catch(() => {
+        // Silently fail if audio can't play (e.g., user hasn't interacted yet)
+      });
+    }
+  }, [state]);
+
   return (
     <AnimatePresence mode="wait">
       <motion.div

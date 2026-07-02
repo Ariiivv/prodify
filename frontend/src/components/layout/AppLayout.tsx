@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, BarChart3, Sparkles } from 'lucide-react';
+import { LayoutDashboard, BarChart3, Sparkles, LogOut, User } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuthStore } from '@/store/authStore';
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -9,6 +10,11 @@ const navItems = [
 
 export default function AppLayout() {
   const location = useLocation();
+  const { user, signOut } = useAuthStore();
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -50,6 +56,34 @@ export default function AppLayout() {
             );
           })}
         </nav>
+
+        {/* User section at bottom */}
+        <div className="mt-auto flex flex-col items-center gap-2">
+          {/* Avatar */}
+          <div className="relative group">
+            <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground hover:bg-secondary/80 transition-colors cursor-default">
+              <User className="w-5 h-5" />
+            </div>
+            <div className="absolute left-16 bottom-0 px-3 py-2 bg-card border border-border rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 min-w-[160px]">
+              <p className="text-xs text-foreground font-medium truncate">
+                {user?.email || 'User'}
+              </p>
+            </div>
+          </div>
+
+          {/* Sign Out */}
+          <button
+            onClick={handleSignOut}
+            className="relative group"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all">
+              <LogOut className="w-5 h-5" />
+            </div>
+            <div className="absolute left-16 top-1/2 -translate-y-1/2 px-2 py-1 bg-card border border-border rounded-md text-xs text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+              Sign Out
+            </div>
+          </button>
+        </div>
       </aside>
 
       {/* Mobile bottom nav */}
@@ -70,6 +104,13 @@ export default function AppLayout() {
               </Link>
             );
           })}
+          <button
+            onClick={handleSignOut}
+            className="flex flex-col items-center gap-1 px-3 py-1 rounded-lg text-muted-foreground"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Sign Out</span>
+          </button>
         </nav>
       </div>
 

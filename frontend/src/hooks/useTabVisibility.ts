@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useTimerStore } from '@/lib/timerStore';
 import { API_BASE } from '@/lib/config';
 
-export function useTabVisibility(_workspaceId?: number) {
+interface UseTabVisibilityOptions {
+  disabled?: boolean;
+}
+
+export function useTabVisibility(workspaceId?: number | UseTabVisibilityOptions, options?: UseTabVisibilityOptions) {
+  // Support both (workspaceId?, options?) and (options?) signatures
+  const opts: UseTabVisibilityOptions =
+    typeof workspaceId === 'object' ? workspaceId : options ?? {};
+
   const [isVisible, setIsVisible] = useState(true);
   const [enforcementTriggered, setEnforcementTriggered] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -13,6 +21,8 @@ export function useTabVisibility(_workspaceId?: number) {
       // Support both standard 'visibilitychange' and Safari 'pagehide'
       const hidden = document.visibilityState === 'hidden';
       setIsVisible(!hidden);
+
+      if (opts.disabled) return; // Bypass tab-switch tracking
 
       const store = useTimerStore.getState();
       const activeWs = store.activeWorkspaceId;
@@ -66,7 +76,7 @@ export function useTabVisibility(_workspaceId?: number) {
         clearTimeout(timerRef.current);
       }
     };
-  }, []);
+  }, [opts.disabled]);
 
   const store = useTimerStore.getState();
   const activeWs = store.activeWorkspaceId;
