@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from database import models
+from app.models import schemas as models
 from datetime import date
 from typing import Optional, List
 
@@ -105,3 +105,88 @@ def share_workspace(
     db.commit()
     db.refresh(workspace)
     return workspace
+
+
+def log_activity_record_async(
+    app_name: str,
+    window_title: str,
+    intent: str,
+    is_focused: bool,
+    reason: str,
+    workspace_id: Optional[int] = 1,
+):
+    """Permanently store a window classification activity log in a background session."""
+    from app.models.connection import SessionLocal
+    from app.models import schemas as models
+    import logging
+    logger = logging.getLogger("prodify_backend")
+    db = SessionLocal()
+    try:
+        record = models.ActivityLog(
+            workspace_id=workspace_id or 1,
+            app_name=app_name,
+            window_title=window_title,
+            intent=intent,
+            is_focused=1 if is_focused else 0,
+            reason=reason,
+        )
+        db.add(record)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error asynchronously saving activity log: {e}")
+    finally:
+        db.close()
+
+
+def get_recent_activity_logs(
+    db: Session, user_id: Optional[int] = None, days: int = 7, limit: int = 300
+) -> List[models.ActivityLog]:
+    """Fetch recent activity logs for AI coach pattern analysis."""
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    query = db.query(models.ActivityLog).filter(models.ActivityLog.timestamp >= cutoff)
+    if user_id is not None:
+        query = query.join(models.Workspace).filter(models.Workspace.user_id == user_id)
+    return query.order_by(models.ActivityLog.timestamp.desc()).limit(limit).all()
+
+
+# --- User & Auth CRUD Operations ---
+def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
+    """Fetch a user by email address."""
+    return db.query(models.User).filter(models.User.email == email).first()
+
+
+def get_user_by_google_id(db: Session, google_id: str) -> Optional[models.User]:
+    """Fetch a user by unique Google ID."""
+    if not google_id:
+        return None
+    return db.query(models.User).filter(models.User.google_id == google_id).first()
+
+
+def get_user_by_id(db: Session, user_id: int) -> Optional[models.User]:
+    """Fetch a user by primary key ID."""
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+
+def create_user(
+    db: Session,
+    email: str,
+    username: str,
+    hashed_password: Optional[str] = None,
+    auth_provider: str = "email",
+    google_id: Optional[str] = None,
+    avatar_url: Optional[str] = None,
+) -> models.User:
+    """Create a new user profile."""
+    user = models.User(
+        email=email,
+        username=username,
+        hashed_password=hashed_password,
+        auth_provider=auth_provider,
+        google_id=google_id,
+        avatar_url=avatar_url,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user

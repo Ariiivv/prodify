@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTimerStore } from '@/lib/timerStore';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 
 interface UseTabVisibilityOptions {
   disabled?: boolean;
@@ -45,7 +45,7 @@ export function useTabVisibility(workspaceId?: number | UseTabVisibilityOptions,
 
             fetch(`${API_BASE}/api/telemetry/distraction`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({
                 workspace_id: activeWs,
                 distraction_type: 'TAB_SWITCH',

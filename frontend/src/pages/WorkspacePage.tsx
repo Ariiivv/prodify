@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CameraOff, AlertTriangle, Webcam } from 'lucide-react';
@@ -6,7 +6,7 @@ import { useTimerStore, initTimer, useTimer } from '@/lib/timerStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { useIdleDetection } from '@/hooks/useIdleDetection';
 import { useAdaptiveFocus } from '@/hooks/useAdaptiveFocus';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
 
 import WebcamStream from '@/components/workspace/WebcamStream';
@@ -16,6 +16,7 @@ import BurnoutGauge from '@/components/timer/BurnoutGauge';
 import SessionStats from '@/components/timer/SessionStats';
 import EnforcementModal from '@/components/timer/EnforcementModal';
 import AiCoachPanel from '@/components/chat/AiCoachPanel';
+import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 
 type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
 
@@ -40,13 +41,13 @@ const columnVariants: any = {
   },
 };
 
-/** Parse workspace keywords from the DB, handling JSON arrays or raw strings */
+/** Parse workspace keywords from the DB, handling JSON arrays, raw strings, or intent text */
 function parseKeywords(raw: string | null | undefined): string[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      // Clean each keyword — split on newlines/commas, trim, filter empties
+      // Legacy format: JSON array of keywords
       return parsed.flatMap((k: string) =>
         String(k)
           .split(/[\n,]+/)
@@ -56,7 +57,29 @@ function parseKeywords(raw: string | null | undefined): string[] {
     }
     return [];
   } catch {
-    return [];
+    // New format: raw intent string — split into meaningful words for
+    // the frontend's local keyword matching (the real classification
+    // happens on the backend via Gemini AI using the full intent string)
+    return raw
+      .split(/[\s,]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 2); // skip tiny words like "I", "am", "a"
+  }
+}
+
+/** Get the raw intent string from the workspace's focus_keywords field */
+function getIntentString(raw: string | null | undefined): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // Legacy format: join keywords into a sentence for the AI
+      return parsed.join(', ');
+    }
+    return '';
+  } catch {
+    // New format: already a raw intent string
+    return raw;
   }
 }
 
@@ -72,9 +95,15 @@ export default function WorkspacePage() {
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('disabled');
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
+  const [engagementState, setEngagementState] = useState<string>('ACTIVE_WORK');
+  const [lastFocusedWindow, setLastFocusedWindow] = useState<string>('');
+  const loggedCompletionRef = useRef<number | null>(null);
+  const lastBurnoutMinuteRef = useRef<number | null>(null);
 
-  // Compute workspace keywords as early as possible
+  // Compute workspace keywords for frontend-side matching
   const workspaceKeywords = parseKeywords(workspace?.focus_keywords);
+  // Extract the raw intent string for the AI backend
+  const sessionIntent = getIntentString(workspace?.focus_keywords);
 
   // If keywords are defined, disable tab-visibility enforcement (trust camera/gaze)
   const { enforcementTriggered, setEnforcementTriggered } = useTabVisibility({
@@ -85,31 +114,42 @@ export default function WorkspacePage() {
   const isDetectionEnabled = !isManualOverride;
 
   // Distraction Handler
-  const handleDistraction = useCallback(() => {
+  const handleDistraction = useCallback((reason?: string) => {
     const store = useTimerStore.getState();
     const ws = store.workspaces[store.activeWorkspaceId ?? -1];
     if (!ws || ws.currentState !== 'FOCUS_RUNNING') return; // prevent toast spam on breaks
+    const displayReason = reason?.trim() || "Distraction detected";
     toast.error("Focus lost!", {
-      description: "You've been distracted. The timer has been paused. 🚀",
+      description: `${displayReason} Timer paused. 🚀`,
       duration: 3000,
     });
     store.incrementDistraction();
-    store.pauseFocus("Distraction detected");
+    store.pauseFocus(displayReason);
   }, []);
 
   // --- Adaptive Focus Tracking ---
   const { currentTabTitle, isFocused: isTabFocused } = useAdaptiveFocus({
     keywords: workspaceKeywords,
     enabled: isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING',
-    onDistracted: () => {
+    onDistracted: (reason?: string, appName?: string) => {
       if (isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING') {
-        toast.warning("Non-focus tab detected!", {
-          description: `Active tab doesn't match your focus keywords. Timer paused.`,
-          duration: 4000,
+        const trimmedReason = reason?.trim();
+        const isErrorOrEmpty = !trimmedReason ||
+          trimmedReason.toLowerCase().includes("evaluation failed") ||
+          trimmedReason.toLowerCase().includes("rate limit");
+
+        const appLabel = appName ? appName.replace(/\.(exe|app)$/i, '') : "an application";
+        const displayReason = isErrorOrEmpty
+          ? `You switched to ${appLabel} which does not match your session intent.`
+          : trimmedReason;
+
+        toast.warning("Distraction Detected!", {
+          description: `${displayReason} Timer paused.`,
+          duration: 5000,
         });
         const store = useTimerStore.getState();
         store.incrementDistraction();
-        store.pauseFocus("TAB_DISTRACTION");
+        store.pauseFocus(displayReason);
       }
     },
     onFocused: () => {
@@ -175,7 +215,7 @@ export default function WorkspacePage() {
       setIsLoading(false);
       return;
     }
-    fetch(`${API_BASE}/workspaces`)
+    fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders() })
       .then(res => res.json())
       .then((workspaces: any[]) => {
         const ws = workspaces.find((w: any) => String(w.id) === String(wsId));
@@ -193,32 +233,112 @@ export default function WorkspacePage() {
     }
   }, [workspace, wsId]);
 
-  // Burnout Logic
+  // Send the session intent to Electron main process for backend API calls
+  useEffect(() => {
+    if (workspace && window.electronBridge) {
+      window.electronBridge.setSessionIntent({ intent: sessionIntent, workspaceId: wsId || 1 });
+    }
+    return () => {
+      // Clear intent when leaving the workspace
+      if (window.electronBridge) {
+        window.electronBridge.setSessionIntent({ intent: '', workspaceId: 1 });
+      }
+    };
+  }, [workspace, sessionIntent, wsId]);
+
+  // Query the backend risk estimator once per elapsed focus minute.
   useEffect(() => {
     if (timerState.currentState === 'IDLE' || timerState.currentState === 'SESSION_COMPLETED') {
       setBurnoutProb(0);
+      lastBurnoutMinuteRef.current = null;
       return;
     }
     const totalDuration = timerState.focusDuration;
     const elapsed = totalDuration - timerState.timeRemaining;
-    const elapsedRatio = totalDuration > 0 ? elapsed / totalDuration : 0;
-    const distractionFactor = timerState.distractionCount * 0.05;
-    const prob = Math.min(0.95, elapsedRatio * 0.7 + distractionFactor + (Math.random() * 0.05));
-    setBurnoutProb(prob);
+    const focusMinutes = Math.max(0, Math.floor(elapsed / 60));
+    if (lastBurnoutMinuteRef.current === focusMinutes) return;
+    lastBurnoutMinuteRef.current = focusMinutes;
+
+    const controller = new AbortController();
+    fetch(
+      `${API_BASE}/api/ml/burnout-prediction?current_hour=${new Date().getHours()}&current_focus_minutes=${focusMinutes}`,
+      { headers: getAuthHeaders(), signal: controller.signal },
+    )
+      .then(response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+      .then(data => setBurnoutProb(Number(data.tab_switch_probability) || 0))
+      .catch(error => {
+        if (error.name !== 'AbortError') console.error('Unable to fetch burnout risk:', error);
+      });
+    return () => controller.abort();
   }, [timerState.timeRemaining, timerState.currentState, timerState.distractionCount, timerState.focusDuration]);
 
-  // Log session completion
+  const previousStateRef = useRef(timerState.currentState);
+  const maxElapsedRef = useRef(0);
+
+  // Track max elapsed time to prevent it reading 0 on reset
   useEffect(() => {
-    if (timerState.currentState === 'SESSION_COMPLETED' && workspace && wsId) {
-      console.log("Session completed successfully", {
-        workspace_id: wsId,
-        workspace_name: workspace.name,
-        duration_minutes: workspace.work_duration || 45,
-        distraction_count: timerState.distractionCount,
-        burnout_score: burnoutProb,
-      });
+    if (timerState.currentState.includes('FOCUS')) {
+      const elapsed = Math.floor((timerState.focusDuration - timerState.timeRemaining) / 60);
+      if (elapsed > maxElapsedRef.current) {
+         maxElapsedRef.current = elapsed;
+      }
     }
-  }, [timerState.currentState, workspace, wsId, burnoutProb, timerState.distractionCount]);
+  }, [timerState.timeRemaining, timerState.currentState, timerState.focusDuration]);
+
+  // Log session completion & save metrics
+  useEffect(() => {
+    const prev = previousStateRef.current;
+    const current = timerState.currentState;
+    const isFocus = prev === 'FOCUS_RUNNING' || prev === 'FOCUS_PAUSED';
+    const isEnded = current === 'IDLE' || current === 'SESSION_COMPLETED';
+
+    if (isFocus && isEnded && workspace && wsId) {
+      const completed = current === 'SESSION_COMPLETED';
+      const currentHour = new Date().getHours();
+      let time_of_day = 'night';
+      if (currentHour >= 5 && currentHour < 12) time_of_day = 'morning';
+      else if (currentHour >= 12 && currentHour < 18) time_of_day = 'afternoon';
+      else if (currentHour >= 18 && currentHour < 22) time_of_day = 'evening';
+
+      // 1. Send ML metrics (silent, non-blocking)
+      fetch(`${API_BASE}/workspaces/${wsId}/metrics`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          focus_minutes: maxElapsedRef.current,
+          distraction_count: timerState.distractionCount,
+          burnout_score: burnoutProb,
+          time_of_day,
+          completed,
+        }),
+      }).catch(console.error);
+
+      // 2. Legacy telemetry call
+      if (completed && loggedCompletionRef.current !== timerState.sessionCount) {
+        loggedCompletionRef.current = timerState.sessionCount;
+        fetch(`${API_BASE}/api/telemetry/sessions`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            workspace_id: wsId,
+            duration_minutes: workspace.work_duration || 45,
+            distraction_count: timerState.distractionCount,
+            burnout_score: burnoutProb,
+          }),
+        }).catch(error => {
+          loggedCompletionRef.current = null;
+          console.error('Unable to save completed focus session:', error);
+        });
+      }
+
+      // Reset elapsed tracker for next session
+      maxElapsedRef.current = 0;
+    } else if (current !== 'SESSION_COMPLETED') {
+      loggedCompletionRef.current = null;
+    }
+
+    previousStateRef.current = current;
+  }, [timerState.currentState, workspace, wsId, burnoutProb, timerState.distractionCount, timerState.sessionCount]);
 
   const focusMinutes = (timerState.currentState === 'IDLE' || timerState.currentState === 'SESSION_COMPLETED')
     ? 0
@@ -289,8 +409,18 @@ export default function WorkspacePage() {
         animate="visible"
       >
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center">
-          <div className="mb-8">
+          <div className="mb-8 flex flex-col items-center">
             <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
+            {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason && timerState.pauseReason !== 'Manual' && timerState.pauseReason !== 'IDLE_DETECTED' && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-500 dark:text-amber-400 max-w-md shadow-lg shadow-amber-500/5 text-center"
+              >
+                <span className="text-base shrink-0">🤖</span>
+                <span className="font-medium leading-relaxed">{timerState.pauseReason}</span>
+              </motion.div>
+            )}
           </div>
           <TimerControls state={timerState.currentState} />
         </motion.div>
@@ -327,6 +457,13 @@ export default function WorkspacePage() {
                 <WebcamStream 
                   onDistractionDetected={handleDistraction} 
                   onStatus={handleCameraStatus}
+                  onEngagementState={(state) => {
+                    setEngagementState(state);
+                    // Track the last focused window when user is actively working
+                    if (state === 'ACTIVE_WORK' || state === 'FOCUSED_THINKING') {
+                      if (currentTabTitle) setLastFocusedWindow(currentTabTitle);
+                    }
+                  }}
                   isEnabled={isDetectionEnabled}
                   isTimerRunning={timerState.currentState === 'FOCUS_RUNNING'}
                 />
@@ -359,42 +496,31 @@ export default function WorkspacePage() {
             </div>
           )}
 
-          {isDetectionEnabled && (
-            <div className="rounded-xl border border-border/40 p-3 bg-card">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">User Activity</span>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                  isIdle
-                    ? 'bg-amber-500/15 text-amber-500'
-                    : 'bg-emerald-500/15 text-emerald-500'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    isIdle ? 'bg-amber-500' : 'bg-emerald-500'
-                  }`} />
-                  {isIdle ? 'Away' : 'Active'}
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                {isIdle
-                  ? 'No keyboard/mouse activity detected'
-                  : `Last activity ${Math.max(0, Math.floor(idleTime / 1000))}s ago`
-                }
-              </p>
-            </div>
-          )}
 
+
+          <CoachInsightPanel
+            engagementState={engagementState}
+            isSessionActive={timerState.currentState === 'FOCUS_RUNNING' || timerState.currentState === 'FOCUS_PAUSED'}
+            currentHour={new Date().getHours()}
+            workspaceName={workspace.name}
+            lastFocusedWindow={lastFocusedWindow || currentTabTitle}
+            lastFocusedApp=""
+          />
           <BurnoutGauge burnoutProbability={burnoutProb} currentState={timerState.currentState} />
-          <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
+          {(timerState.currentState === 'SESSION_COMPLETED' || timerState.sessionCount > 0) && (
+            <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
+          )}
         </motion.div>
       </motion.div>
 
-      <EnforcementModal show={enforcementTriggered} onDismiss={handleDismissEnforcement} />
+      {/* <EnforcementModal show={enforcementTriggered} onDismiss={handleDismissEnforcement} /> */}
       {(() => {
         const minutes = Math.floor(timerState.timeRemaining / 60).toString().padStart(2, '0');
         const seconds = (timerState.timeRemaining % 60).toString().padStart(2, '0');
         const timerString = `${minutes}:${seconds}`;
         return (
           <AiCoachPanel
+            workspaceId={wsId}
             focusMinutes={focusMinutes}
             distractionCount={timerState.distractionCount}
             burnoutProbability={burnoutProb}

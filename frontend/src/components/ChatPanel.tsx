@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 
 interface ChatPanelProps {
   focusMinutes: number;
@@ -41,9 +41,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ focusMinutes, distractionCount, b
     try {
       const response = await fetch(`${API_BASE}/api/ai-coach/chat`, {
         method: "POST",
-        headers: {
+        headers: getAuthHeaders({
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
           focus_minutes: focusMinutes,
           distraction_count: distractionCount,

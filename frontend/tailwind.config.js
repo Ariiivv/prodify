@@ -1,3 +1,5 @@
+import tailwindcssAnimate from "tailwindcss-animate";
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
@@ -63,6 +65,15 @@ export default {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+        // ── Prodify Design Tokens ──
+        'prodify-bg': '#0a0a0a',
+        'prodify-surface': '#111111',
+        'prodify-surface-alt': '#1a1a1a',
+        'prodify-accent': '#e8ff47',
+        'prodify-danger': '#ff4444',
+        'prodify-success': '#44ff88',
+        'prodify-border': '#2a2a2a',
+        'prodify-muted': '#666666',
       },
       fontFamily: {
         heading: ['var(--font-heading)'],
@@ -86,5 +97,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 }

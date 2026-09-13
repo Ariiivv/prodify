@@ -42,7 +42,7 @@ interface UseAdaptiveFocusOptions {
   /** Whether adaptive tracking is enabled */
   enabled: boolean;
   /** Called when the user becomes distracted */
-  onDistracted?: () => void;
+  onDistracted?: (reason?: string, appName?: string) => void;
   /** Called when the user becomes focused */
   onFocused?: () => void;
 }
@@ -67,45 +67,75 @@ export function useAdaptiveFocus({
   );
   const [focusedState, setFocusedState] = useState(true);
   const prevFocusedRef = useRef(true);
+  const onDistractedRef = useRef(onDistracted);
+  const onFocusedRef = useRef(onFocused);
+  const keywordsRef = useRef(keywords);
+
+  useEffect(() => {
+    onDistractedRef.current = onDistracted;
+    onFocusedRef.current = onFocused;
+    keywordsRef.current = keywords;
+  }, [onDistracted, onFocused, keywords]);
+
+  // ── Startup grace period ─────────────────────────────────────────────
+  // Ignore all distraction callbacks for the first 3 seconds after the
+  // hook is enabled. This gives the Electron polling time to sync up
+  // cleanly after "Start Timer" or "Resume Focus" is clicked.
+  const startupTimeRef = useRef<number>(Date.now());
+  const prevEnabledRef = useRef<boolean>(enabled);
+  const GRACE_PERIOD_MS = 3000;
+
+  // Reset grace period and reset focused ref whenever transitioning
+  // from disabled → enabled (i.e. user clicks "Start Timer" or "Resume Focus").
+  if (enabled && !prevEnabledRef.current) {
+    startupTimeRef.current = Date.now();
+    prevFocusedRef.current = true;
+    console.log(`[useAdaptiveFocus] ⏳ Grace period timer RESET at ${startupTimeRef.current}`);
+  }
+  prevEnabledRef.current = enabled;
 
   /**
    * Core focus-checking logic.
    * Called both from the Electron IPC handler and the browser fallback polling.
    */
-  const checkFocus = useCallback((title: string) => {
+  const checkFocus = useCallback((title: string, overrideFocused?: boolean, reason?: string, appName?: string) => {
     // Safety check: only trigger focus events when the timer is actively running.
-    // If the timer is idle, paused, or on break, we suppress distraction events
-    // to avoid false alarms during setup or breaks.
     const timer = getTimerState();
     const isFocusActive = timer.currentState === 'FOCUS_RUNNING';
 
     // Update the displayed title regardless
-    setCurrentTabTitle(title);
+    if (title) {
+      setCurrentTabTitle(title);
+    }
 
-    // Perform the keyword match
-    const focused = isFocused(title, keywords);
+    // Perform the keyword match or use AI Intent Engine override
+    const focused = overrideFocused !== undefined ? overrideFocused : isFocused(title, keywordsRef.current);
     setFocusedState(focused);
 
-    // Only fire callbacks when:
-    //   1. Focus state actually changed
-    //   2. The timer is in an active focus-running state (safety check)
-    if (focused !== prevFocusedRef.current) {
-      prevFocusedRef.current = focused;
+    // Suppress callback firing when timer isn't actively running
+    if (!isFocusActive) return;
 
-      // Suppress callback firing when timer isn't actively running
-      if (!isFocusActive) return;
-
-      if (focused) {
-        onFocused?.();
-      } else {
-        onDistracted?.();
-      }
+    // ── Startup grace period ─────────────────────────────────────────
+    const elapsed = Date.now() - startupTimeRef.current;
+    if (!focused && elapsed < GRACE_PERIOD_MS) {
+      console.log(`[useAdaptiveFocus] ⏳ Grace period active (${elapsed}ms / ${GRACE_PERIOD_MS}ms) — suppressing distraction for title="${title}"`);
+      return;
     }
-  }, [keywords, onDistracted, onFocused]);
+
+    // Always halt the timer immediately if a distraction is detected while FOCUS_RUNNING
+    if (!focused) {
+      prevFocusedRef.current = false;
+      onDistractedRef.current?.(reason, appName);
+    } else if (focused !== prevFocusedRef.current) {
+      prevFocusedRef.current = true;
+      onFocusedRef.current?.();
+    }
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
       setFocusedState(true);
+      prevFocusedRef.current = true;
       return;
     }
 
@@ -114,50 +144,40 @@ export function useAdaptiveFocus({
       // Start OS tracking
       window.electronBridge.setTrackingEnabled(true);
 
-      // Get the initial active window
+      // Get initial window title for UI display
       window.electronBridge.getActiveWindow().then((win) => {
         if (win) {
-          checkFocus(win.title);
+          setCurrentTabTitle(win.title);
         }
       });
 
-      // Subscribe to OS window changes
-      const unsubscribe = window.electronBridge.onWindowChanged((payload) => {
-        checkFocus(payload.title);
+      // Subscribe to OS window changes for fast UI title display
+      const unsubscribeWindow = window.electronBridge.onWindowChanged((payload) => {
+        setCurrentTabTitle(payload.title);
       });
 
+      // Subscribe to backend AI Intent Engine classification results
+      const unsubscribeClassified = window.electronBridge.onActivityClassified
+        ? window.electronBridge.onActivityClassified((payload) => {
+            console.log(`[useAdaptiveFocus] ⚡ IPC received activity-classified: status="${payload.status}", reason="${payload.reason}"`);
+            checkFocus(payload.window_title, payload.status === 'focused', payload.reason, payload.app_name);
+          })
+        : () => {};
+
       return () => {
-        unsubscribe();
+        unsubscribeWindow();
+        unsubscribeClassified();
         window.electronBridge?.setTrackingEnabled(false);
       };
     }
 
     // ─── Browser Fallback Path ─────────────────────────────────────────────
-    // Check on mount using document.title
-    checkFocus(document.title);
-
-    // Poll for title changes (since document.title changes don't fire events reliably)
-    const intervalId = setInterval(() => {
-      checkFocus(document.title);
-    }, 1000);
-
-    // Also listen for focus/blur events on the window
-    const handleFocus = () => checkFocus(document.title);
-    window.addEventListener('focus', handleFocus);
-
-    // Use MutationObserver as a backup for title changes
-    const observer = new MutationObserver(() => checkFocus(document.title));
-    observer.observe(document.querySelector('title') ?? document.head, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    });
-
-    return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-      observer.disconnect();
-    };
+    // If not running in Electron, we cannot track OS-level windows.
+    // We intentionally disable title-based keyword checking in the browser to prevent 
+    // false positives when the user switches to VS Code or another app.
+    console.log("[useAdaptiveFocus] Running in browser: OS window tracking is disabled.");
+    
+    return () => {};
   }, [enabled, checkFocus]);
 
   return {

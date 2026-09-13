@@ -71,17 +71,35 @@ export const useTimerStore = create<TimerStore>((set, get) => {
 
     setActiveWorkspace: (workspaceId: number, focusDuration?: number, breakDuration?: number) => {
       const state = get();
+      // Clear the PREVIOUSLY active workspace's interval — otherwise the orphaned
+      // setInterval keeps calling get().tick(), which will decrement the NEW
+      // workspace's timer (getWorkspaceState() points to the activeWorkspaceId).
+      if (state.activeWorkspaceId !== null && state.workspaces[state.activeWorkspaceId]) {
+        const prevInterval = state.workspaces[state.activeWorkspaceId].intervalId;
+        if (prevInterval) {
+          clearInterval(prevInterval);
+        }
+      }
+      // Also clear any existing interval on the workspace being activated
       const existing = state.workspaces[workspaceId];
       if (existing && existing.intervalId) {
         clearInterval(existing.intervalId);
       }
       const fd = focusDuration !== undefined ? focusDuration * 60 : state.defaultFocusDuration;
       const bd = breakDuration !== undefined ? breakDuration * 60 : state.defaultBreakDuration;
+      // Always force the activated workspace to IDLE with no running interval.
+      // This is the critical guard against auto-start: no matter what state the
+      // workspace was in before (or what intervals are leaking), activating it
+      // always puts it in a clean idle state.
       set({
         activeWorkspaceId: workspaceId,
         workspaces: {
           ...state.workspaces,
-          [workspaceId]: existing || makeInitialState(),
+          [workspaceId]: {
+            ...(existing || makeInitialState()),
+            currentState: 'IDLE',
+            intervalId: null,
+          },
         },
         defaultFocusDuration: fd,
         defaultBreakDuration: bd,

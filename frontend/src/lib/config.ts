@@ -32,3 +32,9 @@ export function getWsUrl(path: string): string {
   const standardizedPath = path.startsWith('/') ? path : `/${path}`;
   return `${WS_BASE}${standardizedPath}`;
 }
+
+/** Attach the current JWT to requests for user-scoped API resources. */
+export function getAuthHeaders(headers: HeadersInit = {}): HeadersInit {
+  const token = localStorage.getItem('prodify_access_token');
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+}

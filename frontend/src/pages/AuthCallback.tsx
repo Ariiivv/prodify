@@ -1,23 +1,24 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/store/authStore';
 import { Loader2 } from 'lucide-react';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
+  const initialize = useAuthStore((state) => state.initialize);
 
   useEffect(() => {
     const handleCallback = async () => {
-      const { error } = await supabase.auth.getSession();
-      if (error) {
-        console.error('Auth callback error:', error.message);
-        navigate('/auth');
-      } else {
+      await initialize();
+      const token = localStorage.getItem('prodify_access_token');
+      if (token) {
         navigate('/');
+      } else {
+        navigate('/auth');
       }
     };
     handleCallback();
-  }, [navigate]);
+  }, [navigate, initialize]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">

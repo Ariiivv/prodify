@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, X, Send, Bot, User, Loader2, Sparkles, AlertTriangle, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 import ReactMarkdown from 'react-markdown';
 
 const quickActions = [
@@ -14,6 +14,7 @@ const quickActions = [
 ];
 
 interface AiCoachPanelProps {
+  workspaceId?: number;
   focusMinutes: number;
   distractionCount: number;
   burnoutProbability: number;
@@ -39,6 +40,7 @@ function getTimeOfDayGreeting(): string {
 }
 
 export default function AiCoachPanel({
+  workspaceId,
   focusMinutes,
   distractionCount,
   burnoutProbability,
@@ -71,11 +73,36 @@ export default function AiCoachPanel({
 
   useEffect(() => {
     if (isOpen && !hasGreeted && messages.length === 0) {
-      const greeting = `${getTimeOfDayGreeting()}, Pranav. I'm your Prodify Intelligence. Let's optimize your flow.`;
-      setMessages([{ role: 'assistant', content: greeting }]);
-      setHasGreeted(true);
+      if (workspaceId) {
+        fetch(`${API_BASE}/workspaces/${workspaceId}/chat-history`, { headers: getAuthHeaders() })
+          .then(res => res.json())
+          .then(data => {
+            if (Array.isArray(data) && data.length > 0) {
+              const history = data.map(msg => ({ role: msg.role, content: msg.content }));
+              setMessages([
+                ...history,
+                { role: 'divider', content: '— Previous conversation —' }
+              ]);
+              setHasGreeted(true);
+            } else {
+              const greeting = `${getTimeOfDayGreeting()}, Pranav. I'm your Prodify Intelligence. Let's optimize your flow.`;
+              setMessages([{ role: 'assistant', content: greeting }]);
+              setHasGreeted(true);
+            }
+          })
+          .catch(err => {
+            console.error('Failed to load chat history:', err);
+            const greeting = `${getTimeOfDayGreeting()}, Pranav. I'm your Prodify Intelligence. Let's optimize your flow.`;
+            setMessages([{ role: 'assistant', content: greeting }]);
+            setHasGreeted(true);
+          });
+      } else {
+        const greeting = `${getTimeOfDayGreeting()}, Pranav. I'm your Prodify Intelligence. Let's optimize your flow.`;
+        setMessages([{ role: 'assistant', content: greeting }]);
+        setHasGreeted(true);
+      }
     }
-  }, [isOpen, hasGreeted, messages.length]);
+  }, [isOpen, hasGreeted, messages.length, workspaceId]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -84,6 +111,14 @@ export default function AiCoachPanel({
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
+
+    if (workspaceId) {
+      fetch(`${API_BASE}/workspaces/${workspaceId}/chat-history`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ role: 'user', content: text })
+      }).catch(console.error);
+    }
 
     try {
       const payload = {
@@ -108,18 +143,23 @@ export default function AiCoachPanel({
       };
       const response = await fetch(`${API_BASE}/api/ai-coach/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
         const errText = await response.text();
         console.error('Prodify Intelligence API error:', response.status, errText);
-        setMessages(prev => [...prev, { role: 'assistant', content: `I'm here to help you stay focused. (API returned ${response.status})` }]);
+        let errorDetails = errText;
+        try {
+          const parsed = JSON.parse(errText);
+          errorDetails = parsed.detail || parsed.response || errText;
+        } catch (e) {}
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ **API Error (${response.status})**: ${errorDetails}` }]);
         setIsLoading(false);
         return;
       }
       const data = await response.json();
-      const reply = data.response || data.message || data.reply || `Your burnout probability is ${(burnoutProbability * 100).toFixed(0)}%. ${burnoutProbability > 0.7 ? 'Take a break — your risk is high.' : burnoutProbability > 0.4 ? 'Moderate risk. Consider a short pause.' : 'You are in a good zone. Keep going!'}`;
+      const reply = data.response || data.message || data.reply || `⚠️ **Format Error**: Received empty or unrecognized response format from the server.`;
 
       // Detect distraction-related keywords in the AI reply
       const lowerReply = reply.toLowerCase();
@@ -128,8 +168,17 @@ export default function AiCoachPanel({
       }
 
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Your burnout probability is ${(burnoutProbability * 100).toFixed(0)}%. ${burnoutProbability > 0.7 ? 'Take a break immediately — your risk is high.' : burnoutProbability > 0.4 ? 'Moderate risk. Consider a short pause.' : 'You are in a good zone. Keep going!'}` }]);
+      
+      if (workspaceId) {
+        fetch(`${API_BASE}/workspaces/${workspaceId}/chat-history`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ role: 'assistant', content: reply })
+        }).catch(console.error);
+      }
+    } catch (error) {
+      console.error('Failed to communicate with Prodify backend:', error);
+      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ **Connection Error**: Unable to reach the Prodify Intelligence backend. Please ensure the FastAPI server is running.` }]);
     } finally {
       setIsLoading(false);
     }
@@ -215,6 +264,13 @@ export default function AiCoachPanel({
               )}
 
               {messages.map((msg, i) => (
+                msg.role === 'divider' ? (
+                  <div key={i} className="flex items-center justify-center py-2 opacity-50">
+                    <div className="h-px bg-border/50 flex-1" />
+                    <span className="px-3 text-[10px] text-muted-foreground uppercase tracking-widest">{msg.content}</span>
+                    <div className="h-px bg-border/50 flex-1" />
+                  </div>
+                ) : (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, y: 5 }}
@@ -247,6 +303,7 @@ export default function AiCoachPanel({
                     </div>
                   )}
                 </motion.div>
+                )
               ))}
 
               {isLoading && (

@@ -12,8 +12,9 @@ interface CameraErrorInfo {
 }
 
 interface WebcamStreamProps {
-  onDistractionDetected: () => void;
+  onDistractionDetected: (reason?: string) => void;
   onStatus?: (status: CameraStatus, error?: CameraErrorInfo) => void;
+  onEngagementState?: (state: string) => void;
   isEnabled: boolean;
   isTimerRunning?: boolean;
 }
@@ -21,7 +22,7 @@ interface WebcamStreamProps {
 const FRAME_INTERVAL_MS = 2000; // Send a frame every 2 seconds
 const CAMERA_TIMEOUT_MS = 10_000; // Fail-fast if getUserMedia doesn't resolve in 10s
 
-export default function WebcamStream({ onDistractionDetected, onStatus, isEnabled }: WebcamStreamProps) {
+export default function WebcamStream({ onDistractionDetected, onStatus, onEngagementState, isEnabled }: WebcamStreamProps) {
   const webcamRef = useRef<Webcam>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -30,11 +31,23 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
   const [retryKey, setRetryKey] = useState(0);
   const lastStatusRef = useRef<string>("focused");
 
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      const videoInputs = devices.filter(d => d.kind === 'videoinput');
+      setVideoDevices(videoInputs);
+    });
+  }, [cameraStatus]);
+
   // Refs for callback props so the socket/interval handlers always see the latest versions
   const onDistractionDetectedRef = useRef(onDistractionDetected);
   const onStatusRef = useRef(onStatus);
+  const onEngagementStateRef = useRef(onEngagementState);
   useEffect(() => { onDistractionDetectedRef.current = onDistractionDetected; }, [onDistractionDetected]);
   useEffect(() => { onStatusRef.current = onStatus; }, [onStatus]);
+  useEffect(() => { onEngagementStateRef.current = onEngagementState; }, [onEngagementState]);
 
   // Unified status setter that also calls onStatus
   const setCameraStatus = useCallback((status: CameraStatus, error?: CameraErrorInfo) => {
@@ -133,9 +146,18 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
         socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            // Bubble up engagement state for CoachInsightPanel
+            if (data.engagement_state) {
+              onEngagementStateRef.current?.(data.engagement_state);
+            }
+            // Skip 'ready' status — it's the initialization handshake, not a distraction
+            if (data.status === 'ready') {
+              console.log('🟢 [VISION] READY handshake received from backend');
+              return;
+            }
             if (data.status === 'distracted' && lastStatusRef.current === 'focused') {
-              console.log("🚨 DISTRACTION SIGNAL RECEIVED FROM BACKEND");
-              onDistractionDetectedRef.current();
+              console.log("🚨 DISTRACTION SIGNAL RECEIVED FROM BACKEND:", data.reason);
+              onDistractionDetectedRef.current(data.reason);
             } else if (data.status === 'focused' && lastStatusRef.current === 'distracted') {
               console.log("🌟 [FRONTEND] User returned to frame. Focus regained.");
             }
@@ -316,16 +338,42 @@ export default function WebcamStream({ onDistractionDetected, onStatus, isEnable
 
   // Streaming state — render the Webcam visibly so react-webcam can capture frames
   return (
-    <Webcam
-      key={retryKey}
-      ref={webcamRef}
-      className="w-full h-auto rounded-md"
-      audio={false}
-      videoConstraints={{ width: 640, height: 480, facingMode: 'user' }}
-      screenshotFormat="image/jpeg"
-      onUserMedia={handleUserMedia}
-      onUserMediaError={handleUserMediaError}
-    />
+    <div className="relative group">
+      {videoDevices.length > 1 && (
+        <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-md rounded-md border p-1 shadow-sm">
+          <select 
+            className="bg-transparent text-xs text-foreground outline-none cursor-pointer max-w-[150px] truncate"
+            value={selectedDeviceId || ''}
+            onChange={(e) => {
+              setSelectedDeviceId(e.target.value);
+              setRetryKey(k => k + 1);
+            }}
+          >
+            <option value="" disabled>Switch Camera</option>
+            {videoDevices.map(device => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Camera ${videoDevices.indexOf(device) + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <Webcam
+        key={retryKey}
+        ref={webcamRef}
+        className="w-full h-auto rounded-md"
+        audio={false}
+        videoConstraints={{ 
+          width: 640, 
+          height: 480, 
+          deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+          facingMode: selectedDeviceId ? undefined : 'user'
+        }}
+        screenshotFormat="image/jpeg"
+        onUserMedia={handleUserMedia}
+        onUserMediaError={handleUserMediaError}
+      />
+    </div>
   );
 }
 

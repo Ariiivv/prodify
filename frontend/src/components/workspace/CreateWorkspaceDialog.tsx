@@ -1,22 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, Layers, CalendarDays } from 'lucide-react';
+import { Plus, X, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
-
-const THEME_COLORS = [
-  { name: 'Violet', value: 'violet', bg: 'bg-violet-500', border: 'border-violet-400' },
-  { name: 'Cyan', value: 'cyan', bg: 'bg-cyan-500', border: 'border-cyan-400' },
-  { name: 'Emerald', value: 'emerald', bg: 'bg-emerald-500', border: 'border-emerald-400' },
-  { name: 'Amber', value: 'amber', bg: 'bg-amber-500', border: 'border-amber-400' },
-  { name: 'Rose', value: 'rose', bg: 'bg-rose-500', border: 'border-rose-400' },
-];
 
 interface CreateWorkspaceDialogProps {
   onCreated?: () => void;
@@ -26,39 +17,33 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [mode, setMode] = useState('structured');
-  const [themeColor, setThemeColor] = useState('violet');
   const [focusDuration, setFocusDuration] = useState('45');
   const [breakDuration, setBreakDuration] = useState('5');
-  const [targetHours, setTargetHours] = useState('20');
+  const [targetHours, setTargetHours] = useState('');
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
   const [focusKeywords, setFocusKeywords] = useState('');
+  const [goalDescription, setGoalDescription] = useState('');
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const keywordsArray = focusKeywords
-      .split(',')
-      .map(k => k.trim())
-      .filter(k => k.length > 0);
-
     const payload = {
       name: name.trim(),
       mode,
-      theme_color: themeColor,
+      theme_color: 'violet', // Defaulting since color picker is removed
       work_duration: parseInt(focusDuration),
       break_duration: parseInt(breakDuration),
-      target_hours: parseFloat(targetHours),
+      target_hours: targetHours ? parseFloat(targetHours) : null,
       deadline: deadline ? deadline.toISOString().split('T')[0] : null,
-      user_id: 1,
-      focus_keywords: keywordsArray.length > 0 ? JSON.stringify(keywordsArray) : null,
+      focus_keywords: focusKeywords.trim() || null,
     };
 
     try {
       const response = await fetch(`${API_BASE}/workspaces`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       });
 
@@ -74,12 +59,12 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
       // Reset form
       setName('');
       setMode('structured');
-      setThemeColor('violet');
       setFocusDuration('45');
       setBreakDuration('5');
-      setTargetHours('20');
+      setTargetHours('');
       setDeadline(undefined);
       setFocusKeywords('');
+      setGoalDescription('');
 
       // Refresh workspace list and navigate to the new workspace
       onCreated?.();
@@ -94,7 +79,7 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
       <Button
         onClick={() => setOpen(true)}
         size="sm"
-        className="rounded-xl bg-primary hover:bg-primary/80 text-white text-xs font-semibold px-4 py-2"
+        className="rounded-none bg-[#e8ff47] hover:bg-[#e8ff47]/80 text-black text-xs font-semibold px-4 py-2"
       >
         <Plus className="w-3.5 h-3.5 mr-1" />
         New Workspace
@@ -106,30 +91,46 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm overflow-y-auto p-4"
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-card border border-border/50 rounded-2xl p-6 w-full max-w-lg my-8"
+              className="bg-[#111111] border border-[#2a2a2a] rounded-none p-6 w-full max-w-lg my-8 shadow-2xl"
             >
               <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <Layers className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-semibold text-foreground">New Workspace</h2>
-                    <p className="text-xs text-muted-foreground">Configure your premium focus workspace</p>
-                  </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Create Workspace</h2>
                 </div>
-                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
+                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-white">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Mode Select (Pills) */}
+                <div className="flex bg-transparent border border-[#2a2a2a] p-1 rounded-full">
+                  <button
+                    type="button"
+                    onClick={() => setMode('structured')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
+                      mode === 'structured' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
+                    }`}
+                  >
+                    Structured Goal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('flexible')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
+                      mode === 'flexible' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
+                    }`}
+                  >
+                    Flexible Tracking
+                  </button>
+                </div>
+
                 {/* Workspace Name */}
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Workspace Name</label>
@@ -138,45 +139,8 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g., Design Sprint"
-                    className="bg-secondary/50 border-border/50 rounded-xl"
+                    className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                   />
-                </div>
-
-                {/* Mode Select */}
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Mode</label>
-                  <Select value={mode} onValueChange={setMode}>
-                    <SelectTrigger className="w-full bg-secondary/50 border-border/50 rounded-xl">
-                      <SelectValue placeholder="Select a mode" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl bg-card border-border/50">
-                      <SelectItem value="structured">Structured Goal Mode</SelectItem>
-                      <SelectItem value="flexible">Flexible Tracking Mode</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Theme Color Picker */}
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-2 block">Theme Color</label>
-                  <div className="flex items-center gap-3">
-                    {THEME_COLORS.map((color) => (
-                      <button
-                        key={color.value}
-                        type="button"
-                        onClick={() => setThemeColor(color.value)}
-                        className={`w-8 h-8 rounded-full ${color.bg} transition-all relative flex items-center justify-center`}
-                      >
-                        {themeColor === color.value && (
-                          <motion.div
-                            layoutId="selectedColor"
-                            className="absolute -inset-1 rounded-full border border-white/50"
-                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                          />
-                        )}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Focus and Break Durations */}
@@ -190,7 +154,7 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
                       onChange={(e) => setFocusDuration(e.target.value)}
                       placeholder="45"
                       min="1"
-                      className="bg-secondary/50 border-border/50 rounded-xl"
+                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                     />
                   </div>
                   <div>
@@ -202,78 +166,95 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
                       onChange={(e) => setBreakDuration(e.target.value)}
                       placeholder="5"
                       min="1"
-                      className="bg-secondary/50 border-border/50 rounded-xl"
+                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                     />
                   </div>
                 </div>
 
-                {/* Target Hours and Deadline (visible if Structured) */}
-                {mode === 'structured' && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target Hours</label>
-                      <Input
-                        type="number"
-                        value={targetHours}
-                        onChange={(e) => setTargetHours(e.target.value)}
-                        placeholder="20"
-                        min="1"
-                        className="bg-secondary/50 border-border/50 rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Deadline</label>
-                      <Popover>
-                        <PopoverTrigger className="w-full">
-                          <span
-                            className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-9 w-full px-4 py-2 bg-secondary/50 border-border/50 rounded-xl ${!deadline ? 'text-muted-foreground' : ''}`}
-                          >
-                            <CalendarDays className="mr-2 h-4 w-4" />
-                            {deadline ? format(deadline, 'PPP') : <span>Pick a date</span>}
-                          </span>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0 bg-slate-950 z-[9999] border border-slate-700 shadow-2xl relative">
-                          <Calendar
-                            mode="single"
-                            selected={deadline}
-                            onSelect={setDeadline}
-                            initialFocus
+                <AnimatePresence mode="wait">
+                  {mode === 'structured' && (
+                    <motion.div
+                      key="structured-fields"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-6 overflow-hidden"
+                    >
+                      {/* Target Hours and Deadline */}
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Target Hours</label>
+                          <Input
+                            type="number"
+                            value={targetHours}
+                            onChange={(e) => setTargetHours(e.target.value)}
+                            placeholder="20"
+                            min="1"
+                            className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                           />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                  </div>
-                )}
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Deadline</label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className={`w-full justify-start text-left font-normal bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none hover:bg-[#2a2a2a] hover:text-white ${!deadline && 'text-muted-foreground'}`}
+                              >
+                                <CalendarDays className="mr-2 h-4 w-4 shrink-0" />
+                                {deadline ? format(deadline, 'PPP') : <span>Pick a date</span>}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0 bg-[#111111] border-[#2a2a2a] rounded-none z-[9999] shadow-2xl relative">
+                              <Calendar
+                                mode="single"
+                                selected={deadline}
+                                onSelect={setDeadline}
+                                initialFocus
+                                className="text-white"
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
+
+                      {/* Goal Description */}
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Goal Description</label>
+                        <textarea
+                          value={goalDescription}
+                          onChange={(e) => setGoalDescription(e.target.value)}
+                          placeholder="What is the final deliverable for this workspace?"
+                          rows={2}
+                          className="flex w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-none px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#e8ff47] resize-none"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Focus Keywords */}
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Focus Keywords (comma-separated)</label>
+                <div className="pt-2">
+                  <label className="text-sm font-bold text-white block">Allowed Apps & Tasks</label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Describe your session in plain English. The AI uses this to judge distractions.
+                  </p>
                   <textarea
+                    required
                     value={focusKeywords}
                     onChange={(e) => setFocusKeywords(e.target.value)}
-                    placeholder="e.g., VS Code, YouTube - Coder Coder, Notion, Terminal"
-                    rows={2}
-                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 bg-secondary/50 border-border/50 rounded-xl resize-none"
+                    placeholder="e.g., I am writing code in VS Code and reading React documentation on Chrome..."
+                    rows={3}
+                    className="flex w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-none px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#e8ff47] resize-none"
                   />
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    Adaptive focus tracking will check if your active tab matches any of these keywords.
-                  </p>
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-3 pt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setOpen(false)}
-                    className="flex-1 rounded-xl"
-                  >
-                    Cancel
-                  </Button>
+                <div className="pt-4">
                   <Button
                     type="submit"
                     disabled={!name.trim()}
-                    className="flex-1 rounded-xl"
+                    className="w-full bg-[#e8ff47] hover:bg-[#e8ff47]/90 text-black font-bold rounded-none h-11"
                   >
                     Create Workspace
                   </Button>

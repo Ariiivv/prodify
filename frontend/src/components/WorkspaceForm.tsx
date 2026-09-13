@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 
 interface Props {
   isOpen: boolean;
@@ -14,6 +14,7 @@ export default function WorkspaceForm({ isOpen, setIsOpen }: Props) {
   const [deadline, setDeadline] = useState('');
   const [workDuration, setWorkDuration] = useState('45');
   const [breakDuration, setBreakDuration] = useState('5');
+  const [sessionIntent, setSessionIntent] = useState('');
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,15 +74,15 @@ export default function WorkspaceForm({ isOpen, setIsOpen }: Props) {
     try {
       const res = await fetch(`${API_BASE}/workspaces`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          user_id: 1,
           name,
           mode,
           target_hours: targetHours ? parseFloat(targetHours) : null,
           deadline: deadline || null,
           work_duration: parseInt(workDuration) || 45,
           break_duration: parseInt(breakDuration) || 5,
+          focus_keywords: sessionIntent.trim() || null,
         }),
       });
       if (!res.ok) throw new Error();
@@ -202,6 +203,17 @@ export default function WorkspaceForm({ isOpen, setIsOpen }: Props) {
               </div>
             </>
           )}
+          <motion.div custom={5} variants={formItemVariants} initial="hidden" animate="visible">
+            <label className="text-sm text-slate-400 mb-1 block">Session Intent</label>
+            <textarea
+              value={sessionIntent}
+              onChange={e => setSessionIntent(e.target.value)}
+              placeholder="Describe what you're going to do in this session... (e.g., I am learning full-stack web development and writing a React app)."
+              rows={3}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-500 placeholder-slate-500 transition-colors duration-200 resize-none text-sm"
+            />
+            <p className="text-xs text-slate-500 mt-1">Describe your session goals in natural language. Our AI will judge if your active windows align with this intent.</p>
+          </motion.div>
           <motion.div
             className="flex gap-3 mt-2"
             custom={6}

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, Clock, AlertCircle, TrendingUp, Flame } from 'lucide-react';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -32,8 +32,8 @@ export default function Analytics() {
     const fetchData = async () => {
       try {
         const [sessRes, wsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/telemetry/sessions?limit=200`).catch(() => null),
-          fetch(`${API_BASE}/workspaces`).catch(() => null),
+          fetch(`${API_BASE}/api/telemetry/sessions?limit=200`, { headers: getAuthHeaders() }).catch(() => null),
+          fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders() }).catch(() => null),
         ]);
         if (sessRes && sessRes.ok) {
           const data = await sessRes.json();

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer
@@ -32,15 +32,36 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ workspaceId, workspaceN
   const [distractionVelocity, setDistractionVelocity] = useState<DistractionVelocityData | null>(null);
   const [volumetric, setVolumetric] = useState<VolumetricData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [coachInsights, setCoachInsights] = useState<string | null>(null);
+  const [loadingInsights, setLoadingInsights] = useState(false);
+
+  const generateInsights = async () => {
+    setLoadingInsights(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/telemetry/coach-insights?days=7`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setCoachInsights(data.insights);
+      } else {
+        setCoachInsights("Unable to fetch AI coaching insights at this time.");
+      }
+    } catch (error) {
+      console.error("Error fetching AI coach insights:", error);
+      setCoachInsights("Connection error while generating AI insights.");
+    } finally {
+      setLoadingInsights(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        const headers = getAuthHeaders();
         const [densityRes, velocityRes, volumetricRes] = await Promise.all([
-          fetch(`${API_BASE}/api/telemetry/focus-density/${workspaceId}`),
-          fetch(`${API_BASE}/api/telemetry/distraction-velocity/${workspaceId}`),
-          fetch(`${API_BASE}/api/telemetry/volumetric-efficiency`),
+          fetch(`${API_BASE}/api/telemetry/focus-density/${workspaceId}`, { headers }),
+          fetch(`${API_BASE}/api/telemetry/distraction-velocity/${workspaceId}`, { headers }),
+          fetch(`${API_BASE}/api/telemetry/volumetric-efficiency`, { headers }),
         ]);
 
         if (densityRes.ok) setFocusDensity(await densityRes.json());
@@ -103,6 +124,48 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ workspaceId, workspaceN
         <h2 className="text-lg font-bold text-white tracking-tight">📊 Analytics</h2>
         {loading && <span className="text-xs text-slate-500 animate-pulse">Loading...</span>}
       </div>
+
+      {/* AI Coach Pattern Insights */}
+      <motion.div
+        className="bg-gradient-to-br from-violet-950/40 via-slate-900 to-slate-900 rounded-xl p-4 mb-5 border border-violet-500/30 shadow-lg shadow-violet-500/5"
+        custom={0}
+        variants={cardVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🧠</span>
+            <h3 className="text-xs font-semibold text-violet-300 tracking-wide uppercase">AI Pattern Coach</h3>
+          </div>
+          <button
+            onClick={generateInsights}
+            disabled={loadingInsights}
+            className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-medium transition-all duration-200 shadow-md shadow-violet-600/20 active:scale-95 flex items-center gap-1.5"
+          >
+            {loadingInsights ? (
+              <>
+                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <span>✨</span>
+                Generate AI Insights
+              </>
+            )}
+          </button>
+        </div>
+        {coachInsights ? (
+          <div className="mt-3 p-3.5 rounded-lg bg-slate-950/60 border border-violet-500/20 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
+            {coachInsights}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500 italic">
+            Click above to generate a deep behavioral analysis of your window switching habits and distraction triggers.
+          </p>
+        )}
+      </motion.div>
 
       {/* Focus Density Score */}
       <motion.div

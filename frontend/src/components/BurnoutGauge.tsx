@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useTimerStore } from '@/store/timerStore';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 
 interface BurnoutGaugeProps {
   onProbabilityChange?: (probability: number) => void;
@@ -42,11 +43,9 @@ const BurnoutGauge: React.FC<BurnoutGaugeProps> = ({ onProbabilityChange, focusM
 
     const fetchBurnoutPrediction = async () => {
       try {
-        // dynamically check for the live cloud URL first, fallback to localhost
-        const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000';
-        
         const response = await fetch(
-          `${API_URL}/api/ml/burnout-prediction?current_hour=${currentHour}&current_focus_minutes=${focusMinutes}`
+          `${API_BASE}/api/ml/burnout-prediction?current_hour=${currentHour}&current_focus_minutes=${focusMinutes}`,
+          { headers: getAuthHeaders() }
         );
         if (!response.ok) throw new Error('Failed to fetch ML data');
         const data = await response.json();

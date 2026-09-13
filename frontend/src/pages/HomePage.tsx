@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sparkles, Layers, Timer, TrendingUp, Flame, BarChart3 } from 'lucide-react';
-import { API_BASE } from '@/lib/config';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 
 import AnimatedBackground from '@/components/dashboard/AnimatedBackground';
 import ScrambleNumber from '@/components/dashboard/ScrambleNumber';
 import DailyGoalRing from '@/components/dashboard/DailyGoalRing';
 import RecentActivity from '@/components/dashboard/RecentActivity';
+import GoalProgressBar from '@/components/dashboard/GoalProgressBar';
+import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 import WorkspaceCard from '@/components/workspace/WorkspaceCard';
 import CreateWorkspaceDialog from '@/components/workspace/CreateWorkspaceDialog';
 
@@ -15,6 +17,10 @@ interface Workspace {
   id: number;
   name: string;
   mode: string;
+  target_hours?: number;
+  deadline?: string;
+  work_duration?: number;
+  focus_keywords?: string;
 }
 
 interface Session {
@@ -26,25 +32,85 @@ interface Session {
   created_date?: string;
 }
 
+interface GoalPlan {
+  target_hours: number;
+  deadline: string;
+  deadline_display: string;
+  days_remaining: number;
+  historical_sprint_minutes: number;
+  daily_minutes_required: number;
+  sessions_per_day: number;
+  morning_sessions: number;
+  afternoon_sessions: number;
+}
+
+interface DistractionData {
+  top_apps: { app: string; count: number }[];
+  peak_hour: number;
+  total_events: number;
+}
+
 const HomePage: React.FC = () => {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [goalPlans, setGoalPlans] = useState<Record<number, GoalPlan>>({});
+  const [peakDistractionHour, setPeakDistractionHour] = useState<number | undefined>(undefined);
 
   const fetchData = useCallback(async () => {
     try {
-      const wsRes = await fetch(`${API_BASE}/workspaces`);
+      const wsRes = await fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders() });
 
       if (wsRes.ok) {
         const wsData: Workspace[] = await wsRes.json();
         setWorkspaces(wsData);
+        setIsLoading(false); // Unblock UI immediately so workspaces appear
+
+        // Fetch Goal Optimizer plans for structured workspaces with targets
+        const goalWorkspaces = wsData.filter(
+          ws => ws.target_hours && ws.target_hours > 0 && ws.deadline
+        );
+        const plans: Record<number, GoalPlan> = {};
+        await Promise.all(
+          goalWorkspaces.map(async ws => {
+            try {
+              const planRes = await fetch(
+                `${API_BASE}/api/goal-optimizer/plan?target_hours=${ws.target_hours}&deadline=${ws.deadline}&workspace_name=${encodeURIComponent(ws.name)}`,
+                { headers: getAuthHeaders() }
+              );
+              if (planRes.ok) {
+                plans[ws.id] = await planRes.json();
+              }
+            } catch {
+              // Goal optimizer not available — skip silently
+            }
+          })
+        );
+        setGoalPlans(plans);
       }
 
-      // Fetch recent sessions for the activity panel
-      const sessListRes = await fetch(`${API_BASE}/api/telemetry/sessions?limit=100`).catch(() => null);
+      // Fetch recent sessions
+      const sessListRes = await fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers: getAuthHeaders() }).catch(() => null);
       if (sessListRes && sessListRes.ok) {
         const sessData: Session[] = await sessListRes.json();
         setSessions(sessData);
+      }
+
+      // Fetch coach insights to extract peak distraction hour
+      try {
+        const insightsRes = await fetch(`${API_BASE}/api/ai-coach/chat`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            message: '__internal_peak_hour_query',
+            context: { workspaceName: 'Dashboard' },
+          }),
+        });
+        // We don't actually need the response — the backend's tool will expose
+        // the peak hour via the distraction data tool. For now, approximate from
+        // the current hour.
+      } catch {
+        // Non-critical
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -57,6 +123,24 @@ const HomePage: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
+  // Detect the peak distraction hour from session patterns (client-side heuristic)
+  useEffect(() => {
+    if (sessions.length < 3) return;
+    const hourCounts: Record<number, number> = {};
+    sessions.forEach(s => {
+      if (s.distraction_count > 0 && s.created_date) {
+        try {
+          const hour = new Date(s.created_date).getHours();
+          hourCounts[hour] = (hourCounts[hour] || 0) + s.distraction_count;
+        } catch { /* skip invalid dates */ }
+      }
+    });
+    const sorted = Object.entries(hourCounts).sort(([, a], [, b]) => b - a);
+    if (sorted.length > 0) {
+      setPeakDistractionHour(parseInt(sorted[0][0]));
+    }
+  }, [sessions]);
+
   const handleDeleted = useCallback((workspaceId: number) => {
     setWorkspaces(prev => prev.filter(ws => ws.id !== workspaceId));
   }, []);
@@ -66,11 +150,14 @@ const HomePage: React.FC = () => {
     ? Math.round(sessions.reduce((s, r) => s + (r.burnout_score || 0), 0) / sessions.length * 100)
     : 0;
 
+  // Check if ANY workspace has a goal plan for the hero section
+  const goalWorkspaces = workspaces.filter(ws => goalPlans[ws.id]);
+
   const stats = [
-    { label: 'Workspaces',   value: String(workspaces.length),                   icon: Layers,   color: 'text-violet-400', glow: 'from-violet-500/10' },
-    { label: 'Sessions',     value: String(sessions.length),                      icon: Timer,    color: 'text-cyan-400',   glow: 'from-cyan-500/10' },
-    { label: 'Focus Hours',  value: (totalFocusMinutes / 60).toFixed(1) + 'h',   icon: TrendingUp,color:'text-green-400', glow: 'from-green-500/10' },
-    { label: 'Avg Burnout',  value: avgBurnout + '%',                             icon: Flame,    color: 'text-rose-400',   glow: 'from-rose-500/10' },
+    { label: 'Workspaces',   value: String(workspaces.length),                   icon: Layers,    accent: true },
+    { label: 'Sessions',     value: String(sessions.length),                      icon: Timer,     accent: false },
+    { label: 'Focus Hours',  value: (totalFocusMinutes / 60).toFixed(1) + 'h',   icon: TrendingUp,accent: false },
+    { label: 'Avg Burnout',  value: avgBurnout + '%',                             icon: Flame,     accent: false },
   ];
 
   const container = {
@@ -82,11 +169,13 @@ const HomePage: React.FC = () => {
     show:   { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] } },
   };
 
+  const currentHour = new Date().getHours();
+
   return (
     <>
       <AnimatedBackground />
 
-      <div className="p-6 md:p-10 max-w-6xl mx-auto">
+      <div className="p-6 md:p-10 max-w-6xl mx-auto relative z-10">
 
         {/* ── Header ── */}
         <motion.div
@@ -97,21 +186,15 @@ const HomePage: React.FC = () => {
         >
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <motion.div
-                animate={{ rotate: [0, 15, -10, 0] }}
-                transition={{ duration: 3, repeat: Infinity, repeatDelay: 4 }}
-              >
-                <Sparkles className="w-5 h-5 text-primary" />
-              </motion.div>
-              <span className="text-xs font-semibold text-primary tracking-[0.2em] uppercase">Prodify</span>
+              <span className="text-xs font-mono font-bold text-prodify-accent tracking-[0.25em] uppercase">Prodify</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Your Workspace</h1>
-            <p className="text-sm text-muted-foreground mt-1">Focus smarter. Track burnout. Stay sharp.</p>
+            <h1 className="text-2xl md:text-3xl font-heading font-bold text-white tracking-tight">Your Workspace</h1>
+            <p className="text-sm text-prodify-muted mt-1 font-body">Focus smarter. Track burnout. Stay sharp.</p>
           </div>
           <div className="flex items-center gap-3">
             <Link
               to="/analytics"
-              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] text-muted-foreground hover:text-foreground text-xs font-medium transition-all"
+              className="hidden md:flex items-center gap-2 px-3 py-2 border border-prodify-border bg-prodify-surface hover:bg-prodify-surface-alt text-prodify-muted hover:text-white text-xs font-mono font-medium transition-all"
             >
               <BarChart3 className="w-3.5 h-3.5" />
               Analytics
@@ -130,31 +213,29 @@ const HomePage: React.FC = () => {
           {/* Daily Goal Card */}
           <motion.div
             variants={item}
-            className="relative rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-xl p-5 overflow-hidden group lg:col-span-1"
+            className="relative border border-prodify-border bg-prodify-surface p-5 overflow-hidden group lg:col-span-1"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
             <div className="relative z-10">
               <DailyGoalRing focusMinutes={totalFocusMinutes} targetMinutes={240} />
             </div>
           </motion.div>
 
           {/* Stat Cards */}
-          {stats.map(({ label, value, icon: Icon, color, glow }) => (
+          {stats.map(({ label, value, icon: Icon, accent }) => (
             <motion.div
               key={label}
               variants={item}
-              whileHover={{ y: -4, transition: { duration: 0.18 } }}
-              className="relative rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-xl p-5 overflow-hidden group cursor-default"
+              whileHover={{ y: -2, transition: { duration: 0.15 } }}
+              className="relative border border-prodify-border bg-prodify-surface p-5 overflow-hidden group cursor-default"
             >
-              <div className={`absolute inset-0 bg-gradient-to-br ${glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-400 rounded-2xl`} />
               <div className="relative z-10">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/[0.04]">
-                    <Icon className={`w-4 h-4 ${color}`} />
+                  <div className="w-8 h-8 flex items-center justify-center bg-prodify-surface-alt border border-prodify-border">
+                    <Icon className={`w-4 h-4 ${accent ? 'text-prodify-accent' : 'text-prodify-muted'}`} />
                   </div>
-                  <span className="text-xs text-muted-foreground font-medium">{label}</span>
+                  <span className="text-xs text-prodify-muted font-mono uppercase tracking-wider">{label}</span>
                 </div>
-                <span className="text-2xl md:text-3xl font-bold text-foreground font-mono">
+                <span className="text-3xl md:text-4xl font-bold text-white font-mono tracking-tight">
                   <ScrambleNumber value={value} duration={900} />
                 </span>
               </div>
@@ -162,23 +243,59 @@ const HomePage: React.FC = () => {
           ))}
         </motion.div>
 
-        {/* ── Main Grid: Workspaces + Activity ── */}
+        {/* ── Goal Progress Bars (for workspaces with targets + deadlines) ── */}
+        {goalWorkspaces.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="space-y-4 mb-8"
+          >
+            <h2 className="text-base font-heading font-semibold text-white flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-prodify-accent" />
+              Active Goal Plans
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {goalWorkspaces.map(ws => {
+                const plan = goalPlans[ws.id];
+                // Calculate completed hours for this specific workspace
+                const wsSessionMinutes = sessions
+                  .filter(s => s.workspace_id === ws.id)
+                  .reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+                return (
+                  <GoalProgressBar
+                    key={ws.id}
+                    goalName={ws.name}
+                    targetHours={plan.target_hours}
+                    completedHours={wsSessionMinutes / 60}
+                    deadlineDisplay={plan.deadline_display}
+                    daysRemaining={plan.days_remaining}
+                    sessionsPerDay={plan.sessions_per_day}
+                    sprintMinutes={plan.historical_sprint_minutes}
+                  />
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Main Grid: Workspaces + Sidebar ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* Workspaces */}
           <div className="lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-foreground">Workspaces</h2>
-              <span className="text-xs text-muted-foreground">{workspaces.length} total</span>
+              <h2 className="text-base font-heading font-semibold text-white">Workspaces</h2>
+              <span className="text-xs text-prodify-muted font-mono">{workspaces.length} total</span>
             </div>
 
             {isLoading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 animate-pulse">
-                    <div className="w-10 h-10 rounded-xl bg-white/[0.05] mb-4" />
-                    <div className="h-4 bg-white/[0.05] rounded w-2/3 mb-2" />
-                    <div className="h-3 bg-white/[0.05] rounded w-1/3" />
+                  <div key={i} className="border border-prodify-border bg-prodify-surface p-5 animate-pulse">
+                    <div className="w-10 h-10 bg-prodify-surface-alt mb-4" />
+                    <div className="h-4 bg-prodify-surface-alt w-2/3 mb-2" />
+                    <div className="h-3 bg-prodify-surface-alt w-1/3" />
                   </div>
                 ))}
               </div>
@@ -186,11 +303,11 @@ const HomePage: React.FC = () => {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-20 rounded-2xl border border-dashed border-white/[0.07]"
+                className="text-center py-20 border border-dashed border-prodify-border"
               >
-                <Layers className="w-10 h-10 text-muted-foreground/20 mx-auto mb-4" />
-                <p className="text-muted-foreground text-sm">No workspaces yet.</p>
-                <p className="text-muted-foreground/60 text-xs mt-1">Create your first one to get started.</p>
+                <Layers className="w-10 h-10 text-prodify-muted/30 mx-auto mb-4" />
+                <p className="text-prodify-muted text-sm">No workspaces yet.</p>
+                <p className="text-prodify-muted/60 text-xs mt-1">Create your first one to get started.</p>
               </motion.div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -201,20 +318,29 @@ const HomePage: React.FC = () => {
             )}
           </div>
 
-          {/* Recent Activity */}
+          {/* Sidebar: Activity + Coach Insight Panel */}
           <div className="lg:col-span-1 space-y-4">
             <RecentActivity sessions={sessions} workspaces={workspaces} />
 
-            {/* Quick tip card */}
+            {/* Coach Insight Panel — replaces static Pro Tip */}
+            <CoachInsightPanel
+              engagementState="ACTIVE_WORK"
+              isSessionActive={false}
+              currentHour={currentHour}
+              peakDistractionHour={peakDistractionHour}
+              workspaceName={workspaces[0]?.name || 'Default'}
+            />
+
+            {/* Compact Pro Tip */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.55 }}
-              className="rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-xl p-5"
+              className="border border-prodify-border bg-prodify-surface p-5"
             >
-              <p className="text-xs font-semibold text-muted-foreground tracking-widest uppercase mb-3">Pro Tip</p>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Work in <span className="text-foreground font-medium">focused sprints</span> of 45–90 min, then take a proper break. Your brain consolidates memory during rest, not during work.
+              <p className="text-xs font-mono font-semibold text-prodify-accent tracking-widest uppercase mb-3">Pro Tip</p>
+              <p className="text-sm text-prodify-muted leading-relaxed">
+                Work in <span className="text-white font-medium">focused sprints</span> of 45–90 min, then take a proper break. Your brain consolidates memory during rest, not during work.
               </p>
             </motion.div>
           </div>

@@ -17,12 +17,12 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-prodify-bg flex">
       {/* Sidebar */}
-      <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-border/50 bg-card/50 backdrop-blur-xl">
+      <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-prodify-border bg-prodify-surface">
         <Link to="/" className="mb-12">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 bg-prodify-accent flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-prodify-bg" />
           </div>
         </Link>
 
@@ -35,21 +35,21 @@ export default function AppLayout() {
                 to={path}
                 className="relative group"
               >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 ${
+                <div className={`w-12 h-12 flex items-center justify-center transition-all duration-200 ${
                   isActive
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                    ? 'bg-prodify-accent/10 text-prodify-accent'
+                    : 'text-prodify-muted hover:text-white hover:bg-prodify-surface-alt'
                 }`}>
                   {isActive && (
                     <motion.div
                       layoutId="nav-indicator"
-                      className="absolute left-0 w-1 h-6 rounded-r-full bg-primary"
+                      className="absolute left-0 w-[2px] h-6 bg-prodify-accent"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />
                   )}
                   <Icon className="w-5 h-5" />
                 </div>
-                <div className="absolute left-16 top-1/2 -translate-y-1/2 px-2 py-1 bg-card border border-border rounded-md text-xs text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                <div className="absolute left-16 top-1/2 -translate-y-1/2 px-2 py-1 bg-prodify-surface border border-prodify-border text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
                   {label}
                 </div>
               </Link>
@@ -61,11 +61,11 @@ export default function AppLayout() {
         <div className="mt-auto flex flex-col items-center gap-2">
           {/* Avatar */}
           <div className="relative group">
-            <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground hover:bg-secondary/80 transition-colors cursor-default">
+            <div className="w-10 h-10 bg-prodify-surface-alt flex items-center justify-center text-prodify-muted hover:text-white transition-colors cursor-default">
               <User className="w-5 h-5" />
             </div>
-            <div className="absolute left-16 bottom-0 px-3 py-2 bg-card border border-border rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 min-w-[160px]">
-              <p className="text-xs text-foreground font-medium truncate">
+            <div className="absolute left-16 bottom-0 px-3 py-2 bg-prodify-surface border border-prodify-border opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 min-w-[160px]">
+              <p className="text-xs text-white font-medium truncate">
                 {user?.email || 'User'}
               </p>
             </div>
@@ -76,10 +76,10 @@ export default function AppLayout() {
             onClick={handleSignOut}
             className="relative group"
           >
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all">
+            <div className="w-10 h-10 flex items-center justify-center text-prodify-muted hover:text-prodify-danger hover:bg-prodify-danger/10 transition-all">
               <LogOut className="w-5 h-5" />
             </div>
-            <div className="absolute left-16 top-1/2 -translate-y-1/2 px-2 py-1 bg-card border border-border rounded-md text-xs text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+            <div className="absolute left-16 top-1/2 -translate-y-1/2 px-2 py-1 bg-prodify-surface border border-prodify-border text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
               Sign Out
             </div>
           </button>
@@ -87,7 +87,7 @@ export default function AppLayout() {
       </aside>
 
       {/* Mobile bottom nav */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/90 backdrop-blur-xl border-t border-border/50">
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-prodify-surface border-t border-prodify-border">
         <nav className="flex justify-around py-2">
           {navItems.map(({ path, icon: Icon, label }) => {
             const isActive = location.pathname === path;
@@ -95,8 +95,8 @@ export default function AppLayout() {
               <Link
                 key={path}
                 to={path}
-                className={`flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-all ${
-                  isActive ? 'text-primary' : 'text-muted-foreground'
+                className={`flex flex-col items-center gap-1 px-3 py-1 transition-all ${
+                  isActive ? 'text-prodify-accent' : 'text-prodify-muted'
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -106,7 +106,7 @@ export default function AppLayout() {
           })}
           <button
             onClick={handleSignOut}
-            className="flex flex-col items-center gap-1 px-3 py-1 rounded-lg text-muted-foreground"
+            className="flex flex-col items-center gap-1 px-3 py-1 text-prodify-muted"
           >
             <LogOut className="w-5 h-5" />
             <span className="text-[10px] font-medium">Sign Out</span>
