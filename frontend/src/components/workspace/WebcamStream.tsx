@@ -39,7 +39,7 @@ export default function WebcamStream({ onDistractionDetected, onStatus, onEngage
       const videoInputs = devices.filter(d => d.kind === 'videoinput');
       setVideoDevices(videoInputs);
     });
-  }, [cameraStatus]);
+  }, []);
 
   // Refs for callback props so the socket/interval handlers always see the latest versions
   const onDistractionDetectedRef = useRef(onDistractionDetected);
@@ -338,41 +338,41 @@ export default function WebcamStream({ onDistractionDetected, onStatus, onEngage
 
   // Streaming state — render the Webcam visibly so react-webcam can capture frames
   return (
-    <div className="relative group">
+    <div className="flex flex-col gap-2">
+      <div className="relative">
+        <Webcam
+          key={retryKey}
+          ref={webcamRef}
+          className="w-full h-auto rounded-md"
+          audio={false}
+          videoConstraints={{ 
+            width: 640, 
+            height: 480, 
+            deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+            facingMode: selectedDeviceId ? undefined : 'user'
+          }}
+          screenshotFormat="image/jpeg"
+          onUserMedia={handleUserMedia}
+          onUserMediaError={handleUserMediaError}
+        />
+      </div>
       {videoDevices.length > 1 && (
-        <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-md rounded-md border p-1 shadow-sm">
-          <select 
-            className="bg-transparent text-xs text-foreground outline-none cursor-pointer max-w-[150px] truncate"
-            value={selectedDeviceId || ''}
-            onChange={(e) => {
-              setSelectedDeviceId(e.target.value);
-              setRetryKey(k => k + 1);
-            }}
-          >
-            <option value="" disabled>Switch Camera</option>
-            {videoDevices.map(device => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label || `Camera ${videoDevices.indexOf(device) + 1}`}
-              </option>
-            ))}
-          </select>
-        </div>
+        <select 
+          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-xs p-1.5 outline-none cursor-pointer rounded-none"
+          value={selectedDeviceId || ''}
+          onChange={(e) => {
+            setSelectedDeviceId(e.target.value);
+            setRetryKey(k => k + 1);
+          }}
+        >
+          <option value="" disabled>Switch Camera</option>
+          {videoDevices.map(device => (
+            <option key={device.deviceId} value={device.deviceId}>
+              {device.label || `Camera ${videoDevices.indexOf(device) + 1}`}
+            </option>
+          ))}
+        </select>
       )}
-      <Webcam
-        key={retryKey}
-        ref={webcamRef}
-        className="w-full h-auto rounded-md"
-        audio={false}
-        videoConstraints={{ 
-          width: 640, 
-          height: 480, 
-          deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-          facingMode: selectedDeviceId ? undefined : 'user'
-        }}
-        screenshotFormat="image/jpeg"
-        onUserMedia={handleUserMedia}
-        onUserMediaError={handleUserMediaError}
-      />
     </div>
   );
 }

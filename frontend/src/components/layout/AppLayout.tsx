@@ -1,10 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, BarChart3, Sparkles, LogOut, User } from 'lucide-react';
+import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 
 const navItems = [
-  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/', icon: Home, label: 'Home' },
+  { path: '/#workspaces', icon: LayoutGrid, label: 'Workspaces' },
   { path: '/analytics', icon: BarChart3, label: 'Analytics' },
 ];
 
@@ -19,23 +20,23 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-prodify-bg flex">
       {/* Sidebar */}
-      <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-prodify-border bg-prodify-surface">
-        <Link to="/" className="mb-12">
+      <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-prodify-border bg-prodify-surface overflow-hidden">
+        <Link to="/" className="mb-12 flex flex-col items-center gap-1">
           <div className="w-10 h-10 bg-prodify-accent flex items-center justify-center">
             <Sparkles className="w-5 h-5 text-prodify-bg" />
           </div>
         </Link>
 
-        <nav className="flex flex-col gap-2 flex-1">
+        <nav className="flex flex-col gap-6 flex-1 w-full mt-4">
           {navItems.map(({ path, icon: Icon, label }) => {
-            const isActive = location.pathname === path;
+            const isActive = location.pathname === path || (path === '/#workspaces' && location.hash === '#workspaces');
             return (
               <Link
                 key={path}
                 to={path}
-                className="relative group"
+                className="relative group flex flex-col items-center gap-1.5 w-full"
               >
-                <div className={`w-12 h-12 flex items-center justify-center transition-all duration-200 ${
+                <div className={`w-10 h-10 flex items-center justify-center transition-all duration-200 rounded ${
                   isActive
                     ? 'bg-prodify-accent/10 text-prodify-accent'
                     : 'text-prodify-muted hover:text-white hover:bg-prodify-surface-alt'
@@ -49,39 +50,31 @@ export default function AppLayout() {
                   )}
                   <Icon className="w-5 h-5" />
                 </div>
-                <div className="absolute left-16 top-1/2 -translate-y-1/2 px-2 py-1 bg-prodify-surface border border-prodify-border text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                  {label}
-                </div>
+                <span className="text-xs text-[#666666] font-medium">{label}</span>
               </Link>
             );
           })}
         </nav>
 
         {/* User section at bottom */}
-        <div className="mt-auto flex flex-col items-center gap-2">
+        <div className="mt-auto flex flex-col items-center gap-6 w-full">
           {/* Avatar */}
-          <div className="relative group">
-            <div className="w-10 h-10 bg-prodify-surface-alt flex items-center justify-center text-prodify-muted hover:text-white transition-colors cursor-default">
+          <div className="relative group flex flex-col items-center gap-1.5 w-full">
+            <div className="w-10 h-10 bg-prodify-surface-alt flex items-center justify-center text-prodify-muted hover:text-white transition-colors cursor-default rounded">
               <User className="w-5 h-5" />
             </div>
-            <div className="absolute left-16 bottom-0 px-3 py-2 bg-prodify-surface border border-prodify-border opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 min-w-[160px]">
-              <p className="text-xs text-white font-medium truncate">
-                {user?.email || 'User'}
-              </p>
-            </div>
+            <span className="text-xs text-[#666666] font-medium">Profile</span>
           </div>
 
           {/* Sign Out */}
           <button
             onClick={handleSignOut}
-            className="relative group"
+            className="relative group flex flex-col items-center gap-1.5 w-full"
           >
-            <div className="w-10 h-10 flex items-center justify-center text-prodify-muted hover:text-prodify-danger hover:bg-prodify-danger/10 transition-all">
+            <div className="w-10 h-10 flex items-center justify-center text-prodify-muted hover:text-prodify-danger hover:bg-prodify-danger/10 transition-all rounded">
               <LogOut className="w-5 h-5" />
             </div>
-            <div className="absolute left-16 top-1/2 -translate-y-1/2 px-2 py-1 bg-prodify-surface border border-prodify-border text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-              Sign Out
-            </div>
+            <span className="text-xs text-[#666666] font-medium">Sign Out</span>
           </button>
         </div>
       </aside>

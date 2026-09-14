@@ -150,6 +150,11 @@ const HomePage: React.FC = () => {
     ? Math.round(sessions.reduce((s, r) => s + (r.burnout_score || 0), 0) / sessions.length * 100)
     : 0;
 
+  // Calculate today's focus minutes for the Daily Goal ring
+  const today = new Date().toISOString().split('T')[0];
+  const todaySessions = sessions.filter(s => s.created_date && s.created_date.startsWith(today));
+  const dailyFocusMinutes = todaySessions.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+
   // Check if ANY workspace has a goal plan for the hero section
   const goalWorkspaces = workspaces.filter(ws => goalPlans[ws.id]);
 
@@ -216,7 +221,7 @@ const HomePage: React.FC = () => {
             className="relative border border-prodify-border bg-prodify-surface p-5 overflow-hidden group lg:col-span-1"
           >
             <div className="relative z-10">
-              <DailyGoalRing focusMinutes={totalFocusMinutes} targetMinutes={240} />
+              <DailyGoalRing focusMinutes={dailyFocusMinutes} targetMinutes={240} />
             </div>
           </motion.div>
 
@@ -280,7 +285,7 @@ const HomePage: React.FC = () => {
         )}
 
         {/* ── Main Grid: Workspaces + Sidebar ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="workspaces">
 
           {/* Workspaces */}
           <div className="lg:col-span-2">
@@ -303,11 +308,11 @@ const HomePage: React.FC = () => {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-20 border border-dashed border-prodify-border"
+                className="text-center py-20 border border-dashed border-prodify-border flex flex-col items-center justify-center"
               >
                 <Layers className="w-10 h-10 text-prodify-muted/30 mx-auto mb-4" />
-                <p className="text-prodify-muted text-sm">No workspaces yet.</p>
-                <p className="text-prodify-muted/60 text-xs mt-1">Create your first one to get started.</p>
+                <p className="text-[#666666] text-sm mb-6">No workspaces yet. Create one to start tracking your focus.</p>
+                <CreateWorkspaceDialog onCreated={fetchData} />
               </motion.div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

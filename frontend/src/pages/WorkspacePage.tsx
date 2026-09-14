@@ -411,18 +411,8 @@ export default function WorkspacePage() {
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center">
           <div className="mb-8 flex flex-col items-center">
             <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
-            {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason && timerState.pauseReason !== 'Manual' && timerState.pauseReason !== 'IDLE_DETECTED' && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-6 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-500 dark:text-amber-400 max-w-md shadow-lg shadow-amber-500/5 text-center"
-              >
-                <span className="text-base shrink-0">🤖</span>
-                <span className="font-medium leading-relaxed">{timerState.pauseReason}</span>
-              </motion.div>
-            )}
           </div>
-          <TimerControls state={timerState.currentState} />
+          <TimerControls state={timerState.currentState} timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} />
         </motion.div>
 
         <motion.div variants={columnVariants} className="space-y-4">
@@ -498,14 +488,16 @@ export default function WorkspacePage() {
 
 
 
-          <CoachInsightPanel
-            engagementState={engagementState}
-            isSessionActive={timerState.currentState === 'FOCUS_RUNNING' || timerState.currentState === 'FOCUS_PAUSED'}
-            currentHour={new Date().getHours()}
-            workspaceName={workspace.name}
-            lastFocusedWindow={lastFocusedWindow || currentTabTitle}
-            lastFocusedApp=""
-          />
+          {timerState.currentState === 'FOCUS_RUNNING' && engagementState === 'FACE_ABSENT' && (
+            <CoachInsightPanel
+              engagementState={engagementState}
+              isSessionActive={true}
+              currentHour={new Date().getHours()}
+              workspaceName={workspace.name}
+              lastFocusedWindow={lastFocusedWindow || currentTabTitle}
+              lastFocusedApp=""
+            />
+          )}
           <BurnoutGauge burnoutProbability={burnoutProb} currentState={timerState.currentState} />
           {(timerState.currentState === 'SESSION_COMPLETED' || timerState.sessionCount > 0) && (
             <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />

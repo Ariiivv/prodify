@@ -25,13 +25,13 @@ export default function TimerRing({ timeRemaining, totalDuration, state }: Timer
 
   const stateLabel = useMemo(() => {
     switch (state) {
-      case 'IDLE': return 'Ready to Focus';
-      case 'FOCUS_RUNNING': return 'Deep Focus';
-      case 'FOCUS_PAUSED': return 'Paused';
-      case 'BREAK_RUNNING': return 'Break Time';
-      case 'BREAK_PAUSED': return 'Break Paused';
-      case 'SESSION_COMPLETED': return 'Complete!';
-      default: return '';
+      case 'IDLE': return 'READY TO FOCUS';
+      case 'FOCUS_RUNNING': return 'DEEP FOCUS';
+      case 'FOCUS_PAUSED': return 'PAUSED';
+      case 'BREAK_RUNNING': return 'BREAK TIME';
+      case 'BREAK_PAUSED': return 'BREAK PAUSED';
+      case 'SESSION_COMPLETED': return 'COMPLETE!';
+      default: return 'READY TO FOCUS';
     }
   }, [state]);
 

@@ -1,26 +1,30 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, Clock, AlertCircle, TrendingUp, Flame } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, AreaChart, Area,
+  ResponsiveContainer, AreaChart, Area,
 } from 'recharts';
 import { format } from 'date-fns';
-import { useState, useEffect } from 'react';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-card border border-border/50 rounded-xl px-3 py-2 shadow-lg">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      {payload.map((p: any, i: number) => (
-        <p key={i} className="text-sm font-semibold" style={{ color: p.color }}>
-          {p.name}: {typeof p.value === 'number' ? p.value.toFixed(1) : p.value}
-        </p>
-      ))}
-    </div>
-  );
+const focusChartConfig = {
+  focus: {
+    label: 'Focus Minutes',
+    color: 'hsl(263, 70%, 58%)',
+  },
+};
+
+const wsChartConfig = {
+  minutes: {
+    label: 'Focus Minutes',
+    color: 'hsl(187, 72%, 48%)',
+  },
 };
 
 export default function Analytics() {
@@ -57,16 +61,10 @@ export default function Analytics() {
     const byDay: Record<string, any> = {};
     sessions.forEach((s: any) => {
       const day = s.created_date ? format(new Date(s.created_date), 'MMM dd') : 'Unknown';
-      if (!byDay[day]) byDay[day] = { day, focus: 0, distractions: 0, sessions: 0, burnout: 0 };
+      if (!byDay[day]) byDay[day] = { day, focus: 0 };
       byDay[day].focus += s.duration_minutes || 0;
-      byDay[day].distractions += s.distraction_count || 0;
-      byDay[day].sessions += 1;
-      byDay[day].burnout += s.burnout_score || 0;
     });
-    return Object.values(byDay).map((d: any) => ({
-      ...d,
-      avgBurnout: d.sessions > 0 ? ((d.burnout / d.sessions) * 100).toFixed(0) : 0,
-    })).slice(-14);
+    return Object.values(byDay).slice(-14);
   }, [sessions]);
 
   // Per-workspace data
@@ -89,9 +87,9 @@ export default function Analytics() {
     : 0;
 
   const summaryStats = [
-    { label: 'Total Focus', value: `${(totalFocus / 60).toFixed(1)}h`, icon: Clock, color: 'text-accent' },
+    { label: 'Total Focus Hours', value: `${(totalFocus / 60).toFixed(1)}h`, icon: Clock, color: 'text-accent' },
     { label: 'Total Sessions', value: sessions.length, icon: TrendingUp, color: 'text-primary' },
-    { label: 'Distractions', value: totalDistractions, icon: AlertCircle, color: 'text-amber-400' },
+    { label: 'Total Distractions', value: totalDistractions, icon: AlertCircle, color: 'text-amber-400' },
     { label: 'Avg Burnout', value: `${avgBurnout}%`, icon: Flame, color: 'text-destructive' },
   ];
 
@@ -139,7 +137,7 @@ export default function Analytics() {
           className="text-center py-20 rounded-2xl border border-dashed border-border/50"
         >
           <BarChart3 className="w-10 h-10 text-muted-foreground/30 mx-auto mb-4" />
-          <p className="text-muted-foreground text-sm">Complete focus sessions to see analytics</p>
+          <p className="text-muted-foreground text-sm">Complete focus sessions to see your analytics</p>
         </motion.div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -150,41 +148,16 @@ export default function Analytics() {
             transition={{ delay: 0.15 }}
             className="rounded-2xl border border-border/50 bg-card/50 p-6"
           >
-            <h3 className="text-sm font-semibold text-foreground mb-4">Daily Focus Minutes</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={dailyData}>
-                <defs>
-                  <linearGradient id="focusGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(263, 70%, 58%)" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="hsl(263, 70%, 58%)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" />
-                <XAxis dataKey="day" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="focus" name="Minutes" stroke="hsl(263, 70%, 58%)" fill="url(#focusGrad)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </motion.div>
-
-          {/* Distractions Over Time */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="rounded-2xl border border-border/50 bg-card/50 p-6"
-          >
-            <h3 className="text-sm font-semibold text-foreground mb-4">Daily Distractions</h3>
-            <ResponsiveContainer width="100%" height={220}>
+            <h3 className="text-sm font-semibold text-foreground mb-4">Focus Minutes per Day</h3>
+            <ChartContainer config={focusChartConfig} className="h-[220px] w-full">
               <LineChart data={dailyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" />
-                <XAxis dataKey="day" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="distractions" name="Distractions" stroke="hsl(38, 92%, 50%)" strokeWidth={2} dot={{ fill: 'hsl(38, 92%, 50%)' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line type="monotone" dataKey="focus" name="Focus Minutes" stroke="var(--color-focus)" strokeWidth={2} dot={{ fill: 'var(--color-focus)' }} />
               </LineChart>
-            </ResponsiveContainer>
+            </ChartContainer>
           </motion.div>
 
           {/* Focus by Workspace */}
@@ -194,41 +167,16 @@ export default function Analytics() {
             transition={{ delay: 0.25 }}
             className="rounded-2xl border border-border/50 bg-card/50 p-6"
           >
-            <h3 className="text-sm font-semibold text-foreground mb-4">Focus by Workspace</h3>
-            <ResponsiveContainer width="100%" height={220}>
+            <h3 className="text-sm font-semibold text-foreground mb-4">Focus Minutes per Workspace</h3>
+            <ChartContainer config={wsChartConfig} className="h-[220px] w-full">
               <BarChart data={wsData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" />
-                <XAxis dataKey="name" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="minutes" name="Minutes" fill="hsl(187, 72%, 48%)" radius={[6, 6, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="minutes" name="Focus Minutes" fill="var(--color-minutes)" radius={[6, 6, 0, 0]} />
               </BarChart>
-            </ResponsiveContainer>
-          </motion.div>
-
-          {/* Burnout Trend */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="rounded-2xl border border-border/50 bg-card/50 p-6"
-          >
-            <h3 className="text-sm font-semibold text-foreground mb-4">Avg Burnout Risk %</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={dailyData}>
-                <defs>
-                  <linearGradient id="burnoutGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" />
-                <XAxis dataKey="day" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="avgBurnout" name="Burnout %" stroke="hsl(0, 84%, 60%)" fill="url(#burnoutGrad)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+            </ChartContainer>
           </motion.div>
         </div>
       )}

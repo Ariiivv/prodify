@@ -9,9 +9,11 @@ import {
 
 interface TimerControlsProps {
   state: string;
+  timeRemaining?: number;
+  totalDuration?: number;
 }
 
-export default function TimerControls({ state }: TimerControlsProps) {
+export default function TimerControls({ state, timeRemaining, totalDuration }: TimerControlsProps) {
   useEffect(() => {
     if (state === 'SESSION_COMPLETED') {
       new Audio('https://www.soundjay.com/buttons/beep-07.wav').play().catch(() => {
@@ -19,6 +21,10 @@ export default function TimerControls({ state }: TimerControlsProps) {
       });
     }
   }, [state]);
+
+  const hasNotStarted = timeRemaining !== undefined && totalDuration !== undefined 
+    ? timeRemaining === totalDuration 
+    : false;
 
   return (
     <AnimatePresence mode="wait">
@@ -30,9 +36,9 @@ export default function TimerControls({ state }: TimerControlsProps) {
         transition={{ duration: 0.2 }}
         className="flex items-center gap-3"
       >
-        {state === 'IDLE' && (
+        {(state === 'IDLE' || (state === 'FOCUS_PAUSED' && hasNotStarted)) && (
           <Button
-            onClick={startFocus}
+            onClick={state === 'IDLE' ? startFocus : resumeFocus}
             size="lg"
             className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white px-8 py-6 text-base font-semibold rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:scale-[1.02] active:scale-[0.98]"
           >
@@ -62,7 +68,7 @@ export default function TimerControls({ state }: TimerControlsProps) {
           </>
         )}
 
-        {state === 'FOCUS_PAUSED' && (
+        {state === 'FOCUS_PAUSED' && !hasNotStarted && (
           <>
             <Button
               onClick={resumeFocus}
