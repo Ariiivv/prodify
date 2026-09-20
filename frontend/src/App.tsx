@@ -39,7 +39,17 @@ function App() {
               sessionStorage.setItem('processed_deep_link', url);
 
               try {
-                const parsedUrl = new URL(url);
+                // Strip out any surrounding quotes, brackets, or whitespace injected by the OS
+                const cleanUrl = url.replace(/^["'\[]+|["'\]]+$/g, '').trim();
+                const parsedUrl = new URL(cleanUrl);
+                
+                // Check for OAuth errors in the URL
+                const errCode = parsedUrl.searchParams.get('error') || new URLSearchParams(parsedUrl.hash.substring(1)).get('error');
+                const errDesc = parsedUrl.searchParams.get('error_description') || new URLSearchParams(parsedUrl.hash.substring(1)).get('error_description');
+                if (errCode) {
+                  throw new Error(`${errCode}: ${errDesc || 'Unknown error'}`);
+                }
+
                 const code = parsedUrl.searchParams.get('code');
                 
                 if (code) {
@@ -58,8 +68,9 @@ function App() {
                 
                 await initialize();
                 window.location.href = '/';
-              } catch (err) {
+              } catch (err: any) {
                 console.error('Deep link auth error:', err);
+                alert(`Deep Link Error: ${err.message || err}\nURL: ${url}`);
                 window.location.href = '/auth';
               }
             }
@@ -67,7 +78,7 @@ function App() {
         };
 
         // Check if started with a deep link
-        getCurrent().then(processUrls).catch(err => console.error("getCurrent error:", err));
+        getCurrent().then(processUrls).catch(err => alert("getCurrent error: " + err));
 
         // Listen for deep links while running
         onOpenUrl(processUrls).then(u => {
