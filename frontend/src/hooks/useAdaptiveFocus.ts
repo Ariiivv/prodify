@@ -42,6 +42,7 @@ export function useAdaptiveFocus({
   const sessionIntentRef = useRef(sessionIntent);
   // Track in-flight classification to avoid duplicate API calls
   const classifyingRef = useRef(false);
+  const pendingWindowRef = useRef<{title: string, processName: string} | null>(null);
 
   useEffect(() => {
     onDistractedRef.current = onDistracted;
@@ -49,7 +50,7 @@ export function useAdaptiveFocus({
     sessionIntentRef.current = sessionIntent;
   }, [onDistracted, onFocused, sessionIntent]);
 
-  // ── Startup grace period ─────────────────────────────────────────────
+  // 🛡️ Startup grace period 🛡️
   const startupTimeRef = useRef<number>(Date.now());
   const prevEnabledRef = useRef<boolean>(enabled);
   const GRACE_PERIOD_MS = 3000;
@@ -78,10 +79,10 @@ export function useAdaptiveFocus({
 
     if (!isFocusActive) return;
 
-    // ── Startup grace period ─────────────────────────────────────────
+    // 🛡️ Startup grace period 🛡️
     const elapsed = Date.now() - startupTimeRef.current;
     if (!focused && elapsed < GRACE_PERIOD_MS) {
-      console.log(`[useAdaptiveFocus] ⏳ Grace period active (${elapsed}ms / ${GRACE_PERIOD_MS}ms) — suppressing distraction for title="${title}"`);
+      console.log(`[useAdaptiveFocus] 🛡️ Grace period active (${elapsed}ms / ${GRACE_PERIOD_MS}ms) – suppressing distraction for title="${title}"`);
       return;
     }
 
@@ -98,43 +99,59 @@ export function useAdaptiveFocus({
    * Send the window title to the backend for AI-powered intent classification.
    * Calls POST /api/telemetry/activity and feeds the result into checkFocus().
    */
-  const classifyWindow = useCallback(async (title: string, processName: string) => {
-    // Skip if already classifying (prevents duplicate calls from rapid events)
-    if (classifyingRef.current) return;
+  const classifyWindow = useCallback(async (initialTitle: string, initialProcessName: string) => {
+    // If a request is already running, queue this window to be processed next.
+    // This ensures we never drop the user's latest window if they tab-switch rapidly.
+    if (classifyingRef.current) {
+      pendingWindowRef.current = { title: initialTitle, processName: initialProcessName };
+      return;
+    }
     classifyingRef.current = true;
 
-    try {
-      const response = await fetch(`${API_BASE}/api/telemetry/activity`, {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          window_title: title,
-          app_name: processName,
-          intent: sessionIntentRef.current || '',
-        }),
-      });
+    let currentTitle = initialTitle;
+    let currentProcessName = initialProcessName;
 
-      if (!response.ok) {
-        console.error(`[useAdaptiveFocus] /telemetry/activity HTTP ${response.status}`);
-        // On error, don't change focus state (fail-open)
-        setCurrentTabTitle(title);
-        return;
+    while (true) {
+      try {
+        const response = await fetch(`${API_BASE}/api/telemetry/activity`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            window_title: currentTitle,
+            app_name: currentProcessName,
+            intent: sessionIntentRef.current || '',
+          }),
+        });
+
+        if (!response.ok) {
+          console.error(`[useAdaptiveFocus] /telemetry/activity HTTP ${response.status}`);
+          // On error, don't change focus state (fail-open)
+          setCurrentTabTitle(currentTitle);
+        } else {
+          const data: { status: string; reason: string; window_title: string; app_name: string } =
+            await response.json();
+
+          console.log(
+            `[useAdaptiveFocus] 🧠 Classification result: status="${data.status}", reason="${data.reason}"`
+          );
+
+          checkFocus(currentTitle, data.status === 'focused', data.reason, data.app_name);
+        }
+      } catch (err) {
+        console.error('[useAdaptiveFocus] Classification request failed:', err);
+        // Fail-open: just update the title, don't trigger distraction
+        setCurrentTabTitle(currentTitle);
       }
 
-      const data: { status: string; reason: string; window_title: string; app_name: string } =
-        await response.json();
-
-      console.log(
-        `[useAdaptiveFocus] ⚡ Classification result: status="${data.status}", reason="${data.reason}"`
-      );
-
-      checkFocus(title, data.status === 'focused', data.reason, data.app_name);
-    } catch (err) {
-      console.error('[useAdaptiveFocus] Classification request failed:', err);
-      // Fail-open: just update the title, don't trigger distraction
-      setCurrentTabTitle(title);
-    } finally {
-      classifyingRef.current = false;
+      // Check if a new window was queued while we were fetching
+      if (pendingWindowRef.current) {
+        currentTitle = pendingWindowRef.current.title;
+        currentProcessName = pendingWindowRef.current.processName;
+        pendingWindowRef.current = null;
+      } else {
+        classifyingRef.current = false;
+        break;
+      }
     }
   }, [checkFocus]);
 

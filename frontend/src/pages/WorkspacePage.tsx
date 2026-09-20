@@ -415,6 +415,23 @@ export default function WorkspacePage() {
                 />
               )}
             </div>
+
+            {isDetectionEnabled && timerState.currentState === 'IDLE' && cameraStatus === 'streaming' && engagementState === 'FACE_ABSENT' && (
+              <div className="mb-6 w-full max-w-sm rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 mt-0.5 w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-amber-600 dark:text-amber-400">Poor Lighting / Face Not Visible</h4>
+                    <p className="text-xs text-amber-600/80 dark:text-amber-400/80 mt-1 leading-relaxed">
+                      The camera cannot clearly see your face. It may be too dark, or you might be out of frame. Please move to a well-lit area to start your session.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
           <TimerControls 
             state={timerState.currentState} 
             timeRemaining={timerState.timeRemaining} 

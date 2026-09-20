@@ -48,6 +48,12 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ 
     fetchGoals();
   }, [workspaceId, mode, sessionCount]);
 
+  const goalsMap = useMemo(() => {
+    const map = new Map<string, DailyGoal>();
+    goals.forEach(g => map.set(g.date, g));
+    return map;
+  }, [goals]);
+
   if (loading || !mode || !mode.toLowerCase().includes('structured') || goals.length === 0) {
     return null;
   }
@@ -64,12 +70,6 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ 
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
-
-  const goalsMap = useMemo(() => {
-    const map = new Map<string, DailyGoal>();
-    goals.forEach(g => map.set(g.date, g));
-    return map;
-  }, [goals]);
 
   return (
     <div className="w-full flex flex-col items-center gap-4 my-6">

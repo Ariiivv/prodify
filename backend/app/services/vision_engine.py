@@ -365,15 +365,23 @@ class FocusTracker:
 
         if vision_focused and window_focused:
             if eng_state == "FOCUSED_THINKING":
-                return "focused", "Deep Thinking / Writing — developer posture detected"
+                return "focused", "Deep Thinking / Writing - developer posture detected"
             return "focused", "Face present and productive window"
-        elif not vision_focused and not window_focused:
+            
+        friendly_vision_reasons = {
+            "FACE_ABSENT": "Face missing from camera",
+            "EYES_CLOSED": "Eyes closed for too long (sleepy?)",
+            "STRANGER": "Unrecognized face detected"
+        }
+        vision_reason = friendly_vision_reasons.get(eng_state, f"Camera signal: {eng_state}")
+        
+        if not vision_focused and not window_focused:
             return (
                 "distracted",
-                f"Vision: {eng_state} AND unproductive window ({self._window_reason})",
+                f"{vision_reason} AND Unproductive window: {self._window_reason}",
             )
         elif not vision_focused:
-            return "distracted", f"Vision: {eng_state}"
+            return "distracted", vision_reason
         else:
             return "distracted", f"Unproductive window: {self._window_reason}"
 

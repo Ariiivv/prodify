@@ -91,9 +91,14 @@ async def vision_socket(websocket: WebSocket):
                 if payload.get("typing"):
                     tracker.report_user_input()
                 await websocket.send_json(tracker.process_frame(image))
+            except WebSocketDisconnect:
+                raise
             except Exception as e:
                 logger.error(f"Error processing vision frame: {e}")
-                await websocket.send_json({"status": "focused", "error": "Internal vision processing error."})
+                try:
+                    await websocket.send_json({"status": "focused", "error": "Internal vision processing error."})
+                except Exception:
+                    break
     except WebSocketDisconnect:
         logger.info("Vision client disconnected")
 

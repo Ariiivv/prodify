@@ -3,6 +3,7 @@ import logging
 import time
 import hashlib
 import threading
+import asyncio
 from typing import Optional
 from openai import AsyncOpenAI
 
@@ -17,10 +18,12 @@ client = AsyncOpenAI(
 OS_WHITELIST = [
     "windows explorer",
     "task switching",
+    "task view",
     "snippingtool",
     "snipping tool",
     "searchhost",
-    "task switching",
+    "startmenu",
+    "windows default lock screen",
     "windows shell",
     "dwm",
     "window switcher",
@@ -104,19 +107,39 @@ class SemanticCache:
 _semantic_cache = SemanticCache()
 
 
+_last_eval_time = 0.0
+_eval_lock = asyncio.Lock()
+
 async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> Optional[tuple[bool, str]]:
     """
     AI-powered semantic evaluation via Groq (Llama 3.3 70B).
     """
+    global _last_eval_time
+    async with _eval_lock:
+        now = time.time()
+        time_since_last = now - _last_eval_time
+        if time_since_last < 3.0:
+            wait_time = 3.0 - time_since_last
+            logger.info(f"[SEMANTIC] Throttling evaluation (waiting {wait_time:.1f}s) for title='{window_title[:60]}'")
+            await asyncio.sleep(wait_time)
+        
+        _last_eval_time = time.time()
+
     prompt = (
-        f"You are the Prodify Intent Engine. Your job is to scientifically evaluate user focus through deep semantic alignment, completely disregarding application heuristics.\n\n"
-        f"USER SESSION INTENT / GOAL:\n'{intent}'\n\n"
-        f"ACTIVE APPLICATION:\n'{app_name}'\n\n"
-        f"ACTIVE WINDOW TITLE / CONTENT:\n'{window_title}'\n\n"
-        f"SEMANTIC ALIGNMENT PRINCIPLE:\n"
-        f"1. Content is King: The host application (Browser, IDE, YouTube) is irrelevant. You must analyze the specific content (Window Title, Active Document, Video Name).\n"
-        f"2. Goal Synthesis: Evaluate if the active content conceptually aids, researches, or executes the user's stated session intent. (e.g., A user learning web development watching a programming tutorial on a video site is highly focused).\n"
-        f"3. Nuanced Reasoning: Output your classification strictly in the required `TRUE|<reason>` or `FALSE|<reason>` format. The `<reason>` must sound like a sharp, observant mentor explaining exactly why the content aligns or misaligns with their goal."
+        f"You are the Prodify Intent Classifier. Evaluate if the active window represents a genuine distraction from the user's stated goal.\n\n"
+        f"USER GOAL / INTENT: '{intent}'\n"
+        f"WINDOW TITLE: '{window_title}'\n"
+        f"APPLICATION NAME: '{app_name}'\n\n"
+        f"RULES FOR CLASSIFICATION:\n"
+        f"1. Judge genuine topical/semantic relevance to the user's intent. Do not just look for exact keyword matches. Use deep reasoning.\n"
+        f"2. Platform doesn't matter, content does. Learning and work can happen anywhere (YouTube, Wikipedia, StackOverflow, IDEs, PDF readers, course platforms, etc.). A YouTube video about C programming is highly relevant to 'learning C'.\n"
+        f"3. Only flag a mismatch if the window is CLEARLY and OBVIOUSLY unrelated to the intent (e.g., scrolling Instagram, playing a video game, watching an unrelated entertainment vlog).\n"
+        f"4. If a window title is ambiguous, generic (like 'New Tab', 'Home', 'Google Chrome', 'Settings'), or you are uncertain, you MUST default to TRUE (focused). False positives (incorrectly pausing) are strictly worse than missing a real distraction.\n"
+        f"5. Do NOT hardcode assumptions. Reason freshly about this specific window against this specific intent. There are no hardcoded app restrictions.\n\n"
+        f"OUTPUT FORMAT:\n"
+        f"You must respond EXACTLY in this format: `VERDICT | REASON`\n"
+        f"Where VERDICT is either `TRUE` (focused/relevant/ambiguous) or `FALSE` (clearly distracted).\n"
+        f"Where REASON is a sharp, 1-sentence explanation of why it aligns or misaligns. If ambiguous, explain that you are giving the benefit of the doubt."
     )
 
     try:
@@ -124,7 +147,7 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
             model="qwen/qwen3.8-27b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
-            max_tokens=100,
+            max_tokens=150,
             timeout=10.0,
         )
         answer = completion.choices[0].message.content.strip()
@@ -133,40 +156,34 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
         verdict_str = answer.upper()
         reason = ""
 
-        for sep in ["|", "-", ":"]:
-            if sep in answer:
-                parts = [p.strip() for p in answer.split(sep, 1)]
-                verdict_str = parts[0].upper()
-                reason = parts[1] if len(parts) > 1 else ""
-                break
-
-        if not reason:
-            if answer.upper().startswith("TRUE"):
-                verdict_str = "TRUE"
-                reason = answer[4:].strip(". -|:")
-            elif answer.upper().startswith("FALSE"):
-                verdict_str = "FALSE"
-                reason = answer[5:].strip(". -|:")
+        if "|" in answer:
+            parts = [p.strip() for p in answer.split("|", 1)]
+            verdict_str = parts[0].upper()
+            reason = parts[1] if len(parts) > 1 else ""
+        elif "-" in answer:
+            parts = [p.strip() for p in answer.split("-", 1)]
+            verdict_str = parts[0].upper()
+            reason = parts[1] if len(parts) > 1 else ""
 
         is_focused = "TRUE" in verdict_str
+        
         if not reason:
             if is_focused:
-                reason = f"{app_name} ({window_title[:45]}) aligns with your session intent"
+                reason = f"Window '{window_title[:45]}' appears to align with your goal."
             else:
-                reason = f"Switching to {app_name} ({window_title[:45]}) does not align with your session intent: '{intent}'"
+                reason = f"Window '{window_title[:45]}' is clearly unrelated to your goal: '{intent}'"
 
         return is_focused, reason
 
     except Exception as exc:
-        logger.warning(
-            f"[SEMANTIC] Groq call failed (defaulting to distracted): {exc}"
-        )
-        return False, f"Switching to {app_name} ({window_title[:45]}) does not match your session intent"
+        logger.warning(f"[SEMANTIC] Groq call failed (defaulting to focused): {exc}")
+        # Fail open: if Groq fails, default to focused (don't falsely pause)
+        return True, "Focus tracking temporarily unavailable (assuming focused)"
 
 
 def classify_window(window_title: str, app_name: str) -> tuple[str, str]:
     """
-    Classify a window as 'focused' or 'distracted'.
+    Classify a window as 'focused' or 'distracted' (baseline when no intent is set).
     Returns (status, reason)
     """
     print(f"🔍 [CLASSIFY] ENTER: app_name='{app_name}' | window_title='{window_title[:80]}'")
@@ -174,12 +191,6 @@ def classify_window(window_title: str, app_name: str) -> tuple[str, str]:
     if not app_name.strip() and not window_title.strip():
         print(f"🔍 [CLASSIFY] RESULT: focused (empty data guard)")
         return "focused", "No window data yet (startup guard)"
-
-    combined = f"{app_name} {window_title}".lower()
-    for safe_indicator in ("prodify", "antigravity", "electron", "5173", "vs code", "vscode"):
-        if safe_indicator in combined:
-            print(f"🔍 [CLASSIFY] RESULT: focused (self-app/dev tool: {safe_indicator})")
-            return "focused", f"Self-app / active developer tool detected ({safe_indicator})"
 
     for os_keyword in OS_WHITELIST:
         if _fuzzy_contains(os_keyword, app_name) or _fuzzy_contains(os_keyword, window_title):
@@ -196,13 +207,8 @@ async def classify_with_intent(
     intent: str,
 ) -> tuple[str, str]:
     if not intent.strip():
-        print(f"🔍 [INTENT] No intent set → using baseline classification for '{window_title[:60]}'")
+        print(f"🔍 [INTENT] No intent set - using baseline classification for '{window_title[:60]}'")
         return classify_window(window_title, app_name)
-
-    combined = f"{app_name} {window_title}".lower()
-    for safe_indicator in ("prodify", "antigravity", "electron", "5173"):
-        if safe_indicator in combined:
-            return "focused", f"Active developer/self-app window ({safe_indicator})"
 
     for os_keyword in OS_WHITELIST:
         if _fuzzy_contains(os_keyword, app_name) or _fuzzy_contains(os_keyword, window_title):
@@ -212,14 +218,14 @@ async def classify_with_intent(
     if cached is not None:
         is_focused, cache_reason = cached
         if is_focused:
-            print(f"🔍 [INTENT] Cache HIT → focused (title='{window_title[:60]}')")
+            print(f"🔍 [INTENT] Cache HIT - focused (title='{window_title[:60]}')")
             return "focused", cache_reason
         else:
-            print(f"🔍 [INTENT] Cache HIT → distracted (title='{window_title[:60]}')")
+            print(f"🔍 [INTENT] Cache HIT - distracted (title='{window_title[:60]}')")
             return "distracted", cache_reason
 
     _semantic_cache.set(app_name, window_title, intent, None)
-    print(f"🔍 [INTENT] Cache MISS → evaluating with Semantic Alignment Engine for title='{window_title[:60]}'")
+    print(f"🔍 [INTENT] Cache MISS - evaluating with Semantic Alignment Engine for title='{window_title[:60]}'")
 
     result = await evaluate_semantics(app_name, window_title, intent)
     if result is not None:

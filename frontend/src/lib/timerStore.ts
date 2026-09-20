@@ -217,6 +217,7 @@ export const useTimerStore = create<TimerStore>((set, get) => {
       setWorkspaceState({
         currentState: 'SESSION_COMPLETED',
         sessionCount: getWorkspaceState().sessionCount + 1,
+        timeRemaining: 0,
         intervalId: null,
       });
     },
