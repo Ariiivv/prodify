@@ -28,10 +28,16 @@ function App() {
     let unlisten: (() => void) | undefined;
 
     if (isTauri) {
-      import('@tauri-apps/plugin-deep-link').then(({ onOpenUrl }) => {
-        onOpenUrl(async (urls) => {
-          for (const url of urls) {
-            if (url.includes('prodify://auth/callback')) {
+      import('@tauri-apps/plugin-deep-link').then(({ onOpenUrl, getCurrent }) => {
+        const processUrls = async (urls: string[] | string | null) => {
+          if (!urls) return;
+          const urlArray = Array.isArray(urls) ? urls : [urls];
+          
+          for (const url of urlArray) {
+            if (url && url.includes('prodify://auth/callback')) {
+              if (sessionStorage.getItem('processed_deep_link') === url) continue;
+              sessionStorage.setItem('processed_deep_link', url);
+
               try {
                 const parsedUrl = new URL(url);
                 const code = parsedUrl.searchParams.get('code');
@@ -58,7 +64,13 @@ function App() {
               }
             }
           }
-        }).then(u => {
+        };
+
+        // Check if started with a deep link
+        getCurrent().then(processUrls).catch(err => console.error("getCurrent error:", err));
+
+        // Listen for deep links while running
+        onOpenUrl(processUrls).then(u => {
           unlisten = u;
         }).catch(err => console.error("Failed to setup deep link listener:", err));
       });
