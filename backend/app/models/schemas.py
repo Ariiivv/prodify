@@ -15,6 +15,8 @@ class User(Base):
     auth_provider = Column(String, default="email", nullable=False)
     google_id = Column(String, unique=True, index=True, nullable=True)
     avatar_url = Column(String, nullable=True)
+    full_name = Column(String, nullable=True)
+    age = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

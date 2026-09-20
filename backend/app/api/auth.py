@@ -27,6 +27,8 @@ class UserOut(BaseModel):
     email: str
     auth_provider: str
     avatar_url: Optional[str] = None
+    full_name: Optional[str] = None
+    age: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -93,6 +95,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         if not email:
             email = f"{user_id}@supabase.local"
         username = payload.get("user_metadata", {}).get("username") or email.split("@")[0]
+        full_name = payload.get("user_metadata", {}).get("full_name") or payload.get("name")
+        avatar_url = payload.get("user_metadata", {}).get("avatar_url") or payload.get("picture")
         
         user = crud.create_user(
             db=db,
@@ -100,7 +104,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             email=email.lower().strip(),
             username=username,
             hashed_password="supabase_managed",
-            auth_provider="supabase"
+            auth_provider="supabase",
+            full_name=full_name,
+            avatar_url=avatar_url
         )
         
     return user

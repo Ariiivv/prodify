@@ -90,8 +90,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       toast.success("Workspace created!");
       navigate(`/workspace/${workspace.id}`);
     } catch (err: any) {
-      console.error('Failed to create workspace:', err);
-      toast.error("Failed to create workspace", { description: err.message });
+      toast.error(err.message || 'Failed to create workspace');
+      console.error(err);
     }
   };
 

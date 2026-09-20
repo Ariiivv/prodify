@@ -7,6 +7,8 @@ export interface User {
   email: string;
   auth_provider: string;
   avatar_url?: string | null;
+  full_name?: string | null;
+  age?: number | null;
 }
 
 export interface Session {

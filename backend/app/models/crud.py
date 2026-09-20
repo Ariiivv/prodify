@@ -181,6 +181,8 @@ def create_user(
     google_id: Optional[str] = None,
     avatar_url: Optional[str] = None,
     id: Optional[str] = None,
+    full_name: Optional[str] = None,
+    age: Optional[int] = None,
 ) -> models.User:
     """Create a new user profile."""
     user = models.User(
@@ -191,6 +193,8 @@ def create_user(
         auth_provider=auth_provider,
         google_id=google_id,
         avatar_url=avatar_url,
+        full_name=full_name,
+        age=age,
     )
     if id is None:
         import uuid

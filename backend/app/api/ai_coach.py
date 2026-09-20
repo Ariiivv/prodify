@@ -100,10 +100,13 @@ async def chat_endpoint(
         if not engine:
             engine = StarMLEngine()
 
-        user_name = getattr(current_user, "username", None)
-        if not user_name:
-            email = getattr(current_user, "email", "")
-            user_name = email.split('@')[0] if email else "there"
+        user_name = current_user.full_name or current_user.username or (current_user.email.split('@')[0] if current_user.email else "there")
+        user_age = current_user.age
+
+        # Inject age into context if available so StarMLEngine uses it
+        if user_age:
+            ctx["user_age"] = user_age
+            ctx["user_name"] = user_name
 
         is_debrief = request.message == "SYSTEM_DEBRIEF"
         

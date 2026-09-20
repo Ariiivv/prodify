@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, User, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
+import ProfileModal from './ProfileModal';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
@@ -13,17 +15,18 @@ const navItems = [
 export default function AppLayout() {
   const location = useLocation();
   const { user, signOut } = useAuthStore();
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
   };
 
   return (
-    <div className="min-h-screen bg-prodify-bg flex">
+    <div className="min-h-screen bg-[#0a0a0a] flex">
       {/* Sidebar */}
-      <aside className="hidden md:flex w-20 z-50 flex-col items-center py-8 border-r border-prodify-border bg-prodify-surface overflow-hidden">
+      <aside className="hidden md:flex w-20 z-50 flex-col items-center py-8 border-r border-[#2a2a2a] bg-[#111111] overflow-hidden">
         <Link to="/" className="mb-12 flex flex-col items-center gap-1">
-          <div className="w-10 h-10 bg-prodify-surface-alt border border-prodify-border rounded flex items-center justify-center transition-colors hover:text-white text-prodify-muted">
+          <div className="w-10 h-10 bg-[#1a1a1a] border border-[#2a2a2a] rounded flex items-center justify-center transition-colors hover:text-white text-muted-foreground">
             <Sparkles className="w-5 h-5" />
           </div>
         </Link>
@@ -39,13 +42,13 @@ export default function AppLayout() {
               >
                 <div className={`w-10 h-10 flex items-center justify-center transition-all duration-200 rounded ${
                   isActive
-                    ? 'bg-prodify-accent/10 text-prodify-accent'
-                    : 'text-prodify-muted hover:text-white hover:bg-prodify-surface-alt'
+                    ? 'bg-[#e8ff47]/10 text-[#e8ff47]'
+                    : 'text-muted-foreground hover:text-white hover:bg-[#1a1a1a]'
                 }`}>
                   {isActive && (
                     <motion.div
                       layoutId="nav-indicator"
-                      className="absolute left-0 w-[2px] h-6 bg-prodify-accent"
+                      className="absolute left-0 w-[2px] h-6 bg-[#e8ff47]"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />
                   )}
@@ -59,13 +62,16 @@ export default function AppLayout() {
 
         {/* User section at bottom */}
         <div className="mt-auto flex flex-col items-center gap-6 w-full">
-          {/* Avatar */}
-          <div className="relative group flex flex-col items-center gap-1.5 w-full">
-            <div className="w-10 h-10 bg-prodify-surface-alt flex items-center justify-center text-prodify-muted hover:text-white transition-colors cursor-default rounded">
+          {/* Avatar (Clickable to open profile) */}
+          <button
+            onClick={() => setIsProfileOpen(true)}
+            className="relative group flex flex-col items-center gap-1.5 w-full"
+          >
+            <div className="w-10 h-10 bg-[#1a1a1a] flex items-center justify-center text-muted-foreground hover:text-[#e8ff47] hover:border hover:border-[#e8ff47] transition-all rounded">
               <User className="w-5 h-5" />
             </div>
             <span className="text-xs text-[#666666] font-medium">Profile</span>
-          </div>
+          </button>
 
           {/* Sign Out */}
           <button
@@ -112,6 +118,8 @@ export default function AppLayout() {
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         <Outlet />
       </main>
+
+      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </div>
   );
 }

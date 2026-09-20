@@ -63,3 +63,27 @@ def reset_user_data(
         message=f"Successfully reset tracking data. Deleted {total} records.",
         details=details
     )
+
+class ProfileUpdate(BaseModel):
+    full_name: str
+    age: int
+
+@router.put("/me/profile")
+def update_profile(
+    profile: ProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    current_user.full_name = profile.full_name
+    current_user.age = profile.age
+    db.commit()
+    db.refresh(current_user)
+    return {
+        "message": "Profile updated",
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "full_name": current_user.full_name,
+            "age": current_user.age,
+        }
+    }

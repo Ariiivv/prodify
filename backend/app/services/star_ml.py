@@ -359,6 +359,11 @@ class StarMLEngine:
         total_focus_hours = sum(m.focus_minutes for m in metrics) / 60.0 if metrics else 0.0
         total_sessions = len(metrics)
 
+        # Ensure context defaults
+        context = context or {}
+        user_name = context.get('user_name', user_name)
+        user_age = context.get('user_age', None)
+
         system_prompt = f"""You are Prodify Intelligence — a sharp, data-driven productivity coach.
 You have full memory of this conversation and the user's long-term patterns.
 Never introduce yourself if previous messages exist.
@@ -366,6 +371,7 @@ The user's name is {user_name}. Greet them or refer to them by this name when ap
 
 USER PROFILE (from ML analysis):
 - Name: {user_name}
+{f'- Age: {user_age}' if user_age else ''}
 - Peak focus hour: {patterns['peak_hour']}
 - Best workspace: {patterns['peak_workspace']}
 - Average session length: {patterns['avg_session_length']} minutes
