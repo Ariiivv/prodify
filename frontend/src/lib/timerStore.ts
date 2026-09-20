@@ -88,9 +88,7 @@ export const useTimerStore = create<TimerStore>((set, get) => {
       const fd = focusDuration !== undefined ? focusDuration * 60 : state.defaultFocusDuration;
       const bd = breakDuration !== undefined ? breakDuration * 60 : state.defaultBreakDuration;
       // Always force the activated workspace to IDLE with no running interval.
-      // This is the critical guard against auto-start: no matter what state the
-      // workspace was in before (or what intervals are leaking), activating it
-      // always puts it in a clean idle state.
+      // Reset the timeRemaining to ensure a clean start if navigating away mid-session and back.
       set({
         activeWorkspaceId: workspaceId,
         workspaces: {
@@ -98,7 +96,9 @@ export const useTimerStore = create<TimerStore>((set, get) => {
           [workspaceId]: {
             ...(existing || makeInitialState()),
             currentState: 'IDLE',
+            timeRemaining: fd,
             intervalId: null,
+            pauseReason: null,
           },
         },
         defaultFocusDuration: fd,
@@ -248,9 +248,9 @@ export function incrementDistraction() { useTimerStore.getState().incrementDistr
 export function getTimerState() {
   const store = useTimerStore.getState();
   const ws = store.workspaces[store.activeWorkspaceId ?? -1];
-  return ws || { currentState: 'IDLE', timeRemaining: 45 * 60, focusDuration: 45 * 60, breakDuration: 5 * 60, sessionCount: 0, distractionCount: 0, pauseReason: null };
+  return ws || { currentState: 'IDLE', timeRemaining: 25 * 60, focusDuration: 25 * 60, breakDuration: 5 * 60, sessionCount: 0, distractionCount: 0, pauseReason: null };
 }
-export function initTimer(focusMinutes = 45, breakMinutes = 5) {
+export function initTimer(focusMinutes = 25, breakMinutes = 5) {
   // initTimer is called when workspace loads - set defaults
   useTimerStore.setState({ defaultFocusDuration: focusMinutes * 60, defaultBreakDuration: breakMinutes * 60 });
 }

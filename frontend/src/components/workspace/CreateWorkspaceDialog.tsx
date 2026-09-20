@@ -8,16 +8,18 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface CreateWorkspaceDialogProps {
-  onCreated?: () => void;
+  onCreated: () => void;
+  variant?: 'primary' | 'outline';
 }
 
-export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDialogProps) {
+export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }: CreateWorkspaceDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [mode, setMode] = useState('structured');
-  const [focusDuration, setFocusDuration] = useState('45');
+  const [focusDuration, setFocusDuration] = useState('25');
   const [breakDuration, setBreakDuration] = useState('5');
   const [targetHours, setTargetHours] = useState('');
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
@@ -27,14 +29,28 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      toast.error("Workspace name is required");
+      return;
+    }
+
+    const workDur = parseInt(focusDuration);
+    const breakDur = parseInt(breakDuration);
+    if (isNaN(workDur) || workDur < 1) {
+      toast.error("Focus duration must be at least 1 minute");
+      return;
+    }
+    if (isNaN(breakDur) || breakDur < 1) {
+      toast.error("Break duration must be at least 1 minute");
+      return;
+    }
 
     const payload = {
       name: name.trim(),
       mode,
       theme_color: 'violet', // Defaulting since color picker is removed
-      work_duration: parseInt(focusDuration),
-      break_duration: parseInt(breakDuration),
+      work_duration: workDur,
+      break_duration: breakDur,
       target_hours: targetHours ? parseFloat(targetHours) : null,
       deadline: deadline ? deadline.toISOString().split('T')[0] : null,
       focus_keywords: focusKeywords.trim() || null,
@@ -68,9 +84,11 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
 
       // Refresh workspace list and navigate to the new workspace
       onCreated?.();
+      toast.success("Workspace created!");
       navigate(`/workspace/${workspace.id}`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create workspace:', err);
+      toast.error("Failed to create workspace", { description: err.message });
     }
   };
 
@@ -78,8 +96,11 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
     <>
       <Button
         onClick={() => setOpen(true)}
-        size="sm"
-        className="rounded-none bg-[#e8ff47] hover:bg-[#e8ff47]/80 text-black text-xs font-semibold px-4 py-2"
+        className={
+          variant === 'primary'
+            ? "rounded-none bg-[#e8ff47] hover:bg-[#e8ff47]/80 text-black text-xs font-semibold px-4 py-2"
+            : "border border-[#2a2a2a] text-white bg-transparent hover:bg-[#1a1a1a] px-4 py-2 text-xs rounded-none"
+        }
       >
         <Plus className="w-3.5 h-3.5 mr-1" />
         New Workspace
@@ -210,7 +231,6 @@ export default function CreateWorkspaceDialog({ onCreated }: CreateWorkspaceDial
                                 mode="single"
                                 selected={deadline}
                                 onSelect={setDeadline}
-                                initialFocus
                                 className="text-white"
                               />
                             </PopoverContent>

@@ -33,8 +33,10 @@ export function getWsUrl(path: string): string {
   return `${WS_BASE}${standardizedPath}`;
 }
 
+import { useAuthStore } from '@/store/authStore';
+
 /** Attach the current JWT to requests for user-scoped API resources. */
 export function getAuthHeaders(headers: HeadersInit = {}): HeadersInit {
-  const token = localStorage.getItem('prodify_access_token');
+  const token = useAuthStore.getState().session?.access_token;
   return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
 }

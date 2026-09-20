@@ -49,7 +49,7 @@ export default function AiCoachPanel({
   workspaceName,
   idleSeconds = 0,
   timeRemainingString = '00:00',
-  workDuration = 45,
+  workDuration = 25,
   breakDuration = 5,
   targetHours = 0,
   themeColor = 'violet',
@@ -79,30 +79,66 @@ export default function AiCoachPanel({
           .then(data => {
             if (Array.isArray(data) && data.length > 0) {
               const history = data.map(msg => ({ role: msg.role, content: msg.content }));
-              setMessages([
-                ...history,
-                { role: 'divider', content: '— Previous conversation —' }
-              ]);
-              setHasGreeted(true);
+              setMessages(history);
             } else {
-              const greeting = `${getTimeOfDayGreeting()}, Pranav. I'm your Prodify Intelligence. Let's optimize your flow.`;
-              setMessages([{ role: 'assistant', content: greeting }]);
-              setHasGreeted(true);
+              setMessages([{
+                role: 'assistant',
+                content: `${getTimeOfDayGreeting()}! I'm your Star ML Coach. Let's make this ${workDuration}-minute session highly productive. How can I support your focus today?`
+              }]);
             }
+            setHasGreeted(true);
           })
           .catch(err => {
             console.error('Failed to load chat history:', err);
-            const greeting = `${getTimeOfDayGreeting()}, Pranav. I'm your Prodify Intelligence. Let's optimize your flow.`;
+            const greeting = `${getTimeOfDayGreeting()}! I'm your Star ML Coach. Let's make this ${workDuration}-minute session highly productive. How can I support your focus today?`;
             setMessages([{ role: 'assistant', content: greeting }]);
             setHasGreeted(true);
           });
       } else {
-        const greeting = `${getTimeOfDayGreeting()}, Pranav. I'm your Prodify Intelligence. Let's optimize your flow.`;
+        const greeting = `${getTimeOfDayGreeting()}! I'm your Star ML Coach. Let's make this ${workDuration}-minute session highly productive. How can I support your focus today?`;
         setMessages([{ role: 'assistant', content: greeting }]);
         setHasGreeted(true);
       }
     }
-  }, [isOpen, hasGreeted, messages.length, workspaceId]);
+  }, [isOpen, hasGreeted, messages.length, workspaceId, workDuration]);
+
+  const prevTimerState = useRef(currentState);
+  useEffect(() => {
+    if (currentState === 'SESSION_COMPLETED' && prevTimerState.current !== 'SESSION_COMPLETED') {
+      setIsOpen(true);
+      setIsLoading(true);
+      
+      const debriefPayload = {
+        message: `SYSTEM_DEBRIEF`,
+        workspace_name: workspaceName,
+        context: {
+          distractionCount: localDistractionCount + distractionCount,
+          focusMinutes,
+          burnoutProbability,
+          currentState,
+          sessionCount,
+          idleSeconds,
+          workDuration,
+          breakDuration,
+          targetHours,
+          isDebrief: true
+        }
+      };
+
+      fetch(`${API_BASE}/ai-coach/chat`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(debriefPayload),
+      })
+      .then(res => res.json())
+      .then(data => {
+        setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      })
+      .catch(console.error)
+      .finally(() => setIsLoading(false));
+    }
+    prevTimerState.current = currentState;
+  }, [currentState, workspaceName, localDistractionCount, distractionCount, focusMinutes, burnoutProbability, sessionCount, idleSeconds, workDuration, breakDuration, targetHours]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;

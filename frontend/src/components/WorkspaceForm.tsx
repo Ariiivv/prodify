@@ -12,7 +12,7 @@ export default function WorkspaceForm({ isOpen, setIsOpen }: Props) {
   const [mode, setMode] = useState('Structured Goal Mode');
   const [targetHours, setTargetHours] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [workDuration, setWorkDuration] = useState('45');
+  const [workDuration, setWorkDuration] = useState('25');
   const [breakDuration, setBreakDuration] = useState('5');
   const [sessionIntent, setSessionIntent] = useState('');
   const [toast, setToast] = useState<{msg: string, type: 'success'|'error'} | null>(null);

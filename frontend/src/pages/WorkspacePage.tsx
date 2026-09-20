@@ -8,6 +8,7 @@ import { useIdleDetection } from '@/hooks/useIdleDetection';
 import { useAdaptiveFocus } from '@/hooks/useAdaptiveFocus';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
+import { audioEngine } from '@/lib/audio';
 
 import WebcamStream from '@/components/workspace/WebcamStream';
 import TimerRing from '@/components/timer/TimerRing';
@@ -17,6 +18,7 @@ import SessionStats from '@/components/timer/SessionStats';
 import EnforcementModal from '@/components/timer/EnforcementModal';
 import AiCoachPanel from '@/components/chat/AiCoachPanel';
 import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
+import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCalendar';
 
 type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
 
@@ -119,8 +121,11 @@ export default function WorkspacePage() {
     const ws = store.workspaces[store.activeWorkspaceId ?? -1];
     if (!ws || ws.currentState !== 'FOCUS_RUNNING') return; // prevent toast spam on breaks
     const displayReason = reason?.trim() || "Distraction detected";
+    
+    audioEngine.playAlert(); // Play distraction ringtone
+
     toast.error("Focus lost!", {
-      description: `${displayReason} Timer paused. 🚀`,
+      description: `${displayReason}. Timer paused. ⚠️`,
       duration: 3000,
     });
     store.incrementDistraction();
@@ -130,9 +135,14 @@ export default function WorkspacePage() {
   // --- Adaptive Focus Tracking ---
   const { currentTabTitle, isFocused: isTabFocused } = useAdaptiveFocus({
     keywords: workspaceKeywords,
-    enabled: isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING',
+    enabled: isDetectionEnabled,
+    sessionIntent,
     onDistracted: (reason?: string, appName?: string) => {
-      if (isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING') {
+      const store = useTimerStore.getState();
+      const currentWsId = store.activeWorkspaceId;
+      const currentState = currentWsId !== null ? store.workspaces[currentWsId]?.currentState : 'IDLE';
+
+      if (isDetectionEnabled && currentState === 'FOCUS_RUNNING') {
         const trimmedReason = reason?.trim();
         const isErrorOrEmpty = !trimmedReason ||
           trimmedReason.toLowerCase().includes("evaluation failed") ||
@@ -147,7 +157,6 @@ export default function WorkspacePage() {
           description: `${displayReason} Timer paused.`,
           duration: 5000,
         });
-        const store = useTimerStore.getState();
         store.incrementDistraction();
         store.pauseFocus(displayReason);
       }
@@ -228,23 +237,10 @@ export default function WorkspacePage() {
   // Initialize timer
   useEffect(() => {
     if (workspace && wsId) {
-      useTimerStore.getState().setActiveWorkspace(wsId, workspace.work_duration || 45, workspace.break_duration || 5);
-      initTimer(workspace.work_duration || 45, workspace.break_duration || 5);
+      useTimerStore.getState().setActiveWorkspace(wsId, workspace.work_duration || 25, workspace.break_duration || 5);
+      initTimer(workspace.work_duration || 25, workspace.break_duration || 5);
     }
   }, [workspace, wsId]);
-
-  // Send the session intent to Electron main process for backend API calls
-  useEffect(() => {
-    if (workspace && window.electronBridge) {
-      window.electronBridge.setSessionIntent({ intent: sessionIntent, workspaceId: wsId || 1 });
-    }
-    return () => {
-      // Clear intent when leaving the workspace
-      if (window.electronBridge) {
-        window.electronBridge.setSessionIntent({ intent: '', workspaceId: 1 });
-      }
-    };
-  }, [workspace, sessionIntent, wsId]);
 
   // Query the backend risk estimator once per elapsed focus minute.
   useEffect(() => {
@@ -346,8 +342,8 @@ export default function WorkspacePage() {
 
   const handleDismissEnforcement = useCallback(() => setEnforcementTriggered(false), [setEnforcementTriggered]);
 
-  if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
-  if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4"><p className="text-muted-foreground">Workspace not found</p><Link to="/" className="text-primary hover:underline text-sm">Go back</Link></div>;
+  if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" /></div>;
+  if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4"><p className="text-muted-foreground">Workspace not found</p><Link to="/" className="text-white hover:underline text-sm">Go back</Link></div>;
 
   const totalDuration = timerState.currentState.includes('BREAK') ? timerState.breakDuration : timerState.focusDuration;
   const isCameraBlocked = cameraStatus === 'error';
@@ -408,11 +404,34 @@ export default function WorkspacePage() {
         initial="hidden"
         animate="visible"
       >
-        <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center">
-          <div className="mb-8 flex flex-col items-center">
-            <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
-          </div>
-          <TimerControls state={timerState.currentState} timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} />
+        <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center w-full">
+            <div className="mb-8 flex flex-col items-center w-full">
+              <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
+              {workspace?.mode && workspace?.id && (
+                <StructuredGoalCalendar 
+                  workspaceId={workspace.id} 
+                  mode={workspace.mode} 
+                  sessionCount={timerState.sessionCount} 
+                />
+              )}
+            </div>
+          <TimerControls 
+            state={timerState.currentState} 
+            timeRemaining={timerState.timeRemaining} 
+            totalDuration={totalDuration} 
+            canStartFocus={
+              isDetectionEnabled 
+                ? (cameraStatus === 'streaming' && engagementState !== 'FACE_ABSENT' && engagementState !== 'STRANGER')
+                : true
+            }
+            onStartFocusBlocked={() => {
+              if (cameraStatus !== 'streaming') {
+                toast.error("Camera is not ready. Please wait or ensure it is not blocked.");
+              } else {
+                toast.error("No face detected. Please face the camera to start.");
+              }
+            }}
+          />
         </motion.div>
 
         <motion.div variants={columnVariants} className="space-y-4">
@@ -465,7 +484,7 @@ export default function WorkspacePage() {
                 )}
                 {cameraStatus === 'loading' && (
                   <div className="flex items-center justify-center py-6">
-                    <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   </div>
                 )}
               </div>
@@ -505,7 +524,6 @@ export default function WorkspacePage() {
         </motion.div>
       </motion.div>
 
-      {/* <EnforcementModal show={enforcementTriggered} onDismiss={handleDismissEnforcement} /> */}
       {(() => {
         const minutes = Math.floor(timerState.timeRemaining / 60).toString().padStart(2, '0');
         const seconds = (timerState.timeRemaining % 60).toString().padStart(2, '0');

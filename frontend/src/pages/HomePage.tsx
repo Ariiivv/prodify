@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sparkles, Layers, Timer, TrendingUp, Flame, BarChart3 } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
+import { useAuthStore } from '@/store/authStore';
 
 import AnimatedBackground from '@/components/dashboard/AnimatedBackground';
 import ScrambleNumber from '@/components/dashboard/ScrambleNumber';
 import DailyGoalRing from '@/components/dashboard/DailyGoalRing';
 import RecentActivity from '@/components/dashboard/RecentActivity';
 import GoalProgressBar from '@/components/dashboard/GoalProgressBar';
-import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 import WorkspaceCard from '@/components/workspace/WorkspaceCard';
 import CreateWorkspaceDialog from '@/components/workspace/CreateWorkspaceDialog';
 
@@ -59,7 +59,14 @@ const HomePage: React.FC = () => {
 
   const fetchData = useCallback(async () => {
     try {
-      const wsRes = await fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders() });
+      let headers = getAuthHeaders();
+      // If token isn't ready for some reason, wait a beat
+      if (!headers.Authorization) {
+        await new Promise(r => setTimeout(r, 500));
+        headers = getAuthHeaders();
+      }
+
+      const wsRes = await fetch(`${API_BASE}/workspaces`, { headers });
 
       if (wsRes.ok) {
         const wsData: Workspace[] = await wsRes.json();
@@ -82,11 +89,14 @@ const HomePage: React.FC = () => {
                 plans[ws.id] = await planRes.json();
               }
             } catch {
-              // Goal optimizer not available — skip silently
+              // Goal optimizer not available - skip silently
             }
           })
         );
         setGoalPlans(plans);
+      } else {
+        console.error("Failed to fetch workspaces:", wsRes.status, await wsRes.text());
+        setIsLoading(false);
       }
 
       // Fetch recent sessions
@@ -119,9 +129,13 @@ const HomePage: React.FC = () => {
     }
   }, []);
 
+  const token = useAuthStore(state => state.session?.access_token);
+
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (token) {
+      fetchData();
+    }
+  }, [fetchData, token]);
 
   // Detect the peak distraction hour from session patterns (client-side heuristic)
   useEffect(() => {
@@ -191,7 +205,7 @@ const HomePage: React.FC = () => {
         >
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-mono font-bold text-prodify-accent tracking-[0.25em] uppercase">Prodify</span>
+              <span className="text-[10px] font-mono font-bold text-white bg-prodify-surface-alt px-2 py-0.5 rounded tracking-[0.25em] uppercase border border-prodify-border">Prodify</span>
             </div>
             <h1 className="text-2xl md:text-3xl font-heading font-bold text-white tracking-tight">Your Workspace</h1>
             <p className="text-sm text-prodify-muted mt-1 font-body">Focus smarter. Track burnout. Stay sharp.</p>
@@ -204,7 +218,7 @@ const HomePage: React.FC = () => {
               <BarChart3 className="w-3.5 h-3.5" />
               Analytics
             </Link>
-            <CreateWorkspaceDialog onCreated={fetchData} />
+            <CreateWorkspaceDialog onCreated={fetchData} variant={workspaces.length === 0 ? "outline" : "primary"} />
           </div>
         </motion.div>
 
@@ -236,7 +250,7 @@ const HomePage: React.FC = () => {
               <div className="relative z-10">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-8 h-8 flex items-center justify-center bg-prodify-surface-alt border border-prodify-border">
-                    <Icon className={`w-4 h-4 ${accent ? 'text-prodify-accent' : 'text-prodify-muted'}`} />
+                    <Icon className="w-4 h-4 text-prodify-muted" />
                   </div>
                   <span className="text-xs text-prodify-muted font-mono uppercase tracking-wider">{label}</span>
                 </div>
@@ -257,7 +271,7 @@ const HomePage: React.FC = () => {
             className="space-y-4 mb-8"
           >
             <h2 className="text-base font-heading font-semibold text-white flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-prodify-accent" />
+              <TrendingUp className="w-4 h-4 text-prodify-muted" />
               Active Goal Plans
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -323,31 +337,9 @@ const HomePage: React.FC = () => {
             )}
           </div>
 
-          {/* Sidebar: Activity + Coach Insight Panel */}
+          {/* Sidebar: Activity */}
           <div className="lg:col-span-1 space-y-4">
             <RecentActivity sessions={sessions} workspaces={workspaces} />
-
-            {/* Coach Insight Panel — replaces static Pro Tip */}
-            <CoachInsightPanel
-              engagementState="ACTIVE_WORK"
-              isSessionActive={false}
-              currentHour={currentHour}
-              peakDistractionHour={peakDistractionHour}
-              workspaceName={workspaces[0]?.name || 'Default'}
-            />
-
-            {/* Compact Pro Tip */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.55 }}
-              className="border border-prodify-border bg-prodify-surface p-5"
-            >
-              <p className="text-xs font-mono font-semibold text-prodify-accent tracking-widest uppercase mb-3">Pro Tip</p>
-              <p className="text-sm text-prodify-muted leading-relaxed">
-                Work in <span className="text-white font-medium">focused sprints</span> of 45–90 min, then take a proper break. Your brain consolidates memory during rest, not during work.
-              </p>
-            </motion.div>
           </div>
 
         </div>

@@ -19,7 +19,7 @@ def _format_deadline_display(deadline_date: date) -> str:
 def calculate_daily_plan(
     target_hours: float,
     deadline: Union[str, date, datetime, None],
-    user_id: int = 1,
+    user_id: str = "1",
     db: Optional[Session] = None,
     workspace_name: str = "Goal Workspace",
 ) -> dict:

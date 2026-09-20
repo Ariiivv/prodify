@@ -5,6 +5,7 @@ from typing import Optional
 
 from app.models.connection import get_db
 from app.models import schemas as models
+from app.api.auth import get_current_user
 
 router = APIRouter(tags=["analytics"])
 
@@ -17,8 +18,8 @@ class GlobalMetricsOut(BaseModel):
     most_productive_day: Optional[str]
 
 @router.get("/global-metrics", response_model=GlobalMetricsOut)
-def get_global_metrics(db: Session = Depends(get_db)):
-    metrics = db.query(models.WorkspaceMetrics).all()
+def get_global_metrics(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    metrics = db.query(models.WorkspaceMetrics).join(models.Workspace).filter(models.Workspace.user_id == current_user.id).all()
     if not metrics:
         return GlobalMetricsOut(
             total_focus_hours=0.0,

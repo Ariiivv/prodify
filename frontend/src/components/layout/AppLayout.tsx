@@ -22,8 +22,8 @@ export default function AppLayout() {
       {/* Sidebar */}
       <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-prodify-border bg-prodify-surface overflow-hidden">
         <Link to="/" className="mb-12 flex flex-col items-center gap-1">
-          <div className="w-10 h-10 bg-prodify-accent flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-prodify-bg" />
+          <div className="w-10 h-10 bg-prodify-surface-alt border border-prodify-border rounded flex items-center justify-center transition-colors hover:text-white text-prodify-muted">
+            <Sparkles className="w-5 h-5" />
           </div>
         </Link>
 

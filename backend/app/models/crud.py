@@ -6,7 +6,7 @@ from typing import Optional, List
 
 def create_workspace(
     db: Session,
-    user_id: int,
+    user_id: str,
     name: str,
     mode: str,
     target_hours: Optional[float] = None,
@@ -54,7 +54,7 @@ def get_workspace(db: Session, workspace_id: int) -> Optional[models.Workspace]:
 def update_workspace(
     db: Session,
     workspace_id: int,
-    user_id: int,
+    user_id: str,
     name: str,
     mode: str,
     target_hours: Optional[float] = None,
@@ -94,7 +94,7 @@ def delete_workspace(db: Session, workspace_id: int):
 def share_workspace(
     db: Session,
     workspace_id: int,
-    user_id: int,
+    user_id: str,
 ) -> models.Workspace:
     """Share a workspace with another user by reassigning ownership."""
     workspace = get_workspace(db, workspace_id=workspace_id)
@@ -139,7 +139,7 @@ def log_activity_record_async(
 
 
 def get_recent_activity_logs(
-    db: Session, user_id: Optional[int] = None, days: int = 7, limit: int = 300
+    db: Session, user_id: Optional[str] = None, days: int = 7, limit: int = 300
 ) -> List[models.ActivityLog]:
     """Fetch recent activity logs for AI coach pattern analysis."""
     from datetime import datetime, timedelta
@@ -163,7 +163,7 @@ def get_user_by_google_id(db: Session, google_id: str) -> Optional[models.User]:
     return db.query(models.User).filter(models.User.google_id == google_id).first()
 
 
-def get_user_by_id(db: Session, user_id: int) -> Optional[models.User]:
+def get_user_by_id(db: Session, user_id: str) -> Optional[models.User]:
     """Fetch a user by primary key ID."""
     return db.query(models.User).filter(models.User.id == user_id).first()
 
@@ -176,9 +176,11 @@ def create_user(
     auth_provider: str = "email",
     google_id: Optional[str] = None,
     avatar_url: Optional[str] = None,
+    id: Optional[str] = None,
 ) -> models.User:
     """Create a new user profile."""
     user = models.User(
+        id=id,
         email=email,
         username=username,
         hashed_password=hashed_password,
@@ -186,6 +188,10 @@ def create_user(
         google_id=google_id,
         avatar_url=avatar_url,
     )
+    if id is None:
+        import uuid
+        user.id = str(uuid.uuid4())
+        
     db.add(user)
     db.commit()
     db.refresh(user)

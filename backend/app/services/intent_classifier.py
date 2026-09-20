@@ -13,30 +13,6 @@ client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
 )
 
-# Focus classification keywords
-FOCUS_KEYWORDS = [
-    "odin project",
-    "the odin project",
-    "github",
-    "stackoverflow",
-    "documentation",
-    "docs",
-    "mdn",
-    "w3schools",
-    "tutorial",
-    "reference",
-    "api",
-    "specification",
-    "leetcode",
-    "codewars",
-    "hackerrank",
-    "medium",
-    "dev.to",
-    "real python",
-    "digitalocean",
-    "geeksforgeeks",
-]
-
 # OS-level transient windows that should never be flagged as distracted
 OS_WHITELIST = [
     "windows explorer",
@@ -49,45 +25,6 @@ OS_WHITELIST = [
     "dwm",
     "window switcher",
 ]
-
-# Distraction keywords — when a browser tab title contains these, the user is distracted
-DISTRACTION_KEYWORDS = [
-    "youtube",
-    "instagram",
-    "facebook",
-    "twitter",
-    "x.com",
-    "reddit",
-    "tiktok",
-    "snapchat",
-    "discord",
-    "twitch",
-    "netflix",
-    "spotify",
-    "whatsapp",
-    "telegram",
-    "pinterest",
-    "linkedin",
-    "tumblr",
-    "flickr",
-    "9gag",
-    "imgur",
-    "buzzfeed",
-    "viral",
-    "memes",
-    "gaming",
-    "play",
-    "game",
-    "sports",
-    "news",
-    "entertainment",
-    "shopping",
-    "amazon",
-    "flipkart",
-    "ebay",
-    "olx",
-]
-
 
 # ---------------------------------------------------------------------------
 # Normalization & fuzzy-matching helpers
@@ -249,36 +186,8 @@ def classify_window(window_title: str, app_name: str) -> tuple[str, str]:
             print(f"🔍 [CLASSIFY] RESULT: focused (OS whitelist: {os_keyword})")
             return "focused", f"OS transient window ignored ({os_keyword})"
 
-    if app_name.lower() == "code":
-        print(f"🔍 [CLASSIFY] RESULT: focused (code app)")
-        return "focused", "VS Code detected (code app)"
-
-    ide_signals = ["vs code", "visual studio", "vscode"]
-    for signal in ide_signals:
-        if _fuzzy_contains(signal, app_name) or _fuzzy_contains(signal, window_title):
-            print(f"🔍 [CLASSIFY] RESULT: focused (IDE fuzzy: {signal})")
-            return "focused", f"IDE detected (fuzzy match: '{signal}')"
-
-    browser_keywords = ["brave", "chrome", "chromium", "firefox", "msedge", "edge", "opera"]
-    is_browser = any(_fuzzy_contains(b, app_name) for b in browser_keywords)
-
-    if is_browser:
-        title_lower = window_title.lower()
-        for dist_keyword in DISTRACTION_KEYWORDS:
-            if dist_keyword in title_lower:
-                print(f"🔍 [CLASSIFY] RESULT: distracted (browser distraction: {dist_keyword})")
-                return "distracted", f"Distracting content detected: '{dist_keyword}' ({window_title[:45]})"
-
-        for keyword in FOCUS_KEYWORDS:
-            if keyword in title_lower:
-                print(f"🔍 [CLASSIFY] RESULT: focused (browser focus: {keyword})")
-                return "focused", f"Productive browsing: '{keyword}' found in title"
-
-        print(f"🔍 [CLASSIFY] RESULT: distracted (browser unrecognized site)")
-        return "distracted", f"Browser tab ({window_title[:45]}) contains non-productive content"
-
-    print(f"🔍 [CLASSIFY] RESULT: distracted (default fallback)")
-    return "distracted", f"Switching to {app_name} ({window_title[:45]}) does not align with your session intent"
+    print(f"🔍 [CLASSIFY] RESULT: focused (default fallback)")
+    return "focused", "AI evaluation not yet provided (temporary focused)"
 
 
 async def classify_with_intent(

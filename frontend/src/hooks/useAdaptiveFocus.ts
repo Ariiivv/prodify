@@ -1,46 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTimerState } from '@/lib/timerStore';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 
-// ─── Environment Detection ───────────────────────────────────────────────────────
-const IS_ELECTRON = typeof window !== 'undefined' && !!window.electronBridge;
-
-/**
- * Determines if the current OS window title is focused based on the workspace keywords.
- * Implements a strict whitelist: the user is FOCUSED only if the current title
- * contains at least one keyword (case-insensitive).
- * - Empty/null title defaults to focused (avoids false positives).
- * - Empty keywords array defaults to focused (presentation bypass / demo guardrail).
- * - All keywords are trimmed and empty strings are filtered out before comparison.
- */
-function isFocused(currentTitle: string, keywords: string[]): boolean {
-  // Guard: no keywords provided → always focused (demo guardrail)
-  if (!keywords || keywords.length === 0) return true;
-
-  // Guard: empty/null title → focused to avoid false positives
-  if (!currentTitle || currentTitle.trim().length === 0) return true;
-
-  // Sanitize keywords: trim and remove empties
-  const sanitized = keywords
-    .map(kw => kw.trim())
-    .filter(kw => kw.length > 0);
-  if (sanitized.length === 0) return true;
-
-  // Whitelist check: title must contain at least one keyword (case-insensitive)
-  const lowerTitle = currentTitle.toLowerCase();
-  const matchFound = sanitized.some(kw => lowerTitle.includes(kw.toLowerCase()));
-
-  console.log(
-    `[useAdaptiveFocus] Current Title: "${currentTitle}", Keywords: [${sanitized.join(', ')}], MatchFound: ${matchFound}`
-  );
-
-  return matchFound;
-}
+// ─── Environment Detection ───────────────────────────────────────────────────
+const IS_TAURI = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
 
 interface UseAdaptiveFocusOptions {
-  /** Array of focus keywords from the workspace */
+  /** Array of focus keywords from the workspace (used as local fallback) */
   keywords: string[];
   /** Whether adaptive tracking is enabled */
   enabled: boolean;
+  /** The user's natural-language session intent for AI classification */
+  sessionIntent?: string;
   /** Called when the user becomes distracted */
   onDistracted?: (reason?: string, appName?: string) => void;
   /** Called when the user becomes focused */
@@ -59,34 +30,30 @@ interface UseAdaptiveFocusResult {
 export function useAdaptiveFocus({
   keywords = [],
   enabled = true,
+  sessionIntent = '',
   onDistracted,
   onFocused,
 }: UseAdaptiveFocusOptions): UseAdaptiveFocusResult {
-  const [currentTabTitle, setCurrentTabTitle] = useState(
-    () => IS_ELECTRON ? '' : document.title
-  );
+  const [currentTabTitle, setCurrentTabTitle] = useState('');
   const [focusedState, setFocusedState] = useState(true);
   const prevFocusedRef = useRef(true);
   const onDistractedRef = useRef(onDistracted);
   const onFocusedRef = useRef(onFocused);
-  const keywordsRef = useRef(keywords);
+  const sessionIntentRef = useRef(sessionIntent);
+  // Track in-flight classification to avoid duplicate API calls
+  const classifyingRef = useRef(false);
 
   useEffect(() => {
     onDistractedRef.current = onDistracted;
     onFocusedRef.current = onFocused;
-    keywordsRef.current = keywords;
-  }, [onDistracted, onFocused, keywords]);
+    sessionIntentRef.current = sessionIntent;
+  }, [onDistracted, onFocused, sessionIntent]);
 
   // ── Startup grace period ─────────────────────────────────────────────
-  // Ignore all distraction callbacks for the first 3 seconds after the
-  // hook is enabled. This gives the Electron polling time to sync up
-  // cleanly after "Start Timer" or "Resume Focus" is clicked.
   const startupTimeRef = useRef<number>(Date.now());
   const prevEnabledRef = useRef<boolean>(enabled);
   const GRACE_PERIOD_MS = 3000;
 
-  // Reset grace period and reset focused ref whenever transitioning
-  // from disabled → enabled (i.e. user clicks "Start Timer" or "Resume Focus").
   if (enabled && !prevEnabledRef.current) {
     startupTimeRef.current = Date.now();
     prevFocusedRef.current = true;
@@ -96,23 +63,19 @@ export function useAdaptiveFocus({
 
   /**
    * Core focus-checking logic.
-   * Called both from the Electron IPC handler and the browser fallback polling.
+   * Called with the AI classification result from the backend.
    */
   const checkFocus = useCallback((title: string, overrideFocused?: boolean, reason?: string, appName?: string) => {
-    // Safety check: only trigger focus events when the timer is actively running.
     const timer = getTimerState();
     const isFocusActive = timer.currentState === 'FOCUS_RUNNING';
 
-    // Update the displayed title regardless
     if (title) {
       setCurrentTabTitle(title);
     }
 
-    // Perform the keyword match or use AI Intent Engine override
-    const focused = overrideFocused !== undefined ? overrideFocused : isFocused(title, keywordsRef.current);
+    const focused = overrideFocused !== undefined ? overrideFocused : true;
     setFocusedState(focused);
 
-    // Suppress callback firing when timer isn't actively running
     if (!isFocusActive) return;
 
     // ── Startup grace period ─────────────────────────────────────────
@@ -122,7 +85,6 @@ export function useAdaptiveFocus({
       return;
     }
 
-    // Always halt the timer immediately if a distraction is detected while FOCUS_RUNNING
     if (!focused) {
       prevFocusedRef.current = false;
       onDistractedRef.current?.(reason, appName);
@@ -132,6 +94,50 @@ export function useAdaptiveFocus({
     }
   }, []);
 
+  /**
+   * Send the window title to the backend for AI-powered intent classification.
+   * Calls POST /api/telemetry/activity and feeds the result into checkFocus().
+   */
+  const classifyWindow = useCallback(async (title: string, processName: string) => {
+    // Skip if already classifying (prevents duplicate calls from rapid events)
+    if (classifyingRef.current) return;
+    classifyingRef.current = true;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/telemetry/activity`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          window_title: title,
+          app_name: processName,
+          intent: sessionIntentRef.current || '',
+        }),
+      });
+
+      if (!response.ok) {
+        console.error(`[useAdaptiveFocus] /telemetry/activity HTTP ${response.status}`);
+        // On error, don't change focus state (fail-open)
+        setCurrentTabTitle(title);
+        return;
+      }
+
+      const data: { status: string; reason: string; window_title: string; app_name: string } =
+        await response.json();
+
+      console.log(
+        `[useAdaptiveFocus] ⚡ Classification result: status="${data.status}", reason="${data.reason}"`
+      );
+
+      checkFocus(title, data.status === 'focused', data.reason, data.app_name);
+    } catch (err) {
+      console.error('[useAdaptiveFocus] Classification request failed:', err);
+      // Fail-open: just update the title, don't trigger distraction
+      setCurrentTabTitle(title);
+    } finally {
+      classifyingRef.current = false;
+    }
+  }, [checkFocus]);
+
   useEffect(() => {
     if (!enabled) {
       setFocusedState(true);
@@ -139,46 +145,70 @@ export function useAdaptiveFocus({
       return;
     }
 
-    // ─── Electron Path ─────────────────────────────────────────────────────
-    if (IS_ELECTRON && window.electronBridge) {
-      // Start OS tracking
-      window.electronBridge.setTrackingEnabled(true);
+    // ─── Tauri Path ──────────────────────────────────────────────────────
+    if (IS_TAURI) {
+      let unlisten: (() => void) | null = null;
 
-      // Get initial window title for UI display
-      window.electronBridge.getActiveWindow().then((win) => {
-        if (win) {
-          setCurrentTabTitle(win.title);
+      const setup = async () => {
+        try {
+          // Dynamic imports — these modules only exist in a Tauri runtime
+          const { invoke } = await import('@tauri-apps/api/core');
+          const { listen } = await import('@tauri-apps/api/event');
+
+          // Get the initial active window
+          const initial = await invoke<{
+            title: string;
+            processName: string;
+            timestamp: number;
+          } | null>('get_active_window');
+
+          if (initial) {
+            setCurrentTabTitle(initial.title);
+            // Classify the initial window (if intent is set)
+            if (sessionIntentRef.current) {
+              classifyWindow(initial.title, initial.processName);
+            }
+          }
+
+          // Subscribe to window-changed events from the Rust background poller
+          const unlistenFn = await listen<{
+            title: string;
+            processName: string;
+            timestamp: number;
+          }>('window-changed', (event) => {
+            const { title, processName } = event.payload;
+            console.log(
+              `[useAdaptiveFocus] 🪟 Window changed: "${title}" (${processName})`
+            );
+
+            // Always update the displayed title
+            setCurrentTabTitle(title);
+
+            // Only classify if the hook is enabled and we have an intent
+            if (sessionIntentRef.current) {
+              classifyWindow(title, processName);
+            }
+          });
+
+          unlisten = unlistenFn;
+        } catch (err) {
+          console.error('[useAdaptiveFocus] Tauri setup failed:', err);
         }
-      });
+      };
 
-      // Subscribe to OS window changes for fast UI title display
-      const unsubscribeWindow = window.electronBridge.onWindowChanged((payload) => {
-        setCurrentTabTitle(payload.title);
-      });
-
-      // Subscribe to backend AI Intent Engine classification results
-      const unsubscribeClassified = window.electronBridge.onActivityClassified
-        ? window.electronBridge.onActivityClassified((payload) => {
-            console.log(`[useAdaptiveFocus] ⚡ IPC received activity-classified: status="${payload.status}", reason="${payload.reason}"`);
-            checkFocus(payload.window_title, payload.status === 'focused', payload.reason, payload.app_name);
-          })
-        : () => {};
+      setup();
 
       return () => {
-        unsubscribeWindow();
-        unsubscribeClassified();
-        window.electronBridge?.setTrackingEnabled(false);
+        unlisten?.();
       };
     }
 
     // ─── Browser Fallback Path ─────────────────────────────────────────────
-    // If not running in Electron, we cannot track OS-level windows.
-    // We intentionally disable title-based keyword checking in the browser to prevent 
-    // false positives when the user switches to VS Code or another app.
+    // If not running in Tauri, we cannot track OS-level windows.
     console.log("[useAdaptiveFocus] Running in browser: OS window tracking is disabled.");
-    
+
     return () => {};
-  }, [enabled, checkFocus]);
+  }, [enabled, classifyWindow]);
 
   return {
     currentTabTitle,
@@ -186,5 +216,3 @@ export function useAdaptiveFocus({
     keywords,
   };
 }
-
-export { isFocused };

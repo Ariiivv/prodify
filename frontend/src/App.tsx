@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { GoogleOAuthProvider } from '@react-oauth/google';
 import { useAuthStore } from '@/store/authStore';
 import AppLayout from './components/layout/AppLayout';
 import HomePage from './pages/HomePage';
@@ -11,9 +10,9 @@ import Auth from './pages/Auth';
 import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ScrollToTop from './components/ScrollToTop';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const queryClient = new QueryClient();
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '1234567890-dummydevclientid.apps.googleusercontent.com';
 
 function App() {
   const initialize = useAuthStore((state) => state.initialize);
@@ -27,7 +26,7 @@ function App() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
           <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
@@ -35,7 +34,7 @@ function App() {
   }
 
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+    <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <ScrollToTop />
@@ -55,7 +54,7 @@ function App() {
           </Routes>
         </BrowserRouter>
       </QueryClientProvider>
-    </GoogleOAuthProvider>
+    </ErrorBoundary>
   );
 }
 

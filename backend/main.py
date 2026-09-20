@@ -81,12 +81,19 @@ async def vision_socket(websocket: WebSocket):
         return
     try:
         while True:
-            payload = await websocket.receive_json()
-            image = payload.get("image")
-            if not isinstance(image, str) or not image:
-                await websocket.send_json({"status": "focused", "error": "Frame payload is missing an image."})
-                continue
-            await websocket.send_json(tracker.process_frame(image))
+            try:
+                payload = await websocket.receive_json()
+                image = payload.get("image")
+                if not isinstance(image, str) or not image:
+                    await websocket.send_json({"status": "focused", "error": "Frame payload is missing an image."})
+                    continue
+                # Feed real keyboard activity from the frontend into the vision engine
+                if payload.get("typing"):
+                    tracker.report_user_input()
+                await websocket.send_json(tracker.process_frame(image))
+            except Exception as e:
+                logger.error(f"Error processing vision frame: {e}")
+                await websocket.send_json({"status": "focused", "error": "Internal vision processing error."})
     except WebSocketDisconnect:
         logger.info("Vision client disconnected")
 

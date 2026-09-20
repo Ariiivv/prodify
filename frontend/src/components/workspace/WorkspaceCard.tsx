@@ -105,7 +105,7 @@ export default function WorkspaceCard({ workspace, index = 0, onDeleted }: Works
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
             <span className="flex items-center gap-1">
               <Timer className="w-3 h-3" />
-              {workspace.work_duration || 45}m
+              {workspace.work_duration || 25}m
             </span>
             <span className="flex items-center gap-1">
               <Flame className="w-3 h-3" />

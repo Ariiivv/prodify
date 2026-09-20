@@ -6,25 +6,47 @@ import {
   startFocus, pauseFocus, resumeFocus,
   startBreak, pauseBreak, resumeBreak, resetTimer
 } from '@/lib/timerStore';
+import { audioEngine } from '@/lib/audio';
+
+import { toast } from 'sonner';
 
 interface TimerControlsProps {
   state: string;
   timeRemaining?: number;
   totalDuration?: number;
+  canStartFocus?: boolean;
+  onStartFocusBlocked?: () => void;
 }
 
-export default function TimerControls({ state, timeRemaining, totalDuration }: TimerControlsProps) {
+export default function TimerControls({ state, timeRemaining, totalDuration, canStartFocus = true, onStartFocusBlocked }: TimerControlsProps) {
   useEffect(() => {
     if (state === 'SESSION_COMPLETED') {
-      new Audio('https://www.soundjay.com/buttons/beep-07.wav').play().catch(() => {
-        // Silently fail if audio can't play (e.g., user hasn't interacted yet)
-      });
+      audioEngine.playChime();
     }
   }, [state]);
 
   const hasNotStarted = timeRemaining !== undefined && totalDuration !== undefined 
     ? timeRemaining === totalDuration 
     : false;
+
+  const handleAction = (action: () => void) => {
+    audioEngine.playClick();
+    action();
+  };
+
+  const handleStartFocus = () => {
+    if (!canStartFocus) {
+      if (onStartFocusBlocked) onStartFocusBlocked();
+      else toast.error("Cannot start focus right now.");
+      return;
+    }
+    handleAction(state === 'IDLE' ? startFocus : resumeFocus);
+  };
+
+  const handlePauseFocus = () => {
+    audioEngine.playClick();
+    pauseFocus('Manual');
+  };
 
   return (
     <AnimatePresence mode="wait">
@@ -38,9 +60,9 @@ export default function TimerControls({ state, timeRemaining, totalDuration }: T
       >
         {(state === 'IDLE' || (state === 'FOCUS_PAUSED' && hasNotStarted)) && (
           <Button
-            onClick={state === 'IDLE' ? startFocus : resumeFocus}
+            onClick={handleStartFocus}
             size="lg"
-            className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white px-8 py-6 text-base font-semibold rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:scale-[1.02] active:scale-[0.98]"
+            className="bg-primary hover:bg-primary/90 text-black px-8 py-6 text-base font-semibold rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:scale-[1.02] active:scale-[0.98]"
           >
             <Play className="w-5 h-5 mr-2" />
             Start Focus
@@ -50,7 +72,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration }: T
         {state === 'FOCUS_RUNNING' && (
           <>
             <Button
-              onClick={() => pauseFocus('Manual')}
+              onClick={handlePauseFocus}
               size="lg"
               className="bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 px-6 py-6 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
@@ -58,7 +80,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration }: T
               Pause
             </Button>
             <Button
-              onClick={resetTimer}
+              onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
               className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"
@@ -71,15 +93,15 @@ export default function TimerControls({ state, timeRemaining, totalDuration }: T
         {state === 'FOCUS_PAUSED' && !hasNotStarted && (
           <>
             <Button
-              onClick={resumeFocus}
+              onClick={handleStartFocus}
               size="lg"
-              className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white px-8 py-6 rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-primary hover:bg-primary/90 text-black px-8 py-6 rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Play className="w-5 h-5 mr-2" />
               Resume
             </Button>
             <Button
-              onClick={resetTimer}
+              onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
               className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"
@@ -92,18 +114,18 @@ export default function TimerControls({ state, timeRemaining, totalDuration }: T
         {state === 'SESSION_COMPLETED' && (
           <>
             <Button
-              onClick={startBreak}
+              onClick={() => handleAction(startBreak)}
               size="lg"
-              className="bg-gradient-to-r from-green-500 to-accent hover:from-green-400 hover:to-accent/80 text-white px-8 py-6 rounded-2xl shadow-lg shadow-green-500/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-primary hover:bg-primary/90 text-black px-8 py-6 rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Coffee className="w-5 h-5 mr-2" />
               Start Break
             </Button>
             <Button
-              onClick={startFocus}
+              onClick={handleStartFocus}
               size="lg"
               variant="outline"
-              className="border-primary/30 text-primary hover:bg-primary/10 px-6 py-6 rounded-2xl"
+              className="border border-[#2a2a2a] text-white bg-transparent hover:bg-[#1a1a1a] px-6 py-6 rounded-2xl"
             >
               <Zap className="w-5 h-5 mr-2" />
               New Focus
@@ -114,15 +136,15 @@ export default function TimerControls({ state, timeRemaining, totalDuration }: T
         {state === 'BREAK_RUNNING' && (
           <>
             <Button
-              onClick={pauseBreak}
+              onClick={() => handleAction(pauseBreak)}
               size="lg"
-              className="bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 px-6 py-6 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-[#2a2a2a] text-white border border-[#2a2a2a] hover:bg-[#1a1a1a] px-6 py-6 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Pause className="w-5 h-5 mr-2" />
               Pause Break
             </Button>
             <Button
-              onClick={resetTimer}
+              onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
               className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"
@@ -135,15 +157,15 @@ export default function TimerControls({ state, timeRemaining, totalDuration }: T
         {state === 'BREAK_PAUSED' && (
           <>
             <Button
-              onClick={resumeBreak}
+              onClick={() => handleAction(resumeBreak)}
               size="lg"
-              className="bg-gradient-to-r from-green-500 to-accent hover:from-green-400 hover:to-accent/80 text-white px-8 py-6 rounded-2xl shadow-lg shadow-green-500/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-primary hover:bg-primary/90 text-black px-8 py-6 rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Play className="w-5 h-5 mr-2" />
               Resume Break
             </Button>
             <Button
-              onClick={resetTimer}
+              onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
               className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"

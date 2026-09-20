@@ -68,7 +68,7 @@ class SessionCreate(BaseModel):
     burnout_score: float = 0.0
 
 
-def require_owned_workspace(workspace_id: int, user_id: int, db: Session) -> models.Workspace:
+def require_owned_workspace(workspace_id: int, user_id: str, db: Session) -> models.Workspace:
     workspace = (
         db.query(models.Workspace)
         .filter(models.Workspace.id == workspace_id, models.Workspace.user_id == user_id)

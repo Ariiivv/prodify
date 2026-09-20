@@ -71,7 +71,7 @@ export default {
         'prodify-surface-alt': '#1a1a1a',
         'prodify-accent': '#e8ff47',
         'prodify-danger': '#ff4444',
-        'prodify-success': '#44ff88',
+        'prodify-success': '#4ade80',
         'prodify-border': '#2a2a2a',
         'prodify-muted': '#666666',
       },

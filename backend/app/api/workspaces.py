@@ -1,9 +1,10 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.api.auth import get_current_user
 from app.models import crud
@@ -19,14 +20,19 @@ class WorkspacePayload(BaseModel):
     mode: str = Field(default="structured", min_length=1, max_length=80)
     target_hours: Optional[float] = Field(default=None, ge=0)
     deadline: Optional[date] = None
-    work_duration: int = Field(default=45, ge=1, le=180)
+    work_duration: int = Field(default=25, ge=1, le=180)
     break_duration: int = Field(default=5, ge=1, le=60)
     focus_keywords: Optional[str] = Field(default=None, max_length=2000)
 
 
 class WorkspaceOut(WorkspacePayload):
     id: int
-    user_id: int
+    user_id: str
+
+    @field_validator('user_id', mode='before')
+    def cast_to_string(cls, v):
+        return str(v)
+
     model_config = ConfigDict(from_attributes=True)
 
 class ChatMessagePayload(BaseModel):
@@ -200,3 +206,96 @@ def add_workspace_metrics(
     db.commit()
     db.refresh(metrics)
     return metrics
+class DailyGoalOut(BaseModel):
+    date: date
+    target_minutes_for_day: int
+    actual_minutes_logged: int
+    status: str
+    model_config = ConfigDict(from_attributes=True)
+
+@router.get("/{workspace_id}/daily-goals", response_model=list[DailyGoalOut])
+def get_daily_goals(
+    workspace_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    workspace = get_owned_workspace(workspace_id, current_user, db)
+    
+    if not workspace.mode or "structured" not in workspace.mode.lower():
+        return []
+        
+    if not workspace.deadline or not workspace.target_hours:
+        return []
+        
+    metrics = (
+        db.query(models.WorkspaceMetrics.session_date, func.sum(models.WorkspaceMetrics.focus_minutes).label("total_minutes"))
+        .filter(models.WorkspaceMetrics.workspace_id == workspace_id)
+        .group_by(models.WorkspaceMetrics.session_date)
+        .all()
+    )
+    
+    metrics_by_date = {m.session_date: m.total_minutes for m in metrics}
+    
+    today = datetime.utcnow().date()
+    created_date = workspace.created_at.date()
+    deadline = workspace.deadline
+    target_hours = workspace.target_hours
+    
+    if deadline < created_date:
+        return []
+        
+    results = []
+    current_date = created_date
+    total_logged_before_current = 0
+    
+    total_logged_up_to_today = 0
+    for d_i in range((min(today, deadline) - created_date).days + 1):
+        d_val = created_date + timedelta(days=d_i)
+        total_logged_up_to_today += metrics_by_date.get(d_val, 0)
+        
+    future_rem_days = (deadline - today).days
+    if future_rem_days > 0:
+        future_target = (target_hours * 60 - total_logged_up_to_today) / future_rem_days
+    else:
+        future_target = (target_hours * 60 - total_logged_up_to_today)
+        
+    while current_date <= deadline:
+        actual = metrics_by_date.get(current_date, 0)
+        
+        if current_date <= today:
+            days_rem = (deadline - current_date).days + 1
+            if days_rem > 0:
+                target_min = (target_hours * 60 - total_logged_before_current) / days_rem
+            else:
+                target_min = (target_hours * 60 - total_logged_before_current)
+        else:
+            target_min = future_target
+            
+        target_min = max(0.0, float(target_min))
+        target_min_int = int(round(target_min))
+        
+        if current_date > today:
+            status = "future"
+        elif current_date == today:
+            status = "today"
+        else:
+            if actual == 0:
+                status = "none"
+            elif actual < target_min_int:
+                status = "under"
+            elif actual >= target_min_int * 1.2:
+                status = "exceeded"
+            else:
+                status = "met"
+                
+        results.append({
+            "date": current_date,
+            "target_minutes_for_day": target_min_int,
+            "actual_minutes_logged": actual,
+            "status": status
+        })
+        
+        total_logged_before_current += actual
+        current_date += timedelta(days=1)
+        
+    return results

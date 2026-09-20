@@ -3,15 +3,31 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { Loader2 } from 'lucide-react';
 
+import { supabase } from '@/lib/supabase';
+
 export default function AuthCallback() {
   const navigate = useNavigate();
   const initialize = useAuthStore((state) => state.initialize);
 
   useEffect(() => {
     const handleCallback = async () => {
+      // Supabase automatically handles hash tokens, but for PKCE ?code= flow:
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          console.error('Error exchanging code:', error);
+          navigate('/auth');
+          return;
+        }
+      }
+
       await initialize();
-      const token = localStorage.getItem('prodify_access_token');
-      if (token) {
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
         navigate('/');
       } else {
         navigate('/auth');

@@ -1,6 +1,11 @@
 /**
- * Type declarations for the Electron IPC bridge exposed by the preload script.
+ * Type declarations for the Tauri IPC bridge and legacy Electron bridge.
+ *
+ * The app uses Tauri v2 for OS-level window tracking. The Electron types
+ * are kept for reference but are not used at runtime.
  */
+
+// ─── Shared Payload Types ────────────────────────────────────────────────────
 
 interface ActiveWindowPayload {
   title: string;
@@ -15,35 +20,20 @@ interface ActivityClassifiedPayload {
   app_name: string;
 }
 
+// ─── Legacy Electron Bridge (unused — kept for reference) ────────────────────
+
 interface ElectronBridge {
-  /**
-   * Listen for active OS window changes emitted by the main process.
-   * @returns an unsubscribe function
-   */
   onWindowChanged: (callback: (payload: ActiveWindowPayload) => void) => () => void;
-
-  /**
-   * Request the current active window info on demand.
-   */
   getActiveWindow: () => Promise<ActiveWindowPayload | null>;
-
-  /**
-   * Enable or disable the OS window polling loop.
-   */
   setTrackingEnabled: (enabled: boolean) => void;
-
-  /**
-   * Send the workspace's natural-language session intent to the main process.
-   * Included in every activity API call for Gemini-based focus evaluation.
-   */
   setSessionIntent: (intent: string | { intent: string; workspaceId?: number }) => void;
-
-  /**
-   * Listen for backend classification verdicts (focused vs distracted + AI reason).
-   */
   onActivityClassified: (callback: (payload: ActivityClassifiedPayload) => void) => () => void;
 }
 
+// ─── Tauri Runtime Detection ─────────────────────────────────────────────────
+
 interface Window {
   electronBridge?: ElectronBridge;
+  /** Tauri v2 injects this object at runtime — used for environment detection */
+  __TAURI_INTERNALS__?: unknown;
 }

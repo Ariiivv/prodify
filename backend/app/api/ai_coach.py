@@ -58,7 +58,7 @@ class WorkspaceCreationIntent(BaseModel):
     mode: str
     work_duration: int = 45
     break_duration: int = 5
-    user_id: int = 1
+    user_id: str = "1"
 
 
 # ---------------------------------------------------------------------------
@@ -100,18 +100,40 @@ async def chat_endpoint(
         if not engine:
             engine = StarMLEngine()
 
-        reply = await engine.generate_coaching_response(
-            message=request.message,
-            context=ctx,
-            db=db,
-            history=history
-        )
+        user_name = getattr(current_user, "username", None)
+        if not user_name:
+            email = getattr(current_user, "email", "")
+            user_name = email.split('@')[0] if email else "there"
+
+        is_debrief = request.message == "SYSTEM_DEBRIEF"
+        
+        if is_debrief:
+            distractions = ctx.get("distractionCount", 0)
+            work_dur = ctx.get("workDuration", 25)
+            prompt = f"The user just successfully finished a {work_dur}-minute focus session with only {distractions} distractions. Acknowledge this enthusiastically in one sentence, and ask them what they accomplished to journal it."
+            reply = await engine.generate_coaching_response(
+                message=prompt,
+                context=ctx,
+                db=db,
+                history=history,
+                user_name=user_name
+            )
+        else:
+            reply = await engine.generate_coaching_response(
+                message=request.message,
+                context=ctx,
+                db=db,
+                history=history,
+                user_name=user_name
+            )
         
         # 3. Save to DB
         if ws_id:
-            user_msg = models.WorkspaceChatHistory(workspace_id=ws_id, role="user", content=request.message)
+            if not is_debrief:
+                user_msg = models.WorkspaceChatHistory(workspace_id=ws_id, role="user", content=request.message)
+                db.add(user_msg)
+            
             asst_msg = models.WorkspaceChatHistory(workspace_id=ws_id, role="assistant", content=reply)
-            db.add(user_msg)
             db.add(asst_msg)
             db.commit()
 
@@ -119,14 +141,15 @@ async def chat_endpoint(
         try:
             burnout_score = ctx.get("burnoutProbability", 0)
             focus_minutes = ctx.get("focusMinutes", 0)
-            engine.log_coaching_interaction(
-                db=db,
-                workspace_id=ws_id or 0,
-                user_message=request.message,
-                ai_response=reply,
-                burnout_at_time=burnout_score,
-                focus_minutes_at_time=focus_minutes
-            )
+            if not is_debrief:
+                engine.log_coaching_interaction(
+                    db=db,
+                    workspace_id=ws_id or 0,
+                    user_message=request.message,
+                    ai_response=reply,
+                    burnout_at_time=burnout_score,
+                    focus_minutes_at_time=focus_minutes
+                )
         except Exception as log_ex:
             logger.error(f"[STAR ML] Failed to log coaching interaction: {log_ex}")
 

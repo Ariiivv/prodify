@@ -334,6 +334,7 @@ class StarMLEngine:
         context: Dict[str, Any],
         db: Session,
         history: list = None,
+        user_name: str = "there",
     ) -> str:
         """Runs the multi-round agentic tool-calling loop."""
         history = history or []
@@ -361,8 +362,10 @@ class StarMLEngine:
         system_prompt = f"""You are Prodify Intelligence — a sharp, data-driven productivity coach.
 You have full memory of this conversation and the user's long-term patterns.
 Never introduce yourself if previous messages exist.
+The user's name is {user_name}. Greet them or refer to them by this name when appropriate.
 
 USER PROFILE (from ML analysis):
+- Name: {user_name}
 - Peak focus hour: {patterns['peak_hour']}
 - Best workspace: {patterns['peak_workspace']}
 - Average session length: {patterns['avg_session_length']} minutes
