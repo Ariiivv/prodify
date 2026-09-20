@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, User, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
-import ProfileModal from './ProfileModal';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
@@ -14,8 +12,7 @@ const navItems = [
 
 export default function AppLayout() {
   const location = useLocation();
-  const { user, signOut } = useAuthStore();
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const { signOut } = useAuthStore();
 
   const handleSignOut = async () => {
     await signOut();
@@ -62,16 +59,16 @@ export default function AppLayout() {
 
         {/* User section at bottom */}
         <div className="mt-auto flex flex-col items-center gap-6 w-full">
-          {/* Avatar (Clickable to open profile) */}
-          <button
-            onClick={() => setIsProfileOpen(true)}
+          {/* Avatar (Clickable to open profile settings) */}
+          <Link
+            to="/settings"
             className="relative group flex flex-col items-center gap-1.5 w-full"
           >
             <div className="w-10 h-10 bg-[#1a1a1a] flex items-center justify-center text-muted-foreground hover:text-[#e8ff47] hover:border hover:border-[#e8ff47] transition-all rounded">
               <User className="w-5 h-5" />
             </div>
             <span className="text-xs text-[#666666] font-medium">Profile</span>
-          </button>
+          </Link>
 
           {/* Sign Out */}
           <button
@@ -118,8 +115,6 @@ export default function AppLayout() {
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         <Outlet />
       </main>
-
-      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </div>
   );
 }

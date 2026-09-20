@@ -1,19 +1,61 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings as SettingsIcon, LogOut, AlertTriangle, Shield, User, Trash2 } from 'lucide-react';
+import { Settings as SettingsIcon, LogOut, AlertTriangle, Shield, User, Trash2, Save } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function Settings() {
-  const { user, signOut } = useAuthStore();
+  const { user, signOut, initialize } = useAuthStore();
   const navigate = useNavigate();
 
   const [isResetDialogVisible, setResetDialogVisible] = useState(false);
   const [resetInput, setResetInput] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Profile Edit State
+  const [fullName, setFullName] = useState(user?.full_name || '');
+  const [age, setAge] = useState(user?.age ? String(user.age) : '');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setFullName(user.full_name || '');
+      setAge(user.age ? String(user.age) : '');
+    }
+  }, [user]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingProfile(true);
+    
+    try {
+      const payload = {
+        full_name: fullName.trim(),
+        age: age ? parseInt(age) : 0,
+      };
+
+      const res = await fetch(`${API_BASE}/users/me/profile`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update profile');
+      }
+
+      toast.success("Profile updated successfully!");
+      await initialize();
+    } catch (err: any) {
+      toast.error(err.message || 'Something went wrong');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const handleSignOut = () => {
     signOut();
@@ -65,19 +107,57 @@ export default function Settings() {
             <User className="w-4 h-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold text-foreground">Profile</h2>
           </div>
-          <div className="p-6 space-y-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Username</label>
-              <div className="bg-background/50 border border-border/40 text-foreground rounded-md px-3 py-2 text-sm max-w-md">
-                {user?.username || 'N/A'}
+          <div className="p-6">
+            <form onSubmit={handleSaveProfile} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Full Name (for AI Coach)</label>
+                  <Input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="e.g., John Doe"
+                    className="bg-background/50 border-border/40 text-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Age (Optional)</label>
+                  <Input
+                    type="number"
+                    value={age}
+                    onChange={(e) => setAge(e.target.value)}
+                    placeholder="e.g., 25"
+                    min="1"
+                    max="120"
+                    className="bg-background/50 border-border/40 text-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Username (Unique ID)</label>
+                  <div className="bg-background/50 border border-border/40 text-foreground rounded-md px-3 py-2 text-sm opacity-80 cursor-not-allowed">
+                    {user?.username || 'N/A'}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Email</label>
+                  <div className="bg-background/50 border border-border/40 text-foreground rounded-md px-3 py-2 text-sm opacity-80 cursor-not-allowed">
+                    {user?.email || 'N/A'}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Email</label>
-              <div className="bg-background/50 border border-border/40 text-foreground rounded-md px-3 py-2 text-sm max-w-md opacity-80">
-                {user?.email || 'N/A'}
+              
+              <div className="flex justify-end pt-2">
+                <Button
+                  type="submit"
+                  disabled={isSavingProfile || !fullName.trim() || fullName === user?.full_name && age === String(user?.age || '')}
+                  className="bg-prodify-accent hover:bg-prodify-accent/90 text-black font-bold"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {isSavingProfile ? "Saving..." : "Save Profile"}
+                </Button>
               </div>
-            </div>
+            </form>
           </div>
         </section>
 
