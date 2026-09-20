@@ -1,13 +1,13 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { API_BASE, getAuthHeaders } from '@/lib/config';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, CalendarDays } from 'lucide-react';
+import { X, CalendarDays, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
+import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
 
 interface CreateWorkspaceDialogProps {
@@ -26,10 +26,13 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [focusKeywords, setFocusKeywords] = useState('');
   const [goalDescription, setGoalDescription] = useState('');
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!name.trim()) {
       toast.error("Workspace name is required");
       return;
@@ -46,19 +49,24 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       return;
     }
 
-    const payload = {
-      name: name.trim(),
-      mode,
-      theme_color: 'violet', // Defaulting since color picker is removed
-      work_duration: workDur,
-      break_duration: breakDur,
-      target_hours: targetHours ? parseFloat(targetHours) : null,
-      deadline: deadline ? deadline.toISOString().split('T')[0] : null,
-      focus_keywords: focusKeywords.trim() || null,
-      camera_enabled: cameraEnabled,
-    };
+    setIsSubmitting(true);
 
     try {
+      const payload = {
+        name: name.trim(),
+        mode,
+        theme_color: 'violet',
+        work_duration: workDur,
+        break_duration: breakDur,
+        target_hours: targetHours.trim() ? parseFloat(targetHours) : null,
+        // Format as YYYY-MM-DD local time, safely preventing timezone offset issues
+        deadline: deadline ? format(deadline, 'yyyy-MM-dd') : null,
+        focus_keywords: focusKeywords.trim() || null,
+        camera_enabled: cameraEnabled,
+        // We aren't storing goal description in DB yet, but we'll include it here safely
+        // if we decide to add it later.
+      };
+
       const response = await fetch(`${API_BASE}/workspaces`, {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -66,18 +74,25 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        console.error(err);
-        throw new Error(err.detail || `HTTP ${response.status}`);
+        let errMessage = `HTTP ${response.status}`;
+        try {
+          const err = await response.json();
+          if (err.detail) {
+            errMessage = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+          } else {
+            errMessage = err.message || errMessage;
+          }
+        } catch (_) {}
+        
+        throw new Error(errMessage);
       }
 
       const workspace = await response.json();
 
       setOpen(false);
-      // Reset form
       setName('');
       setMode('structured');
-      setFocusDuration('45');
+      setFocusDuration('25');
       setBreakDuration('5');
       setTargetHours('');
       setDeadline(undefined);
@@ -85,13 +100,14 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       setGoalDescription('');
       setCameraEnabled(false);
 
-      // Refresh workspace list and navigate to the new workspace
       onCreated?.();
-      toast.success("Workspace created!");
+      toast.success("Workspace created successfully!");
       navigate(`/workspace/${workspace.id}`);
     } catch (err: any) {
-      toast.error(err.message || 'Failed to create workspace');
-      console.error(err);
+      toast.error(`Failed to create workspace: ${err.message}`);
+      console.error("Workspace Creation Error:", err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -295,10 +311,10 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                 <div className="pt-4">
                   <Button
                     type="submit"
-                    disabled={!name.trim()}
+                    disabled={!name.trim() || isSubmitting}
                     className="w-full bg-[#e8ff47] hover:bg-[#e8ff47]/90 text-black font-bold rounded-none h-11"
                   >
-                    Create Workspace
+                    {isSubmitting ? "Creating..." : "Create Workspace"}
                   </Button>
                 </div>
               </form>
