@@ -23,6 +23,7 @@ class WorkspacePayload(BaseModel):
     work_duration: int = Field(default=25, ge=1, le=180)
     break_duration: int = Field(default=5, ge=1, le=60)
     focus_keywords: Optional[str] = Field(default=None, max_length=2000)
+    camera_enabled: bool = False
 
 
 class WorkspaceOut(WorkspacePayload):

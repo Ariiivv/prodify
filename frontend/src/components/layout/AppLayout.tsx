@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, User } from 'lucide-react';
+import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, User, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 
@@ -7,6 +7,7 @@ const navItems = [
   { path: '/', icon: Home, label: 'Home' },
   { path: '/#workspaces', icon: LayoutGrid, label: 'Workspaces' },
   { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 export default function AppLayout() {
@@ -20,7 +21,7 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-prodify-bg flex">
       {/* Sidebar */}
-      <aside className="hidden md:flex w-20 flex-col items-center py-8 border-r border-prodify-border bg-prodify-surface overflow-hidden">
+      <aside className="hidden md:flex w-20 z-50 flex-col items-center py-8 border-r border-prodify-border bg-prodify-surface overflow-hidden">
         <Link to="/" className="mb-12 flex flex-col items-center gap-1">
           <div className="w-10 h-10 bg-prodify-surface-alt border border-prodify-border rounded flex items-center justify-center transition-colors hover:text-white text-prodify-muted">
             <Sparkles className="w-5 h-5" />

@@ -1,38 +1,18 @@
-import sqlite3
+import logging
+from app.models.connection import engine
+from app.models.schemas import Base
 
-DB_FILE = "data/prodify.db"
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("prodify_migrate")
 
-conn = sqlite3.connect(DB_FILE)
-cursor = conn.cursor()
-try:
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS workspace_chat_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        workspace_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
-    );
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS workspace_metrics (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        workspace_id INTEGER NOT NULL,
-        workspace_name TEXT NOT NULL,
-        workspace_intent TEXT,
-        session_date DATE NOT NULL,
-        focus_minutes INTEGER NOT NULL,
-        distraction_count INTEGER NOT NULL,
-        burnout_score REAL NOT NULL,
-        time_of_day TEXT NOT NULL,
-        mode TEXT NOT NULL,
-        completed BOOLEAN NOT NULL
-    );
-    """)
-    conn.commit()
-    print("Successfully added workspace_chat_history and workspace_metrics tables.")
-except sqlite3.OperationalError as e:
-    print(f"Notice: {e}")
-finally:
-    conn.close()
+def migrate():
+    logger.info("Starting database migration/initialization...")
+    # This creates all tables defined in schemas.py that don't yet exist in the DB
+    try:
+        Base.metadata.create_all(engine)
+        logger.info("Successfully created all database tables defined in schemas.py.")
+    except Exception as e:
+        logger.error(f"Error during migration: {e}")
+
+if __name__ == "__main__":
+    migrate()

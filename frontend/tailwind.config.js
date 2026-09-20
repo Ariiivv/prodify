@@ -65,12 +65,13 @@ export default {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
-        // ── Prodify Design Tokens ──
+        // 🎯 Prodify Design Tokens 🎯
         'prodify-bg': '#0a0a0a',
         'prodify-surface': '#111111',
         'prodify-surface-alt': '#1a1a1a',
         'prodify-accent': '#e8ff47',
         'prodify-danger': '#ff4444',
+        'prodify-warning': '#fbbf24',
         'prodify-success': '#4ade80',
         'prodify-border': '#2a2a2a',
         'prodify-muted': '#666666',

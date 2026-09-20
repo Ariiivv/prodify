@@ -6,6 +6,7 @@ import AppLayout from './components/layout/AppLayout';
 import HomePage from './pages/HomePage';
 import WorkspacePage from './pages/WorkspacePage';
 import Analytics from './pages/Analytics';
+import Settings from './pages/Settings';
 import Auth from './pages/Auth';
 import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -49,6 +50,7 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/workspace/:id" element={<WorkspacePage />} />
                 <Route path="/analytics" element={<Analytics />} />
+                <Route path="/settings" element={<Settings />} />
               </Route>
             </Route>
           </Routes>

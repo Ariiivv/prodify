@@ -9,6 +9,7 @@ import { useAdaptiveFocus } from '@/hooks/useAdaptiveFocus';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
 import { audioEngine } from '@/lib/audio';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 
 import WebcamStream from '@/components/workspace/WebcamStream';
 import TimerRing from '@/components/timer/TimerRing';
@@ -122,10 +123,8 @@ export default function WorkspacePage() {
     if (!ws || ws.currentState !== 'FOCUS_RUNNING') return; // prevent toast spam on breaks
     const displayReason = reason?.trim() || "Distraction detected";
     
-    audioEngine.playAlert(); // Play distraction ringtone
-
     toast.error("Focus lost!", {
-      description: `${displayReason}. Timer paused. ⚠️`,
+      description: `${displayReason}. Timer paused. 📉`,
       duration: 3000,
     });
     store.incrementDistraction();
@@ -388,14 +387,23 @@ export default function WorkspacePage() {
           </div>
         </div>
 
-        <button 
-          onClick={() => setIsManualOverride(!isManualOverride)}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            isManualOverride ? 'bg-amber-500/20 text-amber-500' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}
-        >
-          {isManualOverride ? "Tracking Paused (Manual)" : "Tracking Active"}
-        </button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button 
+                  onClick={() => setIsManualOverride(!isManualOverride)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isManualOverride ? 'bg-amber-500/20 text-amber-500' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                  }`}
+                >
+                  {isManualOverride ? "Tracking Paused (Manual)" : "Tracking Active"}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[250px] text-center">
+                Prodify is actively monitoring your window activity, keyboard input, and camera (if enabled) to track your focus.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
       </motion.div>
 
       <motion.div
@@ -407,13 +415,6 @@ export default function WorkspacePage() {
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center w-full">
             <div className="mb-8 flex flex-col items-center w-full">
               <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
-              {workspace?.mode && workspace?.id && (
-                <StructuredGoalCalendar 
-                  workspaceId={workspace.id} 
-                  mode={workspace.mode} 
-                  sessionCount={timerState.sessionCount} 
-                />
-              )}
             </div>
 
             {isDetectionEnabled && timerState.currentState === 'IDLE' && cameraStatus === 'streaming' && engagementState === 'FACE_ABSENT' && (
@@ -437,7 +438,7 @@ export default function WorkspacePage() {
             timeRemaining={timerState.timeRemaining} 
             totalDuration={totalDuration} 
             canStartFocus={
-              isDetectionEnabled 
+              (isDetectionEnabled && workspace.camera_enabled)
                 ? (cameraStatus === 'streaming' && engagementState !== 'FACE_ABSENT' && engagementState !== 'STRANGER')
                 : true
             }
@@ -452,7 +453,23 @@ export default function WorkspacePage() {
         </motion.div>
 
         <motion.div variants={columnVariants} className="space-y-4">
-          {isDetectionEnabled ? (
+          {!isDetectionEnabled && (
+            <div className="rounded-xl border border-border/40 p-4 bg-card">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
+                  <CameraOff className="w-4 h-4 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-foreground">Tracking Disabled</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {isManualOverride ? 'Manual override active' : 'Whitelisted site'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(isDetectionEnabled && workspace.camera_enabled) && (
             <div className="rounded-xl border border-border/40 overflow-hidden bg-card">
               <div className="flex items-center justify-between px-3 py-2 border-b border-border/20">
                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
@@ -506,20 +523,6 @@ export default function WorkspacePage() {
                 )}
               </div>
             </div>
-          ) : (
-            <div className="rounded-xl border border-border/40 p-4 bg-card">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
-                  <CameraOff className="w-4 h-4 text-amber-500" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-foreground">Tracking Disabled</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {isManualOverride ? 'Manual override active' : 'Whitelisted site'}
-                  </p>
-                </div>
-              </div>
-            </div>
           )}
 
 
@@ -537,6 +540,14 @@ export default function WorkspacePage() {
           <BurnoutGauge burnoutProbability={burnoutProb} currentState={timerState.currentState} />
           {(timerState.currentState === 'SESSION_COMPLETED' || timerState.sessionCount > 0) && (
             <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
+          )}
+
+          {workspace?.mode?.toLowerCase().includes('structured') && workspace?.id && (
+            <StructuredGoalCalendar 
+              workspaceId={workspace.id} 
+              mode={workspace.mode} 
+              sessionCount={timerState.sessionCount} 
+            />
           )}
         </motion.div>
       </motion.div>

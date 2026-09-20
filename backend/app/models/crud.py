@@ -14,6 +14,7 @@ def create_workspace(
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
     focus_keywords: Optional[str] = None,
+    camera_enabled: bool = False,
 ) -> models.Workspace:
     """Create a new workspace for a given user."""
     workspace = models.Workspace(
@@ -25,6 +26,7 @@ def create_workspace(
         work_duration=work_duration,
         break_duration=break_duration,
         focus_keywords=focus_keywords,
+        camera_enabled=camera_enabled,
     )
     db.add(workspace)
     db.commit()
@@ -62,6 +64,7 @@ def update_workspace(
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
     focus_keywords: Optional[str] = None,
+    camera_enabled: bool = False,
 ) -> models.Workspace:
     """Update an existing workspace's fields."""
     workspace = get_workspace(db, workspace_id=workspace_id)
@@ -76,6 +79,7 @@ def update_workspace(
     workspace.work_duration = work_duration
     workspace.break_duration = break_duration
     workspace.focus_keywords = focus_keywords
+    workspace.camera_enabled = camera_enabled
 
     db.commit()
     db.refresh(workspace)

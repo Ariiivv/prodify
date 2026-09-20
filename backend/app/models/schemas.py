@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Date
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Date, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -32,6 +32,7 @@ class Workspace(Base):
     work_duration = Column(Integer, nullable=False, default=45) # in minutes
     break_duration = Column(Integer, nullable=False, default=5)  # in minutes
     focus_keywords = Column(String, nullable=True) # JSON array of focus keywords for adaptive tracking
+    camera_enabled = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

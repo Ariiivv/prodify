@@ -1,4 +1,22 @@
 import { create } from 'zustand';
+import { audioEngine } from '@/lib/audio';
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
+
+const triggerDistractionAlert = async (reason: string) => {
+  audioEngine.playDistractionAlert();
+  try {
+    let permissionGranted = await isPermissionGranted();
+    if (!permissionGranted) {
+      const permission = await requestPermission();
+      permissionGranted = permission === 'granted';
+    }
+    if (permissionGranted) {
+      sendNotification({ title: 'Focus Paused', body: reason });
+    }
+  } catch (err) {
+    console.error('Failed to send desktop notification:', err);
+  }
+};
 
 type FSMState = 'IDLE' | 'FOCUS_RUNNING' | 'FOCUS_PAUSED' | 'BREAK_RUNNING' | 'BREAK_PAUSED' | 'SESSION_COMPLETED';
 
@@ -137,6 +155,12 @@ export const useTimerStore = create<TimerStore>((set, get) => {
     pauseFocus: (reason: string) => {
       const id = getWorkspaceState().intervalId;
       if (id) clearInterval(id);
+      
+      // Fire distraction alert/notification for any automatic pause (not Manual)
+      if (reason !== 'Manual') {
+        triggerDistractionAlert(reason);
+      }
+
       setWorkspaceState({
         currentState: 'FOCUS_PAUSED',
         pauseReason: reason,

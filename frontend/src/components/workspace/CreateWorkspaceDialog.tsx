@@ -25,6 +25,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
   const [focusKeywords, setFocusKeywords] = useState('');
   const [goalDescription, setGoalDescription] = useState('');
+  const [cameraEnabled, setCameraEnabled] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,6 +55,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       target_hours: targetHours ? parseFloat(targetHours) : null,
       deadline: deadline ? deadline.toISOString().split('T')[0] : null,
       focus_keywords: focusKeywords.trim() || null,
+      camera_enabled: cameraEnabled,
     };
 
     try {
@@ -81,6 +83,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       setDeadline(undefined);
       setFocusKeywords('');
       setGoalDescription('');
+      setCameraEnabled(false);
 
       // Refresh workspace list and navigate to the new workspace
       onCreated?.();
@@ -189,6 +192,25 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                       min="1"
                       className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                     />
+                  </div>
+                </div>
+
+                {/* Camera Tracking Toggle */}
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCameraEnabled(!cameraEnabled)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-none border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${cameraEnabled ? 'bg-[#e8ff47]' : 'bg-[#2a2a2a]'}`}
+                  >
+                    <span className={`pointer-events-none block h-4 w-4 rounded-none shadow-lg ring-0 transition-transform ${cameraEnabled ? 'translate-x-4 bg-black' : 'translate-x-0 bg-muted-foreground'}`} />
+                  </button>
+                  <div className="flex flex-col mt-[2px]">
+                    <label className="text-sm font-bold text-white leading-none mb-1">
+                      Enable Camera Tracking (Optional)
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Adds face-presence detection on top of tab/app tracking. Works best in good lighting. Off by default.
+                    </p>
                   </div>
                 </div>
 

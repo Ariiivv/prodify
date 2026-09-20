@@ -32,8 +32,8 @@ matplotlib==3.10.9
 mdurl==0.1.2
 mediapipe==0.10.35
 numpy==2.4.6
-opencv-contrib-python==4.13.0.92
-opencv-python==4.13.0.92
+opencv-contrib-python-headless==4.13.0.92
+opencv-python-headless==4.13.0.92
 orjson==3.11.9
 packaging==26.2
 pandas==2.2.2
@@ -72,3 +72,4 @@ uvloop==0.22.1
 watchfiles==1.2.0
 websockets==16.0
 xgboost==2.0.0
+psycopg2-binary==2.9.10

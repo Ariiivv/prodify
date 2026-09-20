@@ -10,7 +10,7 @@ load_dotenv(dotenv_path=env_path)
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import ai_coach, auth, telemetry, workspaces, analytics
+from app.api import ai_coach, auth, telemetry, workspaces, analytics, users
 from app.models.connection import create_db_and_tables
 
 # Vision engine is optional — mediapipe/cv2 may not be installed on WSL/headless
@@ -50,10 +50,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Prodify API (Tauri Edition)", lifespan=lifespan)
 
-# Configure CORS for local development
+# Configure CORS for local development and production
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "tauri://localhost"
+]
+
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "tauri://localhost"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,6 +75,7 @@ def health_check():
     return {"status": "ok", "message": "Prodify Backend is running smoothly."}
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/workspaces")
 app.include_router(telemetry.router, prefix="/api")
 app.include_router(ai_coach.router, prefix="/api")

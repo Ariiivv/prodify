@@ -72,29 +72,29 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ 
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
 
   return (
-    <div className="w-full flex flex-col items-center gap-4 my-6">
+    <div className="w-full flex flex-col items-center gap-2 my-2">
       {todayGoal && (
-        <p className="text-sm font-medium text-muted-foreground">
+        <p className="text-xs font-medium text-muted-foreground mb-1">
           Today's goal: <span className="text-white">{todayGoal.target_minutes_for_day} minutes</span> ({todayGoal.actual_minutes_logged} logged)
         </p>
       )}
       
-      <div className="w-full max-w-sm bg-[#111111] border border-[#2a2a2a] p-4 rounded-xl shadow-lg">
-        <div className="flex justify-between items-center mb-4">
-          <button onClick={prevMonth} className="text-muted-foreground hover:text-white transition-colors p-1">
-            <ChevronLeft className="w-5 h-5" />
+      <div className="w-full max-w-[260px] bg-[#111111] border border-[#2a2a2a] p-3 rounded-xl shadow-lg">
+        <div className="flex justify-between items-center mb-3">
+          <button onClick={prevMonth} className="text-muted-foreground hover:text-white transition-colors p-0.5">
+            <ChevronLeft className="w-4 h-4" />
           </button>
-          <h2 className="text-sm font-bold text-white tracking-wide uppercase">
+          <h2 className="text-[11px] font-bold text-white tracking-wide uppercase">
             {format(currentDate, 'MMMM yyyy')}
           </h2>
-          <button onClick={nextMonth} className="text-muted-foreground hover:text-white transition-colors p-1">
-            <ChevronRight className="w-5 h-5" />
+          <button onClick={nextMonth} className="text-muted-foreground hover:text-white transition-colors p-0.5">
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
         
-        <div className="grid grid-cols-7 gap-1 text-center mb-2">
+        <div className="grid grid-cols-7 gap-1 text-center mb-1.5">
           {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-            <div key={d} className="text-[10px] font-semibold text-muted-foreground uppercase">{d}</div>
+            <div key={d} className="text-[9px] font-semibold text-muted-foreground/60 uppercase">{d}</div>
           ))}
         </div>
         
@@ -105,45 +105,53 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ 
             const isSameMnth = isSameMonth(day, monthStart);
             const isTdy = isSameDay(day, new Date());
             
-            let textColor = "text-muted-foreground/30"; // default greyish
             let tooltip = "";
             let bgColor = "bg-transparent";
+            let textColor = isSameMnth ? "text-prodify-muted" : "text-transparent";
+            let border = isSameMnth ? "border border-transparent" : "";
 
             if (goal) {
-               // In active range
+               textColor = "text-white";
                const actual = goal.actual_minutes_logged;
                const target = goal.target_minutes_for_day;
                
                if (goal.status === 'future') {
-                 textColor = "text-white";
+                 bgColor = "bg-transparent";
+                 border = "border border-prodify-border";
                  tooltip = `Target: ${target} min`;
                } else {
-                 if (actual > target) {
-                   textColor = "text-yellow-400"; // Gold
-                 } else if (actual === target && actual > 0) {
-                   textColor = "text-green-500"; // Green
-                 } else if (actual >= target / 2) {
-                   textColor = "text-yellow-500"; // Yellow
+                 if (actual === 0) {
+                   bgColor = "bg-prodify-danger/20";
+                 } else if (actual < target / 2) {
+                   bgColor = "bg-prodify-danger";
+                 } else if (actual < target) {
+                   bgColor = "bg-prodify-warning";
+                   // Adding a slight text shadow to ensure the white text is readable against the bright yellow/lime backgrounds
+                   textColor = "text-white drop-shadow-md";
+                 } else if (actual <= target * 1.5) {
+                   bgColor = "bg-prodify-success";
+                   textColor = "text-white drop-shadow-md";
                  } else {
-                   textColor = "text-red-500"; // Red
+                   bgColor = "bg-prodify-accent";
+                   textColor = "text-white drop-shadow-md";
                  }
                  tooltip = `${dateStr}\nTarget: ${target} min\nActual: ${actual} min`;
                }
-            } else if (isSameMnth) {
-               textColor = "text-muted-foreground/50";
+            } else if (!isSameMnth) {
+               bgColor = "bg-transparent opacity-0 pointer-events-none";
+               border = "";
+               textColor = "text-transparent";
             }
             
-            if (isTdy) {
-               bgColor = "bg-[#2a2a2a] ring-1 ring-[#4a4a4a]";
-            }
+            const ring = isTdy ? "ring-1 ring-white ring-offset-1 ring-offset-[#111111]" : "";
 
             return (
               <div 
                 key={day.toString()} 
                 title={tooltip}
-                className={`text-xs py-2 rounded-md font-bold transition-colors cursor-default ${textColor} ${bgColor}`}
+                className={`w-6 h-6 mx-auto flex items-center justify-center rounded-[3px] text-[10px] font-bold transition-colors cursor-default ${bgColor} ${textColor} ${border} ${ring}`}
               >
-                {format(day, dateFormat)}
+                {format(day, 'd')}
               </div>
             );
           })}

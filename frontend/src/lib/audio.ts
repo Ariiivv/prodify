@@ -62,12 +62,12 @@ class SFXEngine {
     playNote(1046.50, now + 0.45, 2.5); // C6
   }
 
-  public playAlert() {
+  public playDistractionAlert() {
     this.init();
     if (!this.ctx) return;
     
-    // Quick attention-grabbing double beep
-    const beep = (startTime: number) => {
+    // Urgent two-note descending tone
+    const playUrgentNote = (freq: number, startTime: number, duration: number) => {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
@@ -75,21 +75,21 @@ class SFXEngine {
       osc.connect(gain);
       gain.connect(this.ctx.destination);
       
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, startTime); // A4
-      osc.frequency.exponentialRampToValueAtTime(330, startTime + 0.15); // Drop tone
+      osc.type = 'square'; // harsher, more urgent than sine/triangle
+      osc.frequency.setValueAtTime(freq, startTime);
       
       gain.gain.setValueAtTime(0, startTime);
-      gain.gain.linearRampToValueAtTime(0.3, startTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.25);
+      gain.gain.linearRampToValueAtTime(0.15, startTime + 0.05); // Attack
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration); // Decay
       
       osc.start(startTime);
-      osc.stop(startTime + 0.3);
+      osc.stop(startTime + duration);
     };
 
     const now = this.ctx.currentTime;
-    beep(now);
-    beep(now + 0.3);
+    // F5 (698.46 Hz) descending to C5 (523.25 Hz)
+    playUrgentNote(698.46, now, 0.25);
+    playUrgentNote(523.25, now + 0.25, 0.4);
   }
 }
 
