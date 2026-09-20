@@ -15,12 +15,58 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 const queryClient = new QueryClient();
 
+import { supabase } from '@/lib/supabase';
+
 function App() {
   const initialize = useAuthStore((state) => state.initialize);
   const isLoading = useAuthStore((state) => state.isLoading);
 
   useEffect(() => {
     initialize();
+
+    const isTauri = '__TAURI_INTERNALS__' in window;
+    let unlisten: (() => void) | undefined;
+
+    if (isTauri) {
+      import('@tauri-apps/plugin-deep-link').then(({ onOpenUrl }) => {
+        onOpenUrl(async (urls) => {
+          for (const url of urls) {
+            if (url.includes('prodify://auth/callback')) {
+              try {
+                const parsedUrl = new URL(url);
+                const code = parsedUrl.searchParams.get('code');
+                
+                if (code) {
+                  const { error } = await supabase.auth.exchangeCodeForSession(code);
+                  if (error) throw error;
+                } else {
+                  const hashParams = new URLSearchParams(parsedUrl.hash.substring(1));
+                  const access_token = hashParams.get('access_token');
+                  const refresh_token = hashParams.get('refresh_token');
+                  
+                  if (access_token && refresh_token) {
+                    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+                    if (error) throw error;
+                  }
+                }
+                
+                await initialize();
+                window.location.href = '/';
+              } catch (err) {
+                console.error('Deep link auth error:', err);
+                window.location.href = '/auth';
+              }
+            }
+          }
+        }).then(u => {
+          unlisten = u;
+        }).catch(err => console.error("Failed to setup deep link listener:", err));
+      });
+    }
+
+    return () => {
+      if (unlisten) unlisten();
+    };
   }, [initialize]);
 
   if (isLoading) {

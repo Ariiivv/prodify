@@ -6,6 +6,9 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "shell:default",
+    "shell:allow-open",
+    "deep-link:default"
   ]
 }
