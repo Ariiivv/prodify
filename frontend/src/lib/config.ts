@@ -36,7 +36,13 @@ export function getWsUrl(path: string): string {
 import { useAuthStore } from '@/store/authStore';
 
 /** Attach the current JWT to requests for user-scoped API resources. */
-export function getAuthHeaders(headers: HeadersInit = {}): HeadersInit {
+export function getAuthHeaders(headers: Record<string, string> = {}): Record<string, string> {
   const token = useAuthStore.getState().session?.access_token;
-  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+  return {
+    ...headers,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
 }

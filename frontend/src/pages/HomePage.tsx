@@ -1,15 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Sparkles, Layers, Timer, TrendingUp, Flame, BarChart3 } from 'lucide-react';
+import { Layers, BarChart3 } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useAuthStore } from '@/store/authStore';
 
 import AnimatedBackground from '@/components/dashboard/AnimatedBackground';
-import ScrambleNumber from '@/components/dashboard/ScrambleNumber';
-import DailyGoalRing from '@/components/dashboard/DailyGoalRing';
 import RecentActivity from '@/components/dashboard/RecentActivity';
-import GoalProgressBar from '@/components/dashboard/GoalProgressBar';
 import WorkspaceCard from '@/components/workspace/WorkspaceCard';
 import CreateWorkspaceDialog from '@/components/workspace/CreateWorkspaceDialog';
 
@@ -17,7 +14,9 @@ interface Workspace {
   id: number;
   name: string;
   mode: string;
+  category?: string;
   target_hours?: number;
+  daily_target_minutes?: number;
   deadline?: string;
   work_duration?: number;
   focus_keywords?: string;
@@ -51,11 +50,13 @@ interface DistractionData {
 }
 
 const HomePage: React.FC = () => {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeTab, setActiveTab] = useState<'all' | 'sprint' | 'mastery'>('all');
+  const [dataWarnings, setDataWarnings] = useState<string[]>([]);
+  const [workspaces, setWorkspaces] = useState<(Workspace & { category?: string })[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [goalPlans, setGoalPlans] = useState<Record<number, GoalPlan>>({});
-  const [peakDistractionHour, setPeakDistractionHour] = useState<number | undefined>(undefined);
+  const [globalStats, setGlobalStats] = useState<{current_global_streak: number, longest_global_streak: number, ten_day_rolling_score: number} | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -66,16 +67,29 @@ const HomePage: React.FC = () => {
         headers = getAuthHeaders();
       }
 
-      const wsRes = await fetch(`${API_BASE}/workspaces`, { headers });
+      const wsRes = await fetch(`${API_BASE}/workspaces`, { 
+        headers,
+        cache: 'no-store'
+      });
+
+      // Fetch global analytics stats
+      const statsRes = await fetch(`${API_BASE}/api/analytics/global`, { headers, cache: 'no-store' }).catch(() => {
+        setDataWarnings(prev => Array.from(new Set([...prev, "Analytics unavailable"])));
+        return null;
+      });
+      if (statsRes && statsRes.ok) {
+        setGlobalStats(await statsRes.json());
+      }
+
 
       if (wsRes.ok) {
         const wsData: Workspace[] = await wsRes.json();
         setWorkspaces(wsData);
         setIsLoading(false); // Unblock UI immediately so workspaces appear
 
-        // Fetch Goal Optimizer plans for structured workspaces with targets
+        // Fetch Goal Optimizer plans for sprint workspaces with targets
         const goalWorkspaces = wsData.filter(
-          ws => ws.target_hours && ws.target_hours > 0 && ws.deadline
+          ws => ws.category === 'sprint' && ws.target_hours && ws.target_hours > 0 && ws.deadline
         );
         const plans: Record<number, GoalPlan> = {};
         await Promise.all(
@@ -90,6 +104,7 @@ const HomePage: React.FC = () => {
               }
             } catch {
               // Goal optimizer not available - skip silently
+              setDataWarnings(prev => Array.from(new Set([...prev, "Goal optimizer unavailable"])));
             }
           })
         );
@@ -100,28 +115,15 @@ const HomePage: React.FC = () => {
       }
 
       // Fetch recent sessions
-      const sessListRes = await fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers: getAuthHeaders() }).catch(() => null);
+      const sessListRes = await fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => {
+        setDataWarnings(prev => Array.from(new Set([...prev, "Recent sessions unavailable"])));
+        return null;
+      });
       if (sessListRes && sessListRes.ok) {
         const sessData: Session[] = await sessListRes.json();
         setSessions(sessData);
       }
 
-      // Fetch coach insights to extract peak distraction hour
-      try {
-        const insightsRes = await fetch(`${API_BASE}/api/ai-coach/chat`, {
-          method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            message: '__internal_peak_hour_query',
-            context: { workspaceName: 'Dashboard' },
-          }),
-        });
-        // We don't actually need the response — the backend's tool will expose
-        // the peak hour via the distraction data tool. For now, approximate from
-        // the current hour.
-      } catch {
-        // Non-critical
-      }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -137,65 +139,42 @@ const HomePage: React.FC = () => {
     }
   }, [fetchData, token]);
 
-  // Detect the peak distraction hour from session patterns (client-side heuristic)
-  useEffect(() => {
-    if (sessions.length < 3) return;
-    const hourCounts: Record<number, number> = {};
-    sessions.forEach(s => {
-      if (s.distraction_count > 0 && s.created_date) {
-        try {
-          const hour = new Date(s.created_date).getHours();
-          hourCounts[hour] = (hourCounts[hour] || 0) + s.distraction_count;
-        } catch { /* skip invalid dates */ }
-      }
-    });
-    const sorted = Object.entries(hourCounts).sort(([, a], [, b]) => b - a);
-    if (sorted.length > 0) {
-      setPeakDistractionHour(parseInt(sorted[0][0]));
-    }
-  }, [sessions]);
-
   const handleDeleted = useCallback((workspaceId: number) => {
     setWorkspaces(prev => prev.filter(ws => ws.id !== workspaceId));
   }, []);
 
-  const totalFocusMinutes = sessions.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
-  const avgBurnout = sessions.length > 0
-    ? Math.round(sessions.reduce((s, r) => s + (r.burnout_score || 0), 0) / sessions.length * 100)
-    : 0;
-
-  // Calculate today's focus minutes for the Daily Goal ring
+  // Compute metrics for Focus Command Strip
   const today = new Date().toISOString().split('T')[0];
   const todaySessions = sessions.filter(s => s.created_date && s.created_date.startsWith(today));
   const dailyFocusMinutes = todaySessions.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+  const todayFocusHours = (dailyFocusMinutes / 60).toFixed(1);
+  const dailyTargetHours = 4; // Default target
 
-  // Check if ANY workspace has a goal plan for the hero section
-  const goalWorkspaces = workspaces.filter(ws => goalPlans[ws.id]);
+  const avgBurnout = todaySessions.length > 0
+    ? Math.round(todaySessions.reduce((s, r) => s + (r.burnout_score || 0), 0) / todaySessions.length * 100)
+    : 0;
+  const stamina = Math.max(0, Math.min(100, 100 - avgBurnout));
 
-  const stats = [
-    { label: 'Workspaces',   value: String(workspaces.length),                   icon: Layers,    accent: true },
-    { label: 'Sessions',     value: String(sessions.length),                      icon: Timer,     accent: false },
-    { label: 'Focus Hours',  value: (totalFocusMinutes / 60).toFixed(1) + 'h',   icon: TrendingUp,accent: false },
-    { label: 'Avg Burnout',  value: avgBurnout + '%',                             icon: Flame,     accent: false },
-  ];
+  const todayDistractions = todaySessions.reduce((sum, s) => sum + (s.distraction_count || 0), 0);
+  
+  const alignmentScore = todaySessions.length > 0 
+    ? Math.max(0, 100 - (todayDistractions / todaySessions.length * 5)).toFixed(1) 
+    : '—';
 
-  const container = {
-    hidden: {},
-    show: { transition: { staggerChildren: 0.07 } },
-  };
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show:   { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] } },
-  };
+  const sprintCount = workspaces.filter(ws => ws.category === 'sprint').length;
+  const masteryCount = workspaces.filter(ws => ws.category === 'mastery' || !ws.category).length;
 
-  const currentHour = new Date().getHours();
+  const filteredWorkspaces = workspaces.filter(ws => {
+    if (activeTab === 'all') return true;
+    const cat = ws.category || 'mastery';
+    return cat === activeTab;
+  });
 
   return (
     <>
       <AnimatedBackground />
 
       <div className="p-6 md:p-10 max-w-6xl mx-auto relative z-10">
-
         {/* ── Header ── */}
         <motion.div
           initial={{ opacity: 0, y: -14 }}
@@ -222,90 +201,99 @@ const HomePage: React.FC = () => {
           </div>
         </motion.div>
 
-        {/* ── Hero Row: Goal Ring + Stats ── */}
-        <motion.div
-          variants={container}
-          initial="hidden"
-          animate="show"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8"
-        >
-          {/* Daily Goal Card */}
-          <motion.div
-            variants={item}
-            className="relative border border-prodify-border bg-prodify-surface p-5 overflow-hidden group lg:col-span-1"
-          >
-            <div className="relative z-10">
-              <DailyGoalRing focusMinutes={dailyFocusMinutes} targetMinutes={240} />
-            </div>
-          </motion.div>
-
-          {/* Stat Cards */}
-          {stats.map(({ label, value, icon: Icon, accent }) => (
-            <motion.div
-              key={label}
-              variants={item}
-              whileHover={{ y: -2, transition: { duration: 0.15 } }}
-              className="relative border border-prodify-border bg-prodify-surface p-5 overflow-hidden group cursor-default"
+        {/* ── Data Warnings Banner ── */}
+        {dataWarnings.length > 0 && (
+          <div className="flex items-center justify-between mb-4 bg-[#161616] border border-[#2a2a2a] p-3 rounded-md">
+            <span className="text-sm font-medium text-amber-500">
+              Some data couldn't load: {dataWarnings.join(', ')}
+            </span>
+            <button
+              onClick={() => setDataWarnings([])}
+              className="text-[#888888] hover:text-white transition-colors text-xs font-bold"
             >
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 flex items-center justify-center bg-prodify-surface-alt border border-prodify-border">
-                    <Icon className="w-4 h-4 text-prodify-muted" />
-                  </div>
-                  <span className="text-xs text-prodify-muted font-mono uppercase tracking-wider">{label}</span>
-                </div>
-                <span className="text-3xl md:text-4xl font-bold text-white font-mono tracking-tight">
-                  <ScrambleNumber value={value} duration={900} />
-                </span>
-              </div>
-            </motion.div>
-          ))}
-        </motion.div>
-
-        {/* ── Goal Progress Bars (for workspaces with targets + deadlines) ── */}
-        {goalWorkspaces.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="space-y-4 mb-8"
-          >
-            <h2 className="text-base font-heading font-semibold text-white flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-prodify-muted" />
-              Active Goal Plans
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {goalWorkspaces.map(ws => {
-                const plan = goalPlans[ws.id];
-                // Calculate completed hours for this specific workspace
-                const wsSessionMinutes = sessions
-                  .filter(s => s.workspace_id === ws.id)
-                  .reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
-                return (
-                  <GoalProgressBar
-                    key={ws.id}
-                    goalName={ws.name}
-                    targetHours={plan.target_hours}
-                    completedHours={wsSessionMinutes / 60}
-                    deadlineDisplay={plan.deadline_display}
-                    daysRemaining={plan.days_remaining}
-                    sessionsPerDay={plan.sessions_per_day}
-                    sprintMinutes={plan.historical_sprint_minutes}
-                  />
-                );
-              })}
-            </div>
-          </motion.div>
+              DISMISS
+            </button>
+          </div>
         )}
+
+        {/* ── Focus Command Strip ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row flex-wrap items-center justify-between gap-4 md:gap-8 bg-[#111111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-none p-4 mb-10 w-full"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl hidden sm:block">⏱️</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Today's Focus</span>
+              <span className="text-white font-mono font-bold text-sm sm:text-base">{todayFocusHours}h / {dailyTargetHours}h</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl hidden sm:block">🎯</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Alignment & Form</span>
+              <span className="text-white font-mono font-bold text-sm sm:text-base">
+                {alignmentScore}% <span className="text-[#888888] text-[10px]">today</span>
+                {' · '}
+                ⚡ {globalStats ? Math.round(globalStats.ten_day_rolling_score * 100) : 0}% <span className="text-[#888888] text-[10px]">10d</span>
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl hidden sm:block">🔥</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Global Streak</span>
+              <span className="text-white font-mono font-bold text-sm sm:text-base">
+                {globalStats?.current_global_streak || 0} Day{globalStats?.current_global_streak !== 1 && 's'}
+              </span>
+              <span className="text-[10px] text-[#e8ff47]">Best: {globalStats?.longest_global_streak || 0}d</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl hidden sm:block">🛡️</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Deflections</span>
+              <span className="text-white font-mono font-bold text-sm sm:text-base">{todayDistractions} blocked</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl hidden sm:block">💚</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Cognitive Vitality</span>
+              <span className={`font-mono font-bold text-sm sm:text-base ${stamina > 50 ? 'text-[#e8ff47]' : 'text-amber-500'}`}>
+                {stamina}% stamina
+              </span>
+            </div>
+          </div>
+        </motion.div>
 
         {/* ── Main Grid: Workspaces + Sidebar ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="workspaces">
 
           {/* Workspaces */}
           <div className="lg:col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-heading font-semibold text-white">Workspaces</h2>
-              <span className="text-xs text-prodify-muted font-mono">{workspaces.length} total</span>
+            <div className="flex items-center justify-between mb-4 border-b border-[#2a2a2a] pb-3">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setActiveTab('all')}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'all' ? 'text-[#e8ff47]' : 'text-prodify-muted hover:text-white'}`}
+                >
+                  All ({workspaces.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('sprint')}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'sprint' ? 'text-[#e8ff47]' : 'text-prodify-muted hover:text-white'}`}
+                >
+                  🎯 Sprints ({sprintCount})
+                </button>
+                <button
+                  onClick={() => setActiveTab('mastery')}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'mastery' ? 'text-[#8b5cf6]' : 'text-prodify-muted hover:text-white'}`}
+                >
+                  📚 Mastery ({masteryCount})
+                </button>
+              </div>
             </div>
 
             {isLoading ? (
@@ -318,21 +306,34 @@ const HomePage: React.FC = () => {
                   </div>
                 ))}
               </div>
-            ) : workspaces.length === 0 ? (
+            ) : filteredWorkspaces.length === 0 ? (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="text-center py-20 border border-dashed border-prodify-border flex flex-col items-center justify-center"
               >
                 <Layers className="w-10 h-10 text-prodify-muted/30 mx-auto mb-4" />
-                <p className="text-[#666666] text-sm mb-6">No workspaces yet. Create one to start tracking your focus.</p>
-                <CreateWorkspaceDialog onCreated={fetchData} />
+                <p className="text-[#666666] text-sm mb-6">No workspaces found.</p>
+                {activeTab === 'all' && <CreateWorkspaceDialog onCreated={fetchData} />}
               </motion.div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {workspaces.map((ws, i) => (
-                  <WorkspaceCard key={ws.id} workspace={ws} index={i} onDeleted={handleDeleted} />
-                ))}
+                {filteredWorkspaces.map((ws, i) => {
+                  const wsSessionMinutes = sessions
+                    .filter(s => s.workspace_id === ws.id)
+                    .reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
+                    
+                  return (
+                    <WorkspaceCard 
+                      key={ws.id} 
+                      workspace={ws} 
+                      index={i} 
+                      onDeleted={handleDeleted} 
+                      goalPlan={goalPlans[ws.id]}
+                      totalMinutesLogged={wsSessionMinutes}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>

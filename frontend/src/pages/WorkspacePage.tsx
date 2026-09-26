@@ -114,7 +114,7 @@ export default function WorkspacePage() {
   });
 
   // Compute if detection should run
-  const isDetectionEnabled = !isManualOverride;
+  const isDetectionEnabled = !isManualOverride && timerState.sessionMode === 'FOCUS';
 
   // Distraction Handler
   const handleDistraction = useCallback((reason?: string) => {
@@ -132,16 +132,22 @@ export default function WorkspacePage() {
   }, []);
 
   // --- Adaptive Focus Tracking ---
-  const { currentTabTitle, isFocused: isTabFocused } = useAdaptiveFocus({
+  const { currentTabTitle, isFocused: isTabFocused, markAsRelevant } = useAdaptiveFocus({
     keywords: workspaceKeywords,
     enabled: isDetectionEnabled,
     sessionIntent,
+    workspaceId: wsId,
     onDistracted: (reason?: string, appName?: string) => {
       const store = useTimerStore.getState();
       const currentWsId = store.activeWorkspaceId;
-      const currentState = currentWsId !== null ? store.workspaces[currentWsId]?.currentState : 'IDLE';
+      const timerWs = currentWsId !== null ? store.workspaces[currentWsId] : undefined;
+      const currentState = timerWs?.currentState || 'IDLE';
+      const pauseReason = timerWs?.pauseReason;
 
-      if (isDetectionEnabled && currentState === 'FOCUS_RUNNING') {
+      const isActivelyDistracted = currentState === 'FOCUS_RUNNING' || 
+        (currentState === 'FOCUS_PAUSED' && pauseReason && !['IDLE_DETECTED', 'Manual', 'manual_pause'].includes(pauseReason));
+
+      if (isDetectionEnabled && isActivelyDistracted) {
         const trimmedReason = reason?.trim();
         const isErrorOrEmpty = !trimmedReason ||
           trimmedReason.toLowerCase().includes("evaluation failed") ||
@@ -152,16 +158,81 @@ export default function WorkspacePage() {
           ? `You switched to ${appLabel} which does not match your session intent.`
           : trimmedReason;
 
-        toast.warning("Distraction Detected!", {
-          description: `${displayReason} Timer paused.`,
-          duration: 5000,
-        });
-        store.incrementDistraction();
-        store.pauseFocus(displayReason);
+        // 🚀 Active Enforcement: Instantly pop Prodify back to the front!
+        if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+          try {
+            // 0. Mitigate Distracting Window
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+              invoke('minimize_active_window').catch(err => console.error("Failed to minimize distracting window:", err));
+            }).catch((e) => console.warn('[WorkspacePage] Failed to minimize distracting window:', e));
+
+            // 1. Force Window to Front
+            import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+              const appWindow = getCurrentWindow();
+              // Await the sequence for robust Windows 11 focus elevation
+              const elevate = async () => {
+                try {
+                  await appWindow.unminimize();
+                  await appWindow.show();
+                  await appWindow.setAlwaysOnTop(true);
+                  await appWindow.setFocus();
+                  setTimeout(async () => {
+                    await appWindow.setAlwaysOnTop(false);
+                  }, 3500); // Keep topmost briefly
+                } catch (err) {
+                  console.error('Failed to elevate window:', err);
+                }
+              };
+              elevate();
+            });
+
+            // 2. Play Audio Alert
+            try {
+              import('@/lib/audio').then(({ audioEngine }) => {
+                if (audioEngine && typeof audioEngine.playDistractionAlert === 'function') {
+                  audioEngine.playDistractionAlert();
+                } else {
+                  console.warn("audioEngine.playDistractionAlert is missing.");
+                }
+              }).catch(e => console.error("Failed to load audio engine:", e));
+            } catch (err) {
+              console.error("Audio playback failed:", err);
+            }
+
+            // 3. Native Desktop Notification
+            import('@tauri-apps/plugin-notification').then(async ({ sendNotification, isPermissionGranted, requestPermission }) => {
+              let permissionGranted = await isPermissionGranted();
+              if (!permissionGranted) {
+                const permission = await requestPermission();
+                permissionGranted = permission === 'granted';
+              }
+              if (permissionGranted) {
+                sendNotification({
+                  title: 'Distraction Detected',
+                  body: displayReason,
+                });
+              }
+            }).catch(() => {});
+
+          } catch (e) {
+            console.error("Failed to execute active enforcement:", e);
+          }
+        }
+
+        if (currentState === 'FOCUS_RUNNING') {
+          toast.warning("Distraction Detected!", {
+            description: `${displayReason} Timer paused.`,
+            duration: 5000,
+          });
+          store.incrementDistraction();
+          store.pauseFocus(displayReason);
+        } else if (currentState === 'FOCUS_PAUSED' && pauseReason !== displayReason) {
+          // Update the reason in the store to reflect the new distraction target
+          store.pauseFocus(displayReason);
+        }
       }
     },
     onFocused: () => {
-      console.log('Tab is now focused:', currentTabTitle);
     },
   });
 
@@ -188,8 +259,10 @@ export default function WorkspacePage() {
     });
   }, []);
 
+  const dynamicIdleTimeout = isTabFocused ? 0 : 60000; // 0 (Suppressed) for aligned (passive study), 1 min for unaligned
+
   const { isIdle, idleTime } = useIdleDetection({
-    idleTimeout: 60000,
+    idleTimeout: dynamicIdleTimeout,
     enabled: isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING',
     onIdle: handleIdle,
     onActive: handleActive,
@@ -223,10 +296,15 @@ export default function WorkspacePage() {
       setIsLoading(false);
       return;
     }
-    fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders() })
-      .then(res => res.json())
-      .then((workspaces: any[]) => {
-        const ws = workspaces.find((w: any) => String(w.id) === String(wsId));
+    fetch(`${API_BASE}/workspaces/${wsId}`, { 
+      headers: getAuthHeaders(),
+      cache: 'no-store'
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Not found');
+        return res.json();
+      })
+      .then((ws: any) => {
         setWorkspace(ws || null);
         setIsLoading(false);
       })
@@ -341,11 +419,15 @@ export default function WorkspacePage() {
 
   const handleDismissEnforcement = useCallback(() => setEnforcementTriggered(false), [setEnforcementTriggered]);
 
+  const totalDuration = timerState.sessionMode === 'LONG_BREAK' 
+    ? timerState.defaultLongBreakDuration 
+    : timerState.sessionMode === 'SHORT_BREAK' 
+      ? timerState.breakDuration 
+      : timerState.focusDuration;
+  const isCameraBlocked = cameraStatus === 'error';
+
   if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" /></div>;
   if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4"><p className="text-muted-foreground">Workspace not found</p><Link to="/" className="text-white hover:underline text-sm">Go back</Link></div>;
-
-  const totalDuration = timerState.currentState.includes('BREAK') ? timerState.breakDuration : timerState.focusDuration;
-  const isCameraBlocked = cameraStatus === 'error';
 
   return (
     <motion.div
@@ -414,6 +496,29 @@ export default function WorkspacePage() {
       >
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center w-full">
             <div className="mb-8 flex flex-col items-center w-full">
+              {/* Pomofocus Mode Pills */}
+              <div className="flex items-center gap-2 mb-6 bg-secondary/30 p-1.5 rounded-full border border-border/40">
+                <div className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${timerState.sessionMode === 'FOCUS' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground'}`}>Focus</div>
+                <div className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground'}`}>Short Break</div>
+                <div className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground'}`}>Long Break</div>
+              </div>
+
+              {/* Round Indicator */}
+              <div className="flex flex-col items-center mb-6">
+                <span className="text-sm font-bold text-muted-foreground tracking-widest uppercase mb-2">
+                  #{timerState.roundCount === 0 ? 1 : (timerState.roundCount % timerState.longBreakInterval === 0 ? timerState.longBreakInterval : (timerState.roundCount % timerState.longBreakInterval) + 1)} / {timerState.longBreakInterval}
+                </span>
+                <div className="flex gap-2">
+                  {Array.from({ length: timerState.longBreakInterval }).map((_, i) => {
+                    const currentRoundNum = timerState.roundCount % timerState.longBreakInterval;
+                    const isCompleted = timerState.roundCount > 0 && (i < currentRoundNum || currentRoundNum === 0);
+                    return (
+                      <div key={i} className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-[#e8ff47]' : 'bg-border'}`} />
+                    );
+                  })}
+                </div>
+              </div>
+
               <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
             </div>
 
@@ -450,6 +555,91 @@ export default function WorkspacePage() {
               }
             }}
           />
+
+          {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason === 'IDLE_DETECTED' && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-8 w-full max-w-lg bg-amber-500/10 border border-amber-500/20 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500 rounded-l-2xl"></div>
+              
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 mt-1 w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-500">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-amber-500 mb-1">Session Paused Due to Inactivity</h3>
+                  <p className="text-sm text-foreground mb-5 leading-relaxed">
+                    No input was detected for an extended period. Click Resume when you are back.
+                  </p>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button 
+                      onClick={() => useTimerStore.getState().resumeFocus()}
+                      className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 px-4 rounded-xl transition-colors shadow-sm"
+                    >
+                      Resume Session
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason && !['IDLE_DETECTED', 'Manual', 'manual_pause'].includes(timerState.pauseReason) && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-8 w-full max-w-lg bg-red-500/10 border border-red-500/20 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-1 h-full bg-red-500 rounded-l-2xl"></div>
+              
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 mt-1 w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-500">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-red-500 mb-1">Focus Interrupted</h3>
+                  <p className="text-sm text-foreground mb-2 leading-relaxed">
+                    {timerState.pauseReason}
+                  </p>
+                  
+                  {sessionIntent && (
+                    <div className="bg-background/50 rounded-lg p-3 border border-border/50 mb-4">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-1">Declared Goal</p>
+                      <p className="text-sm font-medium text-foreground">"{sessionIntent}"</p>
+                    </div>
+                  )}
+
+                  <p className="text-sm font-semibold text-red-400 mb-5">
+                    You shouldn't be here. Return to your session.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button 
+                      onClick={() => useTimerStore.getState().resumeFocus()}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-xl transition-colors shadow-sm"
+                    >
+                      Back to Focus
+                    </button>
+                    <button 
+                      onClick={() => {
+                        toast.success("Noted as relevant", { description: "We'll try to learn from this." });
+                        markAsRelevant();
+                        useTimerStore.getState().resumeFocus();
+                      }}
+                      className="flex-1 bg-secondary/50 hover:bg-secondary text-secondary-foreground font-medium py-2 px-4 rounded-xl transition-colors"
+                    >
+                      This is relevant
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
         </motion.div>
 
         <motion.div variants={columnVariants} className="space-y-4">

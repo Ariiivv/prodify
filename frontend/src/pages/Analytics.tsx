@@ -27,17 +27,26 @@ const wsChartConfig = {
   },
 };
 
+const appsChartConfig = {
+  count: {
+    label: 'Distraction Events',
+    color: 'hsl(340, 70%, 50%)',
+  },
+};
+
 export default function Analytics() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [distractingApps, setDistractingApps] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [sessRes, wsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/telemetry/sessions?limit=200`, { headers: getAuthHeaders() }).catch(() => null),
-          fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders() }).catch(() => null),
+        const [sessRes, wsRes, appsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/telemetry/sessions?limit=200`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
+          fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
+          fetch(`${API_BASE}/api/analytics/distracting-apps`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
         ]);
         if (sessRes && sessRes.ok) {
           const data = await sessRes.json();
@@ -46,6 +55,10 @@ export default function Analytics() {
         if (wsRes && wsRes.ok) {
           const data = await wsRes.json();
           setWorkspaces(data);
+        }
+        if (appsRes && appsRes.ok) {
+          const data = await appsRes.json();
+          setDistractingApps(data);
         }
       } catch (err) {
         console.error('Error fetching analytics data:', err);
@@ -178,6 +191,27 @@ export default function Analytics() {
               </BarChart>
             </ChartContainer>
           </motion.div>
+
+          {/* Top Distracting Apps */}
+          {distractingApps.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35 }}
+              className="rounded-2xl border border-border/50 bg-card/50 p-6 lg:col-span-2 xl:col-span-1"
+            >
+              <h3 className="text-sm font-semibold text-foreground mb-4">Top Distracting Apps</h3>
+              <ChartContainer config={appsChartConfig} className="h-[220px] w-full">
+                <BarChart data={distractingApps} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} width={80} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" name="Distraction Events" fill="var(--color-count)" radius={[0, 6, 6, 0]} />
+                </BarChart>
+              </ChartContainer>
+            </motion.div>
+          )}
         </div>
       )}
     </div>
