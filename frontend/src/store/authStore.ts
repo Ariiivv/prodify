@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
+import { API_BASE } from '@/lib/config';
 
 export interface User {
   id: string | number;
@@ -63,13 +64,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (session) {
-        const user: User = {
+        // Fallback user from Supabase session
+        let user: User = {
           id: session.user.id,
           email: session.user.email || '',
           username: session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User',
           auth_provider: session.user.app_metadata?.provider || 'email',
           avatar_url: session.user.user_metadata?.avatar_url || null,
         };
+
+        // Try to fetch the full profile from our backend
+        try {
+          const profileRes = await fetch(`${API_BASE}/api/auth/me`, {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+          if (profileRes.ok) {
+            const profileData = await profileRes.json();
+            user = { ...user, ...profileData };
+          }
+        } catch (e) {
+          console.error("Failed to fetch full profile from backend:", e);
+        }
 
         set({
           session: { access_token: session.access_token },
@@ -86,18 +103,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoading: false });
     }
 
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange(async (_event, session) => {
       // Ignore if currently in dev bypass
       if (get().session?.access_token === 'dev-token') return;
 
       if (session) {
-        const user: User = {
+        let user: User = {
           id: session.user.id,
           email: session.user.email || '',
           username: session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User',
           auth_provider: session.user.app_metadata?.provider || 'email',
           avatar_url: session.user.user_metadata?.avatar_url || null,
         };
+
+        try {
+          const profileRes = await fetch(`${API_BASE}/api/auth/me`, {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+          if (profileRes.ok) {
+            const profileData = await profileRes.json();
+            user = { ...user, ...profileData };
+          }
+        } catch (e) {
+          console.error("Failed to fetch full profile from backend:", e);
+        }
 
         set({
           session: { access_token: session.access_token },
