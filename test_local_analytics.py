@@ -1,0 +1,1 @@
+﻿from fastapi.testclient import TestClient; import sys, os; sys.path.insert(0, os.path.abspath('backend')); from main import app; client = TestClient(app); print(client.get('/api/analytics/global').json())
