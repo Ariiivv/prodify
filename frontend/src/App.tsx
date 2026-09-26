@@ -10,6 +10,7 @@ import Settings from './pages/Settings';
 import Auth from './pages/Auth';
 import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import TrackingConsentModal from './components/auth/TrackingConsentModal';
 import ScrollToTop from './components/ScrollToTop';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -106,6 +107,7 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <TrackingConsentModal />
         <BrowserRouter>
           <ScrollToTop />
           <Routes>
