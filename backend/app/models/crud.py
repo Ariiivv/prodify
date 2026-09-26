@@ -9,8 +9,10 @@ def create_workspace(
     user_id: str,
     name: str,
     mode: str,
+    category: Optional[str] = "mastery",
     target_hours: Optional[float] = None,
     deadline: Optional[date] = None,
+    daily_target_minutes: Optional[int] = 60,
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
     focus_keywords: Optional[str] = None,
@@ -21,8 +23,10 @@ def create_workspace(
         user_id=user_id,
         name=name,
         mode=mode,
+        category=category,
         target_hours=target_hours,
         deadline=deadline,
+        daily_target_minutes=daily_target_minutes,
         work_duration=work_duration,
         break_duration=break_duration,
         focus_keywords=focus_keywords,
@@ -59,8 +63,10 @@ def update_workspace(
     user_id: str,
     name: str,
     mode: str,
+    category: Optional[str] = "mastery",
     target_hours: Optional[float] = None,
     deadline: Optional[date] = None,
+    daily_target_minutes: Optional[int] = 60,
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
     focus_keywords: Optional[str] = None,
@@ -74,8 +80,10 @@ def update_workspace(
     workspace.user_id = user_id
     workspace.name = name
     workspace.mode = mode
+    workspace.category = category
     workspace.target_hours = target_hours
     workspace.deadline = deadline
+    workspace.daily_target_minutes = daily_target_minutes
     workspace.work_duration = work_duration
     workspace.break_duration = break_duration
     workspace.focus_keywords = focus_keywords
@@ -117,7 +125,7 @@ def log_activity_record_async(
     intent: str,
     is_focused: bool,
     reason: str,
-    workspace_id: Optional[int] = 1,
+    workspace_id: Optional[int] = None,
 ):
     """Permanently store a window classification activity log in a background session."""
     from app.models.connection import SessionLocal
@@ -127,7 +135,10 @@ def log_activity_record_async(
     db = SessionLocal()
     try:
         record = models.ActivityLog(
-            workspace_id=workspace_id or 1,
+            # Activity is meaningful only in the workspace that initiated the
+            # focus session. Do not silently attach unscoped activity to an
+            # unrelated workspace (the old fallback was workspace id 1).
+            workspace_id=workspace_id,
             app_name=app_name,
             window_title=window_title,
             intent=intent,
@@ -204,3 +215,95 @@ def create_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+def update_or_create_daily_log(db: Session, workspace_id: int, log_date: date, session_minutes: int, intent_score: float) -> models.DailyWorkspaceLog:
+    from datetime import timedelta
+    workspace = get_workspace(db, workspace_id)
+    if not workspace:
+        raise ValueError(f"Workspace with id {workspace_id} not found")
+
+    target_req = workspace.daily_target_minutes if workspace.category == "mastery" else 60
+
+    log = db.query(models.DailyWorkspaceLog).filter(
+        models.DailyWorkspaceLog.workspace_id == workspace_id,
+        models.DailyWorkspaceLog.date == log_date
+    ).first()
+
+    if not log:
+        log = models.DailyWorkspaceLog(
+            workspace_id=workspace_id,
+            date=log_date,
+            category=workspace.category,
+            target_minutes_required=target_req,
+            minutes_logged=0,
+            intent_score=0.0,
+            target_met=False
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+
+    log.minutes_logged += session_minutes
+    if log.intent_score == 0.0:
+        log.intent_score = intent_score
+    else:
+        log.intent_score = (log.intent_score + intent_score) / 2.0
+
+    if not log.target_met and log.minutes_logged >= log.target_minutes_required:
+        log.target_met = True
+        
+        yesterday = log_date - timedelta(days=1)
+        prev_log = db.query(models.DailyWorkspaceLog).filter(
+            models.DailyWorkspaceLog.workspace_id == workspace_id,
+            models.DailyWorkspaceLog.date == yesterday
+        ).first()
+
+        if prev_log and prev_log.target_met:
+            workspace.current_streak += 1
+        else:
+            workspace.current_streak = 1
+            
+        if workspace.current_streak > workspace.longest_streak:
+            workspace.longest_streak = workspace.current_streak
+
+    db.commit()
+    db.refresh(log)
+    return log
+
+def evaluate_global_streak(db: Session, user_id: str, log_date: date):
+    from datetime import timedelta
+    workspaces = db.query(models.Workspace).filter(models.Workspace.user_id == user_id).all()
+    if not workspaces:
+        return
+
+    all_met = True
+    for ws in workspaces:
+        # Check if they have a log and if target_met is True
+        log = db.query(models.DailyWorkspaceLog).filter(
+            models.DailyWorkspaceLog.workspace_id == ws.id,
+            models.DailyWorkspaceLog.date == log_date
+        ).first()
+        if not log or not log.target_met:
+            all_met = False
+            break
+
+    if all_met:
+        stats = db.query(models.UserStats).filter(models.UserStats.user_id == user_id).first()
+        if not stats:
+            stats = models.UserStats(user_id=user_id, current_global_streak=0, longest_global_streak=0)
+            db.add(stats)
+            db.commit()
+            db.refresh(stats)
+
+        yesterday = log_date - timedelta(days=1)
+        if stats.last_global_perfect_date == yesterday:
+            stats.current_global_streak += 1
+        elif stats.last_global_perfect_date != log_date:
+            stats.current_global_streak = 1
+
+        if stats.current_global_streak > stats.longest_global_streak:
+            stats.longest_global_streak = stats.current_global_streak
+
+        stats.last_global_perfect_date = log_date
+        db.commit()

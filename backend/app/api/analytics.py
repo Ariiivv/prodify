@@ -7,7 +7,7 @@ from app.models.connection import get_db
 from app.models import schemas as models
 from app.api.auth import get_current_user
 
-router = APIRouter(tags=["analytics"])
+router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 class GlobalMetricsOut(BaseModel):
     total_focus_hours: float
@@ -62,3 +62,104 @@ def get_global_metrics(db: Session = Depends(get_db), current_user: models.User 
         total_distractions=total_distractions,
         most_productive_day=most_productive_day,
     )
+
+
+@router.get("/global")
+def get_global_stats(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    from datetime import date, timedelta
+    stats = db.query(models.UserStats).filter(models.UserStats.user_id == current_user.id).first()
+    cutoff = date.today() - timedelta(days=10)
+    
+    logs = db.query(models.DailyWorkspaceLog).join(models.Workspace).filter(
+        models.Workspace.user_id == current_user.id,
+        models.DailyWorkspaceLog.date >= cutoff
+    ).all()
+    
+    score = sum(log.intent_score for log in logs) / len(logs) if logs else 0.0
+    
+    return {
+        "current_global_streak": stats.current_global_streak if stats else 0,
+        "longest_global_streak": stats.longest_global_streak if stats else 0,
+        "ten_day_rolling_score": round(score, 1)
+    }
+
+@router.get("/workspace/{workspace_id}/recent")
+def get_workspace_recent(workspace_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    from datetime import date, timedelta
+    cutoff = date.today() - timedelta(days=7)
+    
+    logs = db.query(models.DailyWorkspaceLog).filter(
+        models.DailyWorkspaceLog.workspace_id == workspace_id,
+        models.DailyWorkspaceLog.date >= cutoff
+    ).order_by(models.DailyWorkspaceLog.date.asc()).all()
+    
+    return [
+        {
+            "date": log.date.isoformat(),
+            "target_met": log.target_met,
+            "minutes_logged": log.minutes_logged,
+            "target_minutes_required": log.target_minutes_required
+        }
+        for log in logs
+    ]
+
+@router.get("/calendar")
+def get_calendar(year: int, month: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    from datetime import date, timedelta
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year+1, 1, 1) - timedelta(days=1)
+    else:
+        end_date = date(year, month+1, 1) - timedelta(days=1)
+        
+    logs = db.query(models.DailyWorkspaceLog).join(models.Workspace).filter(
+        models.Workspace.user_id == current_user.id,
+        models.DailyWorkspaceLog.date >= start_date,
+        models.DailyWorkspaceLog.date <= end_date
+    ).all()
+    
+    result = {}
+    for log in logs:
+        ds = log.date.isoformat()
+        if ds not in result:
+            result[ds] = {"total_logged": 0, "perfect_day": True, "workspaces_active": 0}
+        
+        result[ds]["total_logged"] += log.minutes_logged
+        result[ds]["workspaces_active"] += 1
+        if not log.target_met:
+            result[ds]["perfect_day"] = False
+            
+    return result
+
+@router.get("/distracting-apps")
+def get_distracting_apps(
+    limit: int = 6,
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
+    from sqlalchemy import func, desc
+    
+    results = db.query(
+        models.ActivityLog.app_name, 
+        func.count(models.ActivityLog.id).label('count')
+    ).join(models.Workspace).filter(
+        models.Workspace.user_id == current_user.id,
+        models.ActivityLog.is_focused == 0
+    ).group_by(
+        models.ActivityLog.app_name
+    ).order_by(
+        desc('count')
+    ).limit(limit).all()
+    
+    # Format the app name to be cleaner (strip .exe, etc)
+    formatted = []
+    for r in results:
+        app = r[0]
+        if app.lower().endswith('.exe'):
+            app = app[:-4]
+        # Capitalize appropriately if mostly lowercase
+        if app.islower():
+            app = app.capitalize()
+        formatted.append({"name": app, "count": r[1]})
+        
+    return formatted

@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -18,12 +18,26 @@ router = APIRouter(tags=["workspaces"])
 class WorkspacePayload(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     mode: str = Field(default="structured", min_length=1, max_length=80)
+    category: Optional[str] = Field(default="mastery", pattern="^(sprint|mastery)$")
     target_hours: Optional[float] = Field(default=None, ge=0)
     deadline: Optional[date] = None
+    daily_target_minutes: Optional[int] = Field(default=60, ge=0, le=720)
     work_duration: int = Field(default=25, ge=1, le=180)
     break_duration: int = Field(default=5, ge=1, le=60)
     focus_keywords: Optional[str] = Field(default=None, max_length=2000)
     camera_enabled: bool = False
+
+    @field_validator('category', mode='after')
+    @classmethod
+    def validate_category(cls, v):
+        return v or 'mastery'
+
+    @model_validator(mode='after')
+    def validate_sprint_requirements(self) -> 'WorkspacePayload':
+        if self.category == 'sprint':
+            if not self.deadline or self.target_hours is None:
+                raise ValueError("deadline and target_hours are required for sprint category.")
+        return self
 
 
 class WorkspaceOut(WorkspacePayload):
@@ -114,6 +128,8 @@ def update_workspace(
     current_user: models.User = Depends(get_current_user),
 ):
     get_owned_workspace(workspace_id, current_user, db)
+    from app.services.intent_classifier import clear_semantic_cache
+    clear_semantic_cache()
     return crud.update_workspace(
         db=db, workspace_id=workspace_id, user_id=current_user.id, **payload.model_dump()
     )

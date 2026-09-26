@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Date, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Date, Boolean, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -29,12 +29,16 @@ class Workspace(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     name = Column(String, index=True, nullable=False)
     mode = Column(String, nullable=False) # e.g., "Structured Goal Mode", "Flexible Tracking Mode"
+    category = Column(String, nullable=False, default="mastery") # 'sprint' or 'mastery'
     target_hours = Column(Float, nullable=True) # For Structured Goal Mode
     deadline = Column(Date, nullable=True) # For Structured Goal Mode
+    daily_target_minutes = Column(Integer, nullable=True, default=60) # For Mastery Mode
     work_duration = Column(Integer, nullable=False, default=45) # in minutes
     break_duration = Column(Integer, nullable=False, default=5)  # in minutes
     focus_keywords = Column(String, nullable=True) # JSON array of focus keywords for adaptive tracking
     camera_enabled = Column(Boolean, nullable=False, default=False)
+    current_streak = Column(Integer, nullable=False, default=0)
+    longest_streak = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -124,3 +128,28 @@ class CoachingInteraction(Base):
     burnout_score_at_time = Column(Float, nullable=False)
     focus_minutes_at_time = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class DailyWorkspaceLog(Base):
+    __tablename__ = "daily_workspace_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    category = Column(String, nullable=True) # snapshot
+    target_minutes_required = Column(Integer, nullable=False, default=0)
+    minutes_logged = Column(Integer, nullable=False, default=0)
+    intent_score = Column(Float, nullable=False, default=0.0)
+    target_met = Column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (UniqueConstraint('workspace_id', 'date', name='uq_workspace_date'),)
+    workspace = relationship("Workspace")
+
+class UserStats(Base):
+    __tablename__ = "user_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    current_global_streak = Column(Integer, nullable=False, default=0)
+    longest_global_streak = Column(Integer, nullable=False, default=0)
+    last_global_perfect_date = Column(Date, nullable=True)
