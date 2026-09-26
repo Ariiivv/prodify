@@ -311,3 +311,56 @@ def get_goal_plan(
         db=db,
         workspace_name=workspace_name,
     )
+
+@router.get("/ai-coach/daily-insight")
+async def get_daily_insight(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    from datetime import date, timedelta
+    from sqlalchemy import func, desc
+    
+    stats = db.query(models.UserStats).filter(models.UserStats.user_id == current_user.id).first()
+    streak = stats.current_global_streak if stats else 0
+    
+    yesterday = date.today() - timedelta(days=1)
+    logs = db.query(models.DailyWorkspaceLog).join(models.Workspace).filter(
+        models.Workspace.user_id == current_user.id,
+        models.DailyWorkspaceLog.date == yesterday
+    ).all()
+    
+    total_minutes = sum(log.minutes_logged for log in logs)
+    
+    distractions = db.query(
+        models.ActivityLog.app_name, 
+        func.count(models.ActivityLog.id).label('count')
+    ).join(models.Workspace).filter(
+        models.Workspace.user_id == current_user.id,
+        models.ActivityLog.is_focused == 0,
+        func.date(models.ActivityLog.timestamp) == yesterday
+    ).group_by(models.ActivityLog.app_name).order_by(desc('count')).limit(3).all()
+    
+    distraction_str = 'None'
+    if distractions:
+        distraction_str = ', '.join([f'{d[0]} ({d[1]} times)' for d in distractions])
+        
+    user_name = current_user.full_name or current_user.username or 'there'
+
+    prompt = f"""You are the Prodify AI Coach. Greet the user ({user_name}) and give a short 1-2 sentence proactive insight for the day.
+Data from yesterday: Focused for {total_minutes} minutes. Top distractions: {distraction_str}. Current streak: {streak} days.
+Be encouraging but direct. DO NOT say 'Here is your insight'. Keep it under 35 words."""
+
+    try:
+        completion = await client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[
+                {"role": "system", "content": "You are a strict but supportive productivity coach."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=100
+        )
+        return {"insight": completion.choices[0].message.content.strip()}
+    except Exception as e:
+        logger.error(f"Error generating insight: {e}")
+        return {"insight": f"Welcome back, {user_name}. Ready to focus today?"}
