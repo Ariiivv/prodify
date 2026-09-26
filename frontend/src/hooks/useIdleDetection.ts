@@ -75,6 +75,7 @@ export function useIdleDetection(options?: IdleDetectionOptions): IdleDetectionR
 
     // Polling interval to check idle state without requiring frequent events
     idleTimerRef.current = setInterval(() => {
+      if (idleTimeout <= 0) return; // Suppressed
       const elapsed = Date.now() - lastActivityRef.current;
       if (elapsed >= idleTimeout && !isIdleRef.current) {
         isIdleRef.current = true;

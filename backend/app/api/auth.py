@@ -64,13 +64,36 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
                 decoded_secret = base64.b64decode(SUPABASE_JWT_SECRET)
             except Exception:
                 pass
-
-        payload = jwt.decode(
-            token, 
-            decoded_secret, 
-            algorithms=["HS256"], 
-            options={"verify_audience": False}
-        )
+        unverified_header = jwt.get_unverified_header(token)
+        token_alg = unverified_header.get("alg", "HS256")
+        unverified_payload = jwt.decode(token, options={"verify_signature": False})
+        
+        if token_alg != "HS256":
+            # For ES256/RS256, fetch the public key from the issuer's JWKS
+            iss = unverified_payload.get("iss")
+            if not iss:
+                raise ValueError("Token missing issuer for public key verification")
+            from jwt import PyJWKClient
+            jwks_url = f"{iss}/.well-known/jwks.json"
+            jwks_client = PyJWKClient(jwks_url)
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=[token_alg],
+                audience="authenticated",
+                options={"verify_aud": False}
+            )
+        else:
+            # Fallback for traditional symmetric HS256 tokens
+            payload = jwt.decode(
+                token, 
+                decoded_secret, 
+                algorithms=["HS256"],
+                audience="authenticated",
+                options={"verify_aud": False}
+            )
         user_id: str = str(payload.get("sub"))
         email: str = payload.get("email", "")
         if not user_id:
@@ -82,6 +105,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
     except Exception as e:
+        with open("jwt_debug.txt", "a") as f:
+            f.write(f"Final error: {e}\n")
+        
         logger.error(f"JWT Verification failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

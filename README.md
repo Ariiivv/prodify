@@ -2,12 +2,13 @@
 
 ![Prodify Hero Image](./frontend/src/assets/hero.png)
 
-Prodify is a full-stack, AI-powered productivity web application designed to help users track their focus and predict burnout in real-time. It leverages a Pomodoro finite state machine, monitors tab-switching distractions via browser telemetry, and feeds this data into a custom Machine Learning model to calculate a live fatigue risk percentage. Additionally, an integrated AI Coaching assistant provides personalized, data-driven advice.
+Prodify is a full-stack, AI-powered productivity application designed to help users track their focus and predict burnout in real-time. Its Windows Tauri desktop client monitors the active application and window title (including browser tabs, desktop apps, and games), compares that activity with the workspace plan, and feeds the resulting focus data into a live fatigue-risk model. An integrated AI Coaching assistant provides personalized, data-driven advice.
 
 ## ✨ Features
 
 *   **Pomodoro Timer:** A robust finite state machine (FSM) implementation for structured focus and break sessions.
 *   **Distraction Tracking:** Real-time monitoring of tab-switching events with a 15-second consecutive detection timer to identify distractions.
+*   **Desktop Intent Tracking:** During a focus session, compares the foreground Windows app and title with the workspace's goal and allowed tools. Activity history remains attached to that workspace.
 *   **Enforcement Modal:** Blurs the screen and pauses the timer upon detecting significant distractions, encouraging users to return to focus.
 *   **Live Burnout Prediction:** A custom Machine Learning model (RandomForestClassifier) predicts burnout probability based on historical telemetry data.
 *   **Dynamic Burnout Gauge:** Visual representation of burnout risk with dynamic color transitions (Green/Yellow/Red).
@@ -80,12 +81,11 @@ Prodify is a full-stack, AI-powered productivity web application designed to hel
     npm install
     # or yarn install
     ```
-3.  Start the Vite development server:
+3.  Start the desktop client (recommended for app, game, and browser-tab tracking):
     ```bash
-    npm run dev
-    # or yarn dev
+    npm run tauri dev
     ```
-    The frontend will be accessible at `http://localhost:5173` (or another port if 5173 is in use).
+    A normal Vite browser preview can render the UI, but browsers cannot read the active Windows application or other apps' tabs. Use the Tauri desktop client for OS-level activity tracking.
 
 ## 📈 ML Architecture Overview
 

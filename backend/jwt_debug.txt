@@ -1,0 +1,9 @@
+Token: eyJhbGciOiJFUzI1NiIs... Alg: ES256
+Header: {'alg': 'ES256', 'kid': '8d4f9222-b144-4c46-a57f-7752e1efeb7d', 'typ': 'JWT'}
+Payload: {'iss': 'https://vhilzverzaxedlhahfpt.supabase.co/auth/v1', 'sub': '2e0942c5-5e81-4417-8d3c-f9f2f5246bf3', 'aud': 'authenticated', 'exp': 1790011807, 'iat': 1790008207, 'email': 'arivanandan05@gmail.com', 'phone': '', 'app_metadata': {'provider': 'email', 'providers': ['email', 'google']}, 'user_metadata': {'avatar_url': 'https://lh3.googleusercontent.com/a/ACg8ocI8CVFT_jcF8vJLvbVNtEWqM9SJB4OKnztDJP1VLSQZNOSqpao=s96-c', 'email': 'arivanandan05@gmail.com', 'email_verified': True, 'full_name': '56_Pranav', 'iss': 'https://accounts.google.com', 'name': '56_Pranav', 'phone_verified': False, 'picture': 'https://lh3.googleusercontent.com/a/ACg8ocI8CVFT_jcF8vJLvbVNtEWqM9SJB4OKnztDJP1VLSQZNOSqpao=s96-c', 'provider_id': '114032281840224107317', 'sub': '114032281840224107317'}, 'role': 'authenticated', 'aal': 'aal1', 'amr': [{'method': 'oauth', 'timestamp': 1789977056}], 'session_id': '059ac083-76f1-4d5a-a1fe-8ea133e3d199', 'is_anonymous': False}
+Final error: The specified alg value is not allowed
+Final error: ES256 requires 'cryptography' to be installed.
+Final error: ES256 requires 'cryptography' to be installed.
+Final error: ES256 requires 'cryptography' to be installed.
+Final error: Invalid audience
+Final error: Invalid audience

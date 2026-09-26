@@ -13,7 +13,7 @@ use windows_sys::Win32::System::Threading::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+    GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId, ShowWindow, SW_MINIMIZE
 };
 #[cfg(target_os = "windows")]
 use webview2_com::Microsoft::Web::WebView2::Win32::{
@@ -117,21 +117,34 @@ fn get_active_window() -> Option<ActiveWindowPayload> {
     })
 }
 
+#[tauri::command]
+fn minimize_active_window() {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if !hwnd.is_null() {
+            ShowWindow(hwnd, SW_MINIMIZE);
+        }
+    }
+}
+
 // ─── Background poller: emits "window-changed" events on actual changes ──────
 fn start_window_poller(app_handle: tauri::AppHandle) {
-    // Track the last-seen window to deduplicate events
-    let last_title: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    // Track both title and process. Different apps can legitimately expose the
+    // same title (for example, an untitled editor and a browser new-tab page),
+    // and each change must be classified against the active focus intent.
+    let last_window: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
 
     thread::spawn(move || {
         loop {
-            thread::sleep(Duration::from_secs(3));
+            thread::sleep(Duration::from_millis(750));
 
             if let Some((title, process_name)) = get_foreground_window_info() {
-                let mut last = last_title.lock().unwrap();
+                let mut last = last_window.lock().unwrap();
 
                 // Only emit when the window actually changed
-                if *last != title {
-                    *last = title.clone();
+                if last.as_ref() != Some(&(title.clone(), process_name.clone())) {
+                    *last = Some((title.clone(), process_name.clone()));
                     // Drop the lock before emitting to avoid deadlock
                     drop(last);
 
@@ -168,7 +181,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![get_active_window])
+        .invoke_handler(tauri::generate_handler![get_active_window, minimize_active_window])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

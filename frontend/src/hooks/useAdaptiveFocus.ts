@@ -12,6 +12,8 @@ interface UseAdaptiveFocusOptions {
   enabled: boolean;
   /** The user's natural-language session intent for AI classification */
   sessionIntent?: string;
+  /** The ID of the current workspace */
+  workspaceId?: number | null;
   /** Called when the user becomes distracted */
   onDistracted?: (reason?: string, appName?: string) => void;
   /** Called when the user becomes focused */
@@ -31,6 +33,7 @@ export function useAdaptiveFocus({
   keywords = [],
   enabled = true,
   sessionIntent = '',
+  workspaceId = null,
   onDistracted,
   onFocused,
 }: UseAdaptiveFocusOptions): UseAdaptiveFocusResult {
@@ -43,12 +46,30 @@ export function useAdaptiveFocus({
   // Track in-flight classification to avoid duplicate API calls
   const classifyingRef = useRef(false);
   const pendingWindowRef = useRef<{title: string, processName: string} | null>(null);
+  const workspaceIdRef = useRef<number | null>(null);
+
+  const lastClassifiedRef = useRef<string>('');
+  // New refs for strict target isolation
+  const activeWindowRef = useRef<{ title: string; processName: string } | null>(null);
+  const whitelistedWindowsRef = useRef<Set<string>>(new Set());
+
+  const markAsRelevant = useCallback(() => {
+    const titleToWhitelist = activeWindowRef.current?.title || currentTabTitle;
+    if (titleToWhitelist) {
+      whitelistedWindowsRef.current.add(titleToWhitelist.toLowerCase());
+      // Re-evaluate immediately to flush any stale UI state
+      setFocusedState(true);
+      prevFocusedRef.current = true;
+      onFocusedRef.current?.();
+    }
+  }, [currentTabTitle]);
 
   useEffect(() => {
     onDistractedRef.current = onDistracted;
     onFocusedRef.current = onFocused;
     sessionIntentRef.current = sessionIntent;
-  }, [onDistracted, onFocused, sessionIntent]);
+    workspaceIdRef.current = workspaceId;
+  }, [onDistracted, onFocused, sessionIntent, workspaceId]);
 
   // 🛡️ Startup grace period 🛡️
   const startupTimeRef = useRef<number>(Date.now());
@@ -58,7 +79,6 @@ export function useAdaptiveFocus({
   if (enabled && !prevEnabledRef.current) {
     startupTimeRef.current = Date.now();
     prevFocusedRef.current = true;
-    console.log(`[useAdaptiveFocus] ⏳ Grace period timer RESET at ${startupTimeRef.current}`);
   }
   prevEnabledRef.current = enabled;
 
@@ -66,7 +86,7 @@ export function useAdaptiveFocus({
    * Core focus-checking logic.
    * Called with the AI classification result from the backend.
    */
-  const checkFocus = useCallback((title: string, overrideFocused?: boolean, reason?: string, appName?: string) => {
+  const checkFocus = useCallback((title: string, isFocused: boolean, reason?: string, appName?: string) => {
     const timer = getTimerState();
     const isFocusActive = timer.currentState === 'FOCUS_RUNNING';
 
@@ -74,34 +94,37 @@ export function useAdaptiveFocus({
       setCurrentTabTitle(title);
     }
 
-    const focused = overrideFocused !== undefined ? overrideFocused : true;
-    setFocusedState(focused);
+    // Force focus if user explicitly whitelisted this exact window
+    if (whitelistedWindowsRef.current.has(title.toLowerCase())) {
+      isFocused = true;
+    }
 
     if (!isFocusActive) return;
 
     // 🛡️ Startup grace period 🛡️
     const elapsed = Date.now() - startupTimeRef.current;
-    if (!focused && elapsed < GRACE_PERIOD_MS) {
-      console.log(`[useAdaptiveFocus] 🛡️ Grace period active (${elapsed}ms / ${GRACE_PERIOD_MS}ms) – suppressing distraction for title="${title}"`);
+    if (!isFocused && elapsed < GRACE_PERIOD_MS) {
       return;
     }
 
-    if (!focused) {
+    if (isFocused) {
+      setFocusedState(true);
+      if (!prevFocusedRef.current) {
+        prevFocusedRef.current = true;
+        onFocusedRef.current?.();
+      }
+    } else {
+      console.debug(`[useAdaptiveFocus] DISTRACTED: "${title}" (${appName})`);
+      setFocusedState(false);
       prevFocusedRef.current = false;
       onDistractedRef.current?.(reason, appName);
-    } else if (focused !== prevFocusedRef.current) {
-      prevFocusedRef.current = true;
-      onFocusedRef.current?.();
     }
   }, []);
 
   /**
    * Send the window title to the backend for AI-powered intent classification.
-   * Calls POST /api/telemetry/activity and feeds the result into checkFocus().
    */
   const classifyWindow = useCallback(async (initialTitle: string, initialProcessName: string) => {
-    // If a request is already running, queue this window to be processed next.
-    // This ensures we never drop the user's latest window if they tab-switch rapidly.
     if (classifyingRef.current) {
       pendingWindowRef.current = { title: initialTitle, processName: initialProcessName };
       return;
@@ -113,37 +136,43 @@ export function useAdaptiveFocus({
 
     while (true) {
       try {
+        const payload: any = {
+          window_title: currentTitle,
+          app_name: currentProcessName,
+          intent: sessionIntentRef.current || '',
+        };
+        if (workspaceIdRef.current) {
+          payload.workspace_id = workspaceIdRef.current;
+        }
+
         const response = await fetch(`${API_BASE}/api/telemetry/activity`, {
           method: 'POST',
           headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            window_title: currentTitle,
-            app_name: currentProcessName,
-            intent: sessionIntentRef.current || '',
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (!response.ok) {
-          console.error(`[useAdaptiveFocus] /telemetry/activity HTTP ${response.status}`);
-          // On error, don't change focus state (fail-open)
+          console.error(`[useAdaptiveFocus] Backend classification failed: HTTP ${response.status} for "${currentTitle}"`);
           setCurrentTabTitle(currentTitle);
         } else {
           const data: { status: string; reason: string; window_title: string; app_name: string } =
             await response.json();
-
-          console.log(
-            `[useAdaptiveFocus] 🧠 Classification result: status="${data.status}", reason="${data.reason}"`
-          );
-
-          checkFocus(currentTitle, data.status === 'focused', data.reason, data.app_name);
+            
+          // Strict isolation: only apply result if the user is STILL on that window
+          const isStillActive = !activeWindowRef.current || 
+             (activeWindowRef.current.title === currentTitle && activeWindowRef.current.processName === currentProcessName);
+             
+          if (isStillActive) {
+            checkFocus(currentTitle, data.status === 'focused', data.reason, data.app_name);
+          } else {
+             console.debug(`[useAdaptiveFocus] Ignored stale classification for "${currentTitle}" - window changed`);
+          }
         }
       } catch (err) {
         console.error('[useAdaptiveFocus] Classification request failed:', err);
-        // Fail-open: just update the title, don't trigger distraction
         setCurrentTabTitle(currentTitle);
       }
 
-      // Check if a new window was queued while we were fetching
       if (pendingWindowRef.current) {
         currentTitle = pendingWindowRef.current.title;
         currentProcessName = pendingWindowRef.current.processName;
@@ -164,50 +193,71 @@ export function useAdaptiveFocus({
 
     // ─── Tauri Path ──────────────────────────────────────────────────────
     if (IS_TAURI) {
+      let isMounted = true;
       let unlisten: (() => void) | null = null;
+      let heartbeatId: NodeJS.Timeout | null = null;
 
       const setup = async () => {
         try {
-          // Dynamic imports — these modules only exist in a Tauri runtime
           const { invoke } = await import('@tauri-apps/api/core');
           const { listen } = await import('@tauri-apps/api/event');
 
-          // Get the initial active window
-          const initial = await invoke<{
-            title: string;
-            processName: string;
-            timestamp: number;
-          } | null>('get_active_window');
+          const pollActiveWindow = async () => {
+            if (!isMounted) return;
+            try {
+              const active = await invoke<{
+                title: string;
+                processName: string;
+                timestamp: number;
+              } | null>('get_active_window');
 
-          if (initial) {
-            setCurrentTabTitle(initial.title);
-            // Classify the initial window (if intent is set)
-            if (sessionIntentRef.current) {
-              classifyWindow(initial.title, initial.processName);
+              if (active) {
+                const key = `${active.processName}::${active.title}`;
+                activeWindowRef.current = { title: active.title, processName: active.processName };
+                setCurrentTabTitle(active.title);
+
+                // Skip re-classification if the window hasn't changed (heartbeat dedup)
+                if (key === lastClassifiedRef.current) return;
+                lastClassifiedRef.current = key;
+                
+                if (whitelistedWindowsRef.current.has(active.title.toLowerCase())) {
+                   checkFocus(active.title, true, "Marked as relevant", active.processName);
+                } else {
+                  classifyWindow(active.title, active.processName);
+                }
+              }
+            } catch (e) {
+              console.error("[useAdaptiveFocus] poll error:", e);
             }
-          }
+          };
 
-          // Subscribe to window-changed events from the Rust background poller
+          await pollActiveWindow();
+          heartbeatId = setInterval(pollActiveWindow, 1000);
+
           const unlistenFn = await listen<{
             title: string;
             processName: string;
             timestamp: number;
           }>('window-changed', (event) => {
+            if (!isMounted) return;
             const { title, processName } = event.payload;
-            console.log(
-              `[useAdaptiveFocus] 🪟 Window changed: "${title}" (${processName})`
-            );
+            console.debug(`[useAdaptiveFocus] 🪟 Window changed: "${title}" (${processName})`);
 
-            // Always update the displayed title
+            activeWindowRef.current = { title, processName };
             setCurrentTabTitle(title);
 
-            // Only classify if the hook is enabled and we have an intent
-            if (sessionIntentRef.current) {
+            if (whitelistedWindowsRef.current.has(title.toLowerCase())) {
+               checkFocus(title, true, "Marked as relevant", processName);
+            } else {
               classifyWindow(title, processName);
             }
           });
 
-          unlisten = unlistenFn;
+          if (!isMounted) {
+            unlistenFn();
+          } else {
+            unlisten = unlistenFn;
+          }
         } catch (err) {
           console.error('[useAdaptiveFocus] Tauri setup failed:', err);
         }
@@ -216,20 +266,19 @@ export function useAdaptiveFocus({
       setup();
 
       return () => {
-        unlisten?.();
+        isMounted = false;
+        if (unlisten) unlisten();
+        if (heartbeatId) clearInterval(heartbeatId);
       };
     }
 
-    // ─── Browser Fallback Path ─────────────────────────────────────────────
-    // If not running in Tauri, we cannot track OS-level windows.
-    console.log("[useAdaptiveFocus] Running in browser: OS window tracking is disabled.");
-
     return () => {};
-  }, [enabled, classifyWindow]);
+  }, [enabled, classifyWindow, checkFocus]);
 
   return {
     currentTabTitle,
     isFocused: focusedState,
     keywords,
+    markAsRelevant,
   };
 }

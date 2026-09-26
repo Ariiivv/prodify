@@ -30,6 +30,9 @@
 - **Configurable Durations** — Workspace-specific `work_duration` (default 45 min) and `break_duration` (default 5 min) stored in SQLite schema.
 
 #### 🔍 Distraction Detection & Telemetry
+- **Desktop Activity Tracking** — The Windows Tauri shell polls the foreground application every three seconds and emits its process name and active title, covering browser tabs, desktop apps, and games rather than only the Prodify browser tab.
+- **Intent Alignment** — Each focus workspace combines its goal description with its allowed apps/tasks. During a running focus session, the backend compares the active title and app against that plan with a fail-open semantic classifier, so uncertain windows do not create false pauses.
+- **Workspace-Scoped Activity History** — Every classified activity record carries the active workspace ID; activity is neither recorded before a focus session starts nor silently assigned to another workspace.
 - **Tab Visibility Detection** — `useTabVisibility` hook monitors `document.visibilityState` and `window.blur` to detect tab switches.
 - **Idle Detection** — `useIdleDetection` hook monitors keyboard and mouse inactivity with a 60-second timeout; auto-pauses focus sessions on idle.
 - **Webcam-Based Distraction** — Camera absence + 5s timeout triggers distraction logging and timer pause.
@@ -96,6 +99,7 @@ GET  /api/telemetry/focus-density/{ws_id}  → Focus Density Score
 GET  /api/telemetry/distraction-velocity/{ws_id} → Distraction frequency
 GET  /api/telemetry/volumetric-efficiency   → Cross-workspace comparison
 POST /api/telemetry/distraction            → Log a distraction event
+POST /api/telemetry/activity               → Classify and record desktop activity for a focus workspace
 ```
 
 ---

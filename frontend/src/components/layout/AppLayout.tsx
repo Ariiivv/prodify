@@ -19,16 +19,16 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex">
-      {/* Sidebar */}
-      <aside className="hidden md:flex w-20 z-50 flex-col items-center py-8 border-r border-[#2a2a2a] bg-[#111111] overflow-hidden">
+    <div className="min-h-screen bg-[#0a0a0a]">
+      {/* Sidebar — fixed to viewport so Profile/Sign Out never get clipped */}
+      <aside className="hidden md:flex fixed inset-y-0 left-0 w-20 z-50 flex-col items-center py-8 border-r border-[#2a2a2a] bg-[#111111]">
         <Link to="/" className="mb-12 flex flex-col items-center gap-1">
           <div className="w-10 h-10 bg-[#1a1a1a] border border-[#2a2a2a] rounded flex items-center justify-center transition-colors hover:text-white text-muted-foreground">
             <Sparkles className="w-5 h-5" />
           </div>
         </Link>
 
-        <nav className="flex flex-col gap-6 flex-1 w-full mt-4">
+        <nav className="flex flex-col gap-6 flex-1 w-full mt-4 overflow-y-auto">
           {navItems.map(({ path, icon: Icon, label }) => {
             const isActive = location.pathname === path || (path === '/#workspaces' && location.hash === '#workspaces');
             return (
@@ -57,8 +57,8 @@ export default function AppLayout() {
           })}
         </nav>
 
-        {/* User section at bottom */}
-        <div className="mt-auto flex flex-col items-center gap-6 w-full">
+        {/* User section — pinned to bottom via mt-auto */}
+        <div className="mt-auto flex flex-col items-center gap-6 w-full pt-4">
           {/* Avatar (Clickable to open profile settings) */}
           <Link
             to="/settings"
@@ -111,8 +111,8 @@ export default function AppLayout() {
         </nav>
       </div>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
+      {/* Main content — offset by sidebar width on desktop */}
+      <main className="md:ml-20 min-h-screen overflow-y-auto pb-20 md:pb-0">
         <Outlet />
       </main>
     </div>

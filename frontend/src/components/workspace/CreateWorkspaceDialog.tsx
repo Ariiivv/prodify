@@ -19,10 +19,12 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [mode, setMode] = useState('structured');
+  const [category, setCategory] = useState('mastery');
   const [focusDuration, setFocusDuration] = useState('25');
   const [breakDuration, setBreakDuration] = useState('5');
   const [targetHours, setTargetHours] = useState('');
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
+  const [dailyTargetMinutes, setDailyTargetMinutes] = useState('60');
   const [focusKeywords, setFocusKeywords] = useState('');
   const [goalDescription, setGoalDescription] = useState('');
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -49,22 +51,37 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       return;
     }
 
+    // Validation for sprint
+    if (category === 'sprint') {
+      if (!deadline || !targetHours.trim()) {
+        toast.error("Target hours and deadline are required for Sprint mode");
+        return;
+      }
+    }
+
+    const dailyMin = parseInt(dailyTargetMinutes);
+    if (category === 'mastery' && (isNaN(dailyMin) || dailyMin < 15)) {
+      toast.error("Daily target must be at least 15 minutes");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const payload = {
         name: name.trim(),
         mode,
+        category,
         theme_color: 'violet',
         work_duration: workDur,
         break_duration: breakDur,
-        target_hours: targetHours.trim() ? parseFloat(targetHours) : null,
+        target_hours: category === 'sprint' && targetHours.trim() ? parseFloat(targetHours) : null,
         // Format as YYYY-MM-DD local time, safely preventing timezone offset issues
-        deadline: deadline ? format(deadline, 'yyyy-MM-dd') : null,
+        deadline: category === 'sprint' && deadline ? format(deadline, 'yyyy-MM-dd') : null,
+        daily_target_minutes: category === 'mastery' ? dailyMin : 60,
         focus_keywords: focusKeywords.trim() || null,
         camera_enabled: cameraEnabled,
-        // We aren't storing goal description in DB yet, but we'll include it here safely
-        // if we decide to add it later.
+        current_goal: goalDescription.trim() || null,
       };
 
       const response = await fetch(`${API_BASE}/workspaces`, {
@@ -92,10 +109,12 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       setOpen(false);
       setName('');
       setMode('structured');
+      setCategory('mastery');
       setFocusDuration('25');
       setBreakDuration('5');
       setTargetHours('');
       setDeadline(undefined);
+      setDailyTargetMinutes('60');
       setFocusKeywords('');
       setGoalDescription('');
       setCameraEnabled(false);
@@ -149,25 +168,25 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Mode Select (Pills) */}
+                {/* Category Select (Pills) */}
                 <div className="flex bg-transparent border border-[#2a2a2a] p-1 rounded-full">
                   <button
                     type="button"
-                    onClick={() => setMode('structured')}
+                    onClick={() => setCategory('sprint')}
                     className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
-                      mode === 'structured' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
+                      category === 'sprint' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
                     }`}
                   >
-                    Structured Goal
+                    🎯 Sprint (Deadline Driven)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setMode('flexible')}
+                    onClick={() => setCategory('mastery')}
                     className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
-                      mode === 'flexible' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
+                      category === 'mastery' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
                     }`}
                   >
-                    Flexible Tracking
+                    📚 Mastery (Continuous Track)
                   </button>
                 </div>
 
@@ -180,6 +199,18 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g., Design Sprint"
                     className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                  />
+                </div>
+
+                {/* Declared Goal / Intent Statement */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Declared Goal / Intent Statement</label>
+                  <textarea
+                    value={goalDescription}
+                    onChange={(e) => setGoalDescription(e.target.value)}
+                    placeholder="What are you focusing on in this workspace?"
+                    rows={2}
+                    className="flex w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-none px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#e8ff47] resize-none"
                   />
                 </div>
 
@@ -231,9 +262,9 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                 </div>
 
                 <AnimatePresence mode="wait">
-                  {mode === 'structured' && (
+                  {category === 'sprint' && (
                     <motion.div
-                      key="structured-fields"
+                      key="sprint-fields"
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
@@ -275,16 +306,41 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                           </Popover>
                         </div>
                       </div>
+                    </motion.div>
+                  )}
 
-                      {/* Goal Description */}
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Goal Description</label>
-                        <textarea
-                          value={goalDescription}
-                          onChange={(e) => setGoalDescription(e.target.value)}
-                          placeholder="What is the final deliverable for this workspace?"
-                          rows={2}
-                          className="flex w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-none px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#e8ff47] resize-none"
+                  {category === 'mastery' && (
+                    <motion.div
+                      key="mastery-fields"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-6 overflow-hidden"
+                    >
+                      <div className="pt-2">
+                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Daily Commitment (Minutes/Day)</label>
+                        <p className="text-[10px] text-muted-foreground mb-3">How much time do you want to dedicate to this track each day?</p>
+                        
+                        <div className="flex gap-2 mb-3">
+                          {[30, 45, 60, 90, 120].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setDailyTargetMinutes(preset.toString())}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-sm border ${dailyTargetMinutes === preset.toString() ? 'bg-[#e8ff47]/10 border-[#e8ff47] text-[#e8ff47]' : 'border-[#2a2a2a] text-muted-foreground hover:bg-[#1a1a1a] hover:text-white'}`}
+                            >
+                              {preset}m
+                            </button>
+                          ))}
+                        </div>
+                        
+                        <Input
+                          type="number"
+                          value={dailyTargetMinutes}
+                          onChange={(e) => setDailyTargetMinutes(e.target.value)}
+                          placeholder="60"
+                          min="15"
+                          className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                         />
                       </div>
                     </motion.div>

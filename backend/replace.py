@@ -1,0 +1,1 @@
+import os, glob; [open(f, 'w', encoding='utf-8').write(open(f, 'r', encoding='utf-8').read().replace('#e8ff47', '#8b5cf6')) for f in glob.glob('src/**/*.tsx', recursive=True) + glob.glob('src/**/*.css', recursive=True)]  

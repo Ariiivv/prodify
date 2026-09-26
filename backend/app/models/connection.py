@@ -26,7 +26,18 @@ def get_db():
     finally:
         db.close()
 
+import time
+
 def create_db_and_tables():
-    # Let SQLAlchemy's metadata handle creation
-    Base.metadata.create_all(engine)
-    logger.info("Database tables verified/created via metadata.")
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            Base.metadata.create_all(engine)
+            logger.info("Database tables verified/created via metadata.")
+            return
+        except Exception as e:
+            logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                logger.error("Failed to connect to the database after multiple attempts. Application will continue booting, but DB functionality may be degraded.")

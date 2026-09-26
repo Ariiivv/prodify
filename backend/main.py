@@ -55,7 +55,9 @@ origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    "tauri://localhost"
+    "tauri://localhost",
+    "https://tauri.localhost",
+    "http://tauri.localhost"
 ]
 
 frontend_url = os.getenv("FRONTEND_URL")
@@ -79,7 +81,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/workspaces")
 app.include_router(telemetry.router, prefix="/api")
 app.include_router(ai_coach.router, prefix="/api")
-app.include_router(analytics.router, prefix="/analytics")
+app.include_router(analytics.router, prefix="/api")
 
 
 @app.websocket("/vision")

@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
@@ -121,12 +121,17 @@ def create_completed_session(
     current_user: models.User = Depends(get_current_user),
 ):
     require_owned_workspace(payload.workspace_id, current_user.id, db)
+    end_time = datetime.utcnow()
+    duration_secs = max(0, payload.duration_minutes) * 60
+    start_time = end_time - timedelta(seconds=duration_secs)
+
     session = models.Session(
         workspace_id=payload.workspace_id,
-        duration=max(0, payload.duration_minutes) * 60,
+        start_time=start_time,
+        end_time=end_time,
+        duration=duration_secs,
         session_type="FOCUS",
         status="COMPLETED",
-        end_time=datetime.utcnow(),
         burnout_score=max(0.0, min(1.0, payload.burnout_score)),
     )
     db.add(session)
@@ -301,7 +306,7 @@ async def log_activity(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    Receive window activity from Electron, classify it as focused/distracted,
+    Receive desktop window activity, classify it as focused/distracted,
     update the FocusTracker, and return classification.
     """
     if payload.workspace_id is not None:
@@ -311,6 +316,7 @@ async def log_activity(
         window_title=payload.window_title,
         app_name=payload.app_name,
         intent=payload.intent,
+        workspace_id=payload.workspace_id,
     )
 
     if _tracker:
