@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export default function Settings() {
-  const { user, signOut, initialize } = useAuthStore();
+  const { user, signOut } = useAuthStore();
   const navigate = useNavigate();
 
   const [isResetDialogVisible, setResetDialogVisible] = useState(false);
@@ -38,18 +38,27 @@ export default function Settings() {
         age: age ? parseInt(age) : 0,
       };
 
-      const res = await fetch(`${API_BASE}/users/me/profile`, {
+      const res = await fetch(`${API_BASE}/api/users/me/profile`, {
         method: 'PUT',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload)
       });
 
       if (!res.ok) {
-        throw new Error('Failed to update profile');
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || 'Failed to update profile');
+      }
+
+      const data = await res.json();
+      // Update the auth store user directly from the save response
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser && data.user) {
+        useAuthStore.setState({
+          user: { ...currentUser, full_name: data.user.full_name, age: data.user.age }
+        });
       }
 
       toast.success("Profile updated successfully!");
-      await initialize();
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong');
     } finally {
@@ -66,11 +75,15 @@ export default function Settings() {
     if (resetInput !== 'RESET') return;
     
     setIsDeleting(true);
+    const startTime = Date.now();
     try {
-      const response = await fetch(`${API_BASE}/users/me/reset-data`, {
+      const response = await fetch(`${API_BASE}/api/users/me/reset-data`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 500) await new Promise(r => setTimeout(r, 500 - elapsed));
 
       if (!response.ok) {
         throw new Error('Failed to reset data');
@@ -81,6 +94,9 @@ export default function Settings() {
       setResetDialogVisible(false);
       navigate('/');
     } catch (error: any) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 500) await new Promise(r => setTimeout(r, 500 - elapsed));
+      
       toast.error('Reset Failed', { description: error.message });
     } finally {
       setIsDeleting(false);

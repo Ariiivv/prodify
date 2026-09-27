@@ -42,6 +42,7 @@ class ActivityLog(BaseModel):
 class ActivityClassification(BaseModel):
     status: str
     reason: str
+    summary: Optional[str] = None
     window_title: str
     app_name: str
 
@@ -312,7 +313,7 @@ async def log_activity(
     if payload.workspace_id is not None:
         require_owned_workspace(payload.workspace_id, current_user.id, db)
 
-    status, reason = await classify_with_intent(
+    status, reason, summary = await classify_with_intent(
         window_title=payload.window_title,
         app_name=payload.app_name,
         intent=payload.intent,
@@ -332,7 +333,7 @@ async def log_activity(
         app_name=payload.app_name,
         window_title=payload.window_title,
         intent=payload.intent,
-        is_focused=(status == "focused"),
+        is_focused=int(status == "focused"),
         reason=reason,
         workspace_id=payload.workspace_id,
     )
@@ -340,6 +341,7 @@ async def log_activity(
     return ActivityClassification(
         status=status,
         reason=reason,
+        summary=summary,
         window_title=payload.window_title,
         app_name=payload.app_name,
     )

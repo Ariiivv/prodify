@@ -78,7 +78,7 @@ _last_eval_time = 0.0
 _last_eval_target = ""
 _eval_lock = asyncio.Lock()
 
-async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> Optional[tuple[bool, str]]:
+async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> Optional[tuple[bool, str, str]]:
     """
     AI-powered semantic evaluation via Groq (Qwen 3.8 27B).
     """
@@ -127,7 +127,7 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
         f"   - You are STRICTLY FORBIDDEN from inventing hypothetical excuses (e.g., \"watching this sports match or movie clip might inspire ideas\", \"they might build a tool for this game\").\n\n"
         f"### OUTPUT FORMAT:\n"
         f"Respond with exactly one line in this format:\n"
-        f"VERDICT: [TRUE|FALSE] | REASON: [One clear sentence explaining whether the content directly serves the declared goal]"
+        f"VERDICT: [TRUE|FALSE] | SUMMARY: [A short 3-6 word summary of what the content is] | REASON: [One clear sentence explaining whether the content directly serves the declared goal]"
     )
 
     try:
@@ -143,11 +143,18 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
 
         verdict_str = answer.upper()
         reason = ""
+        summary = ""
 
         if "|" in answer:
-            parts = [p.strip() for p in answer.split("|", 1)]
+            parts = [p.strip() for p in answer.split("|")]
             verdict_str = parts[0].upper().replace("VERDICT:", "").strip()
-            reason = parts[1].replace("REASON:", "").strip() if len(parts) > 1 else ""
+            for part in parts[1:]:
+                if part.upper().startswith("SUMMARY:"):
+                    summary = part[8:].strip()
+                elif part.upper().startswith("REASON:"):
+                    reason = part[7:].strip()
+            if not reason and len(parts) > 1 and not summary:
+                reason = parts[-1].replace("REASON:", "").strip()
         elif "-" in answer:
             parts = [p.strip() for p in answer.split("-", 1)]
             verdict_str = parts[0].upper().replace("VERDICT:", "").strip()
@@ -161,12 +168,15 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
             else:
                 reason = f"Window '{window_title[:45]}' is clearly unrelated to your goal: '{intent}'"
 
-        return is_focused, reason
+        if not summary:
+            summary = reason[:50] + "..." if len(reason) > 50 else reason
+
+        return is_focused, reason, summary
 
     except Exception as exc:
         logger.warning(f"[SEMANTIC] Groq call failed (defaulting to focused): {exc}")
         # Fail open: if Groq fails, default to focused (don't falsely pause)
-        return True, "Focus tracking temporarily unavailable (assuming focused)"
+        return True, "Focus tracking temporarily unavailable (assuming focused)", "System Error"
 
 
 def update_focus_state(
@@ -286,7 +296,7 @@ async def classify_with_intent(
     app_name: str,
     intent: str,
     workspace_id: Optional[int] = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     if not intent.strip():
         logger.info(f"[INTENT] No intent set - defaulting to general productivity for '{window_title[:60]}'")
         intent = "General productivity work"
@@ -295,10 +305,11 @@ async def classify_with_intent(
     app_lower = app_name.lower().strip()
     if app_lower in ["prodify.exe", "prodify", "app.exe"]:
         # Only align if the app itself is the host, protecting against folders named "prodify" in other apps
-        return "focused", "Prodify session controller is intrinsically aligned"
+        return "focused", "Prodify session controller is intrinsically aligned", "Prodify app"
 
     is_focused = True
     reason = ""
+    summary = ""
 
     # 2. Semantic Cache
     cached = _semantic_cache.get(app_name, window_title, intent)
@@ -308,22 +319,22 @@ async def classify_with_intent(
         logger.info(f"[INTENT] Cache PENDING - skipping duplicate eval for title='{window_title[:60]}'")
         # Don't feed the state machine while an eval is in-flight for this window;
         # return current state without advancing strikes.
-        return "focused", "Evaluating…"
+        return "focused", "Evaluating…", "Evaluating"
     elif cached is not None:
-        is_focused, reason = cached
+        is_focused, reason, summary = cached
         logger.info(f"[INTENT] Cache HIT - {'focused' if is_focused else 'distracted'} (title='{window_title[:60]}')")
     else:
         _semantic_cache.set(app_name, window_title, intent, None)
         logger.info(f"[INTENT] Cache MISS - evaluating with Semantic Alignment Engine for title='{window_title[:60]}'")
         result = await evaluate_semantics(app_name, window_title, intent)
         if result is not None:
-            is_focused, reason = result
+            is_focused, reason, summary = result
             _semantic_cache.set(app_name, window_title, intent, result)
         else:
             # evaluate_semantics returned None — should not happen, but fail open
-            is_focused, reason = True, "Evaluating…"
+            is_focused, reason, summary = True, "Evaluating…", "Evaluating"
 
-    return update_focus_state(
+    status, reason = update_focus_state(
         workspace_id=workspace_id or 0,
         current_goal=intent,
         app_name=app_name,
@@ -331,3 +342,4 @@ async def classify_with_intent(
         is_focused=is_focused,
         reason=reason
     )
+    return status, reason, summary

@@ -58,20 +58,20 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
           </span>
         </motion.div>
 
-        <div className="flex items-center gap-6">
-          {/* Circular gauge */}
+        <div className="flex items-center gap-8">
+          {/* Circular gauge - Now representing Vitality (the overarching positive metric) */}
           <div className="relative flex-shrink-0">
-            <svg width="130" height="130" viewBox="0 0 130 130" className="transform -rotate-90">
-              <circle cx="65" cy="65" r={radius} fill="none" stroke="hsl(217 33% 14%)" strokeWidth="8" />
+            <svg width="120" height="120" viewBox="0 0 120 120" className="transform -rotate-90">
+              <circle cx="60" cy="60" r={radius} fill="none" stroke="hsl(217 33% 14%)" strokeWidth="8" />
               <motion.circle
-                cx="65" cy="65" r={radius}
+                cx="60" cy="60" r={radius}
                 fill="none"
                 stroke={color}
                 strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray={circumference}
                 initial={{ strokeDashoffset: circumference }}
-                animate={{ strokeDashoffset }}
+                animate={{ strokeDashoffset: circumference * (1 - vitality) }}
                 transition={{ type: 'spring' as const, stiffness: 120, damping: 18 }}
               />
             </svg>
@@ -81,37 +81,28 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.25, type: 'spring' as const, stiffness: 150, damping: 14 }}
             >
-              <span className="text-2xl font-bold text-foreground">{(progress * 100).toFixed(0)}%</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-[10px] text-muted-foreground flex items-center gap-1 cursor-help hover:text-foreground transition-colors">
-                    Load <Info className="w-3 h-3" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-[220px] text-center">
-                  How much continuous focus strain you're currently under.
-                </TooltipContent>
-              </Tooltip>
+              <span className="text-3xl font-bold text-foreground tracking-tighter">{(vitality * 100).toFixed(0)}%</span>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest mt-0.5">Vitality</span>
             </motion.div>
           </div>
 
-          {/* Stats */}
-          <div className="flex-1 space-y-3">
-            <div>
-              <div className="flex justify-between text-xs mb-1">
+          {/* Stats - Consolidated to just Fatigue Risk since Load was a duplicate */}
+          <div className="flex-1 space-y-5">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-sm">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="text-muted-foreground flex items-center gap-1 cursor-help hover:text-foreground transition-colors">
-                      Fatigue Risk <Info className="w-3 h-3" />
+                    <span className="text-muted-foreground flex items-center gap-1.5 cursor-help hover:text-foreground transition-colors font-medium">
+                      Fatigue Risk <Info className="w-3.5 h-3.5" />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[250px] text-center">
-                    Your likelihood of burning out if you keep going at this pace.
+                  <TooltipContent side="top" className="max-w-[260px]">
+                    Your likelihood of burning out and needing a break. Calculated dynamically based on your continuous focus time (scaled to a 45m block) and penalized during afternoon slumps or late nights.
                   </TooltipContent>
                 </Tooltip>
-                <span className="font-mono font-medium" style={{ color }}>{(progress * 100).toFixed(1)}%</span>
+                <span className="font-mono font-bold" style={{ color }}>{(progress * 100).toFixed(1)}%</span>
               </div>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
                 <motion.div
                   className="h-full rounded-full"
                   style={{ backgroundColor: color }}
@@ -121,29 +112,12 @@ export default function BurnoutGauge({ burnoutProbability, currentState }: Burno
                 />
               </div>
             </div>
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-muted-foreground flex items-center gap-1 cursor-help hover:text-foreground transition-colors">
-                      Vitality <Info className="w-3 h-3" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[250px] text-center">
-                    Your overall freshness — starts at 100% and decreases the longer you push without a break.
-                  </TooltipContent>
-                </Tooltip>
-                <span className="font-mono font-medium text-green-400">{(vitality * 100).toFixed(1)}%</span>
-              </div>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full bg-green-500"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${vitality * 100}%` }}
-                  transition={{ type: 'spring' as const, stiffness: 100, damping: 20 }}
-                />
-              </div>
-            </div>
+            
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {progress < 0.4 ? "You're in the zone. Keep up the momentum!" : 
+               progress < 0.7 ? "You're starting to build up fatigue. Consider wrapping up this task soon." : 
+               "High fatigue detected. It's strongly recommended to take a break."}
+            </p>
           </div>
         </div>
       </motion.div>

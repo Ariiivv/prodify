@@ -193,8 +193,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: 'prodify://auth/callback',
+            redirectTo: `${API_BASE}/api/auth/desktop-callback`,
             skipBrowserRedirect: true,
+            queryParams: { prompt: 'select_account' }
           },
         });
         

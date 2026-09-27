@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 import { format } from 'date-fns';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
@@ -24,7 +25,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [breakDuration, setBreakDuration] = useState('5');
   const [targetHours, setTargetHours] = useState('');
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
-  const [dailyTargetMinutes, setDailyTargetMinutes] = useState('60');
+  const [dailyHours, setDailyHours] = useState('1');
+  const [dailyMinutes, setDailyMinutes] = useState('0');
   const [focusKeywords, setFocusKeywords] = useState('');
   const [goalDescription, setGoalDescription] = useState('');
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -59,8 +61,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       }
     }
 
-    const dailyMin = parseInt(dailyTargetMinutes);
-    if (category === 'mastery' && (isNaN(dailyMin) || dailyMin < 15)) {
+    const dailyMin = (parseInt(dailyHours) || 0) * 60 + (parseInt(dailyMinutes) || 0);
+    if (category === 'mastery' && dailyMin < 15) {
       toast.error("Daily target must be at least 15 minutes");
       return;
     }
@@ -114,7 +116,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       setBreakDuration('5');
       setTargetHours('');
       setDeadline(undefined);
-      setDailyTargetMinutes('60');
+      setDailyHours('1');
+      setDailyMinutes('0');
       setFocusKeywords('');
       setGoalDescription('');
       setCameraEnabled(false);
@@ -244,14 +247,12 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
 
                 {/* Camera Tracking Toggle */}
                 <div className="flex items-start gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setCameraEnabled(!cameraEnabled)}
-                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-none border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${cameraEnabled ? 'bg-[#e8ff47]' : 'bg-[#2a2a2a]'}`}
-                  >
-                    <span className={`pointer-events-none block h-4 w-4 rounded-none shadow-lg ring-0 transition-transform ${cameraEnabled ? 'translate-x-4 bg-black' : 'translate-x-0 bg-muted-foreground'}`} />
-                  </button>
-                  <div className="flex flex-col mt-[2px]">
+                  <Switch
+                    checked={cameraEnabled}
+                    onCheckedChange={setCameraEnabled}
+                    className="mt-0.5 data-[state=checked]:bg-[#e8ff47] data-[state=unchecked]:bg-[#2a2a2a] border-transparent"
+                  />
+                  <div className="flex flex-col">
                     <label className="text-sm font-bold text-white leading-none mb-1">
                       Enable Camera Tracking (Optional)
                     </label>
@@ -318,7 +319,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                       className="space-y-6 overflow-hidden"
                     >
                       <div className="pt-2">
-                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Daily Commitment (Minutes/Day)</label>
+                        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Daily Commitment</label>
                         <p className="text-[10px] text-muted-foreground mb-3">How much time do you want to dedicate to this track each day?</p>
                         
                         <div className="flex gap-2 mb-3">
@@ -326,22 +327,46 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                             <button
                               key={preset}
                               type="button"
-                              onClick={() => setDailyTargetMinutes(preset.toString())}
-                              className={`px-3 py-1.5 text-xs font-medium rounded-sm border ${dailyTargetMinutes === preset.toString() ? 'bg-[#e8ff47]/10 border-[#e8ff47] text-[#e8ff47]' : 'border-[#2a2a2a] text-muted-foreground hover:bg-[#1a1a1a] hover:text-white'}`}
+                              onClick={() => {
+                                setDailyHours(Math.floor(preset / 60).toString());
+                                setDailyMinutes((preset % 60).toString());
+                              }}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-sm border ${
+                                ((parseInt(dailyHours) || 0) * 60 + (parseInt(dailyMinutes) || 0)) === preset 
+                                  ? 'bg-[#e8ff47]/10 border-[#e8ff47] text-[#e8ff47]' 
+                                  : 'border-[#2a2a2a] text-muted-foreground hover:bg-[#1a1a1a] hover:text-white'
+                              }`}
                             >
-                              {preset}m
+                              {preset >= 60 ? `${preset / 60}h` : `${preset}m`}
                             </button>
                           ))}
                         </div>
                         
-                        <Input
-                          type="number"
-                          value={dailyTargetMinutes}
-                          onChange={(e) => setDailyTargetMinutes(e.target.value)}
-                          placeholder="60"
-                          min="15"
-                          className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
-                        />
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Hours</label>
+                            <Input
+                              type="number"
+                              value={dailyHours}
+                              onChange={(e) => setDailyHours(e.target.value)}
+                              placeholder="1"
+                              min="0"
+                              className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-medium text-muted-foreground mb-1 block">Minutes</label>
+                            <Input
+                              type="number"
+                              value={dailyMinutes}
+                              onChange={(e) => setDailyMinutes(e.target.value)}
+                              placeholder="0"
+                              min="0"
+                              max="59"
+                              className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </motion.div>
                   )}

@@ -137,7 +137,7 @@ export default function WorkspacePage() {
     enabled: isDetectionEnabled,
     sessionIntent,
     workspaceId: wsId,
-    onDistracted: (reason?: string, appName?: string) => {
+    onDistracted: (reason?: string, appName?: string, summary?: string) => {
       const store = useTimerStore.getState();
       const currentWsId = store.activeWorkspaceId;
       const timerWs = currentWsId !== null ? store.workspaces[currentWsId] : undefined;
@@ -149,6 +149,7 @@ export default function WorkspacePage() {
 
       if (isDetectionEnabled && isActivelyDistracted) {
         const trimmedReason = reason?.trim();
+        const trimmedSummary = summary?.trim();
         const isErrorOrEmpty = !trimmedReason ||
           trimmedReason.toLowerCase().includes("evaluation failed") ||
           trimmedReason.toLowerCase().includes("rate limit");
@@ -156,7 +157,7 @@ export default function WorkspacePage() {
         const appLabel = appName ? appName.replace(/\.(exe|app)$/i, '') : "an application";
         const displayReason = isErrorOrEmpty
           ? `You switched to ${appLabel} which does not match your session intent.`
-          : trimmedReason;
+          : (trimmedSummary || trimmedReason);
 
         // 🚀 Active Enforcement: Instantly pop Prodify back to the front!
         if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
@@ -506,7 +507,7 @@ export default function WorkspacePage() {
               {/* Round Indicator */}
               <div className="flex flex-col items-center mb-6">
                 <span className="text-sm font-bold text-muted-foreground tracking-widest uppercase mb-2">
-                  #{timerState.roundCount === 0 ? 1 : (timerState.roundCount % timerState.longBreakInterval === 0 ? timerState.longBreakInterval : (timerState.roundCount % timerState.longBreakInterval) + 1)} / {timerState.longBreakInterval}
+                  Session {timerState.roundCount === 0 ? 1 : (timerState.roundCount % timerState.longBreakInterval === 0 ? timerState.longBreakInterval : (timerState.roundCount % timerState.longBreakInterval) + 1)} of {timerState.longBreakInterval} today
                 </span>
                 <div className="flex gap-2">
                   {Array.from({ length: timerState.longBreakInterval }).map((_, i) => {
@@ -589,20 +590,21 @@ export default function WorkspacePage() {
           )}
 
           {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason && !['IDLE_DETECTED', 'Manual', 'manual_pause'].includes(timerState.pauseReason) && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-8 w-full max-w-lg bg-red-500/10 border border-red-500/20 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
-            >
-              <div className="absolute top-0 left-0 w-1 h-full bg-red-500 rounded-l-2xl"></div>
-              
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 mt-1 w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-500">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full max-w-lg bg-[#111111] border border-red-500/50 rounded-none p-6 shadow-2xl relative overflow-hidden"
+              >
+                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
                 
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-red-500 mb-1">Focus Interrupted</h3>
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 mt-1 w-10 h-10 rounded-none bg-red-500/10 flex items-center justify-center text-red-500">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-red-500 mb-1">Focus Interrupted</h3>
                   <p className="text-sm text-foreground mb-2 leading-relaxed">
                     {timerState.pauseReason}
                   </p>
@@ -621,7 +623,7 @@ export default function WorkspacePage() {
                   <div className="flex flex-col sm:flex-row gap-3">
                     <button 
                       onClick={() => useTimerStore.getState().resumeFocus()}
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-xl transition-colors shadow-sm"
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-none transition-colors shadow-sm"
                     >
                       Back to Focus
                     </button>
@@ -631,7 +633,7 @@ export default function WorkspacePage() {
                         markAsRelevant();
                         useTimerStore.getState().resumeFocus();
                       }}
-                      className="flex-1 bg-secondary/50 hover:bg-secondary text-secondary-foreground font-medium py-2 px-4 rounded-xl transition-colors"
+                      className="flex-1 border border-[#444] text-[#ccc] hover:bg-[#2a2a2a] hover:text-white font-medium py-2 px-4 rounded-none transition-colors"
                     >
                       This is relevant
                     </button>
@@ -639,6 +641,7 @@ export default function WorkspacePage() {
                 </div>
               </div>
             </motion.div>
+            </div>
           )}
         </motion.div>
 

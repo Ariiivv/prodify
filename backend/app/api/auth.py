@@ -143,3 +143,44 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 def get_current_user_profile(current_user: models.User = Depends(get_current_user)):
     """Fetch profile of currently logged-in user."""
     return UserOut.model_validate(current_user)
+
+from fastapi.responses import HTMLResponse
+from fastapi import Request
+
+@router.get("/desktop-callback")
+def desktop_callback(request: Request):
+    """
+    Intermediate landing page for Tauri OAuth flow.
+    Reads auth parameters from the URL and redirects to the deep link prodify://auth/callback
+    """
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Signed in to Prodify</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #111111; color: #ffffff; text-align: center; }
+            .card { background: #1a1a1a; padding: 2.5rem; border-radius: 12px; border: 1px solid #2a2a2a; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+            h1 { margin-top: 0; color: #e8ff47; font-size: 1.4rem; }
+            p { margin-bottom: 0.5rem; font-size: 0.95rem; }
+        </style>
+        <script>
+            window.onload = function() {
+                const hash = window.location.hash;
+                const search = window.location.search;
+                // Supabase can return implicit flow in hash, or PKCE in search
+                const params = search || hash;
+                window.location.href = "prodify://auth/callback" + params;
+            }
+        </script>
+    </head>
+    <body>
+        <div class="card">
+            <h1>Signed in successfully!</h1>
+            <p>Redirecting you back to the Prodify app...</p>
+            <p style="color: #888; font-size: 0.85em; margin-top: 1.5rem;">If the app doesn't open automatically, you can safely close this tab.</p>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)

@@ -51,3 +51,9 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# ========================
+# Scratch / Debug Files
+# ========================
+test_*.py
+jwt_debug.txt

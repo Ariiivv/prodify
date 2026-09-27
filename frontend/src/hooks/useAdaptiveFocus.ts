@@ -15,7 +15,7 @@ interface UseAdaptiveFocusOptions {
   /** The ID of the current workspace */
   workspaceId?: number | null;
   /** Called when the user becomes distracted */
-  onDistracted?: (reason?: string, appName?: string) => void;
+  onDistracted?: (reason?: string, appName?: string, summary?: string) => void;
   /** Called when the user becomes focused */
   onFocused?: () => void;
 }
@@ -51,10 +51,12 @@ export function useAdaptiveFocus({
   const lastClassifiedRef = useRef<string>('');
   // New refs for strict target isolation
   const activeWindowRef = useRef<{ title: string; processName: string } | null>(null);
+  const lastDistractedWindowRef = useRef<{ title: string; processName: string } | null>(null);
   const whitelistedWindowsRef = useRef<Set<string>>(new Set());
 
   const markAsRelevant = useCallback(() => {
-    const titleToWhitelist = activeWindowRef.current?.title || currentTabTitle;
+    // Whitelist the app that originally caused the distraction, not whatever is active now (which might be Prodify)
+    const titleToWhitelist = lastDistractedWindowRef.current?.title || activeWindowRef.current?.title || currentTabTitle;
     if (titleToWhitelist) {
       whitelistedWindowsRef.current.add(titleToWhitelist.toLowerCase());
       // Re-evaluate immediately to flush any stale UI state
@@ -86,7 +88,7 @@ export function useAdaptiveFocus({
    * Core focus-checking logic.
    * Called with the AI classification result from the backend.
    */
-  const checkFocus = useCallback((title: string, isFocused: boolean, reason?: string, appName?: string) => {
+  const checkFocus = useCallback((title: string, isFocused: boolean, reason?: string, appName?: string, summary?: string) => {
     const timer = getTimerState();
     const isFocusActive = timer.currentState === 'FOCUS_RUNNING';
 
@@ -114,10 +116,16 @@ export function useAdaptiveFocus({
         onFocusedRef.current?.();
       }
     } else {
-      console.debug(`[useAdaptiveFocus] DISTRACTED: "${title}" (${appName})`);
-      setFocusedState(false);
-      prevFocusedRef.current = false;
-      onDistractedRef.current?.(reason, appName);
+      if (prevFocusedRef.current) {
+        console.debug(`[useAdaptiveFocus] DISTRACTED: "${title}" (${appName})`);
+        setFocusedState(false);
+        prevFocusedRef.current = false;
+        
+        // Save the exact window that caused the distraction so "This is relevant" whitelists IT, not Prodify
+        lastDistractedWindowRef.current = { title, processName: appName || '' };
+        
+        onDistractedRef.current?.(reason, appName, summary);
+      }
     }
   }, []);
 
@@ -155,7 +163,7 @@ export function useAdaptiveFocus({
           console.error(`[useAdaptiveFocus] Backend classification failed: HTTP ${response.status} for "${currentTitle}"`);
           setCurrentTabTitle(currentTitle);
         } else {
-          const data: { status: string; reason: string; window_title: string; app_name: string } =
+          const data: { status: string; reason: string; summary?: string; window_title: string; app_name: string } =
             await response.json();
             
           // Strict isolation: only apply result if the user is STILL on that window
@@ -163,7 +171,7 @@ export function useAdaptiveFocus({
              (activeWindowRef.current.title === currentTitle && activeWindowRef.current.processName === currentProcessName);
              
           if (isStillActive) {
-            checkFocus(currentTitle, data.status === 'focused', data.reason, data.app_name);
+            checkFocus(currentTitle, data.status === 'focused', data.reason, data.app_name, data.summary);
           } else {
              console.debug(`[useAdaptiveFocus] Ignored stale classification for "${currentTitle}" - window changed`);
           }

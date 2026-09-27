@@ -4,6 +4,7 @@ import { MessageCircle, X, Send, Bot, User, Loader2, Sparkles, AlertTriangle, Za
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
+import { useAuthStore } from '@/store/authStore';
 import ReactMarkdown from 'react-markdown';
 
 const quickActions = [
@@ -125,23 +126,35 @@ export default function AiCoachPanel({
         }
       };
 
-      fetch(`${API_BASE}/ai-coach/chat`, {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(debriefPayload),
-      })
-      .then(res => res.json())
-      .then(data => {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-      })
-      .catch(console.error)
-      .finally(() => setIsLoading(false));
+      const runDebrief = async () => {
+        try {
+          const token = await useAuthStore.getState().getAccessToken();
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+
+          const res = await fetch(`${API_BASE}/api/ai-coach/chat`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(debriefPayload),
+          });
+          const data = await res.json();
+          setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+        } catch (error) {
+          console.error('Debrief error:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      runDebrief();
     }
     prevTimerState.current = currentState;
   }, [currentState, workspaceName, localDistractionCount, distractionCount, focusMinutes, burnoutProbability, sessionCount, idleSeconds, workDuration, breakDuration, targetHours]);
 
+  const isSendingRef = useRef(false);
+
   const sendMessage = async (text: string) => {
-    if (!text.trim() || isLoading) return;
+    if (!text.trim() || isLoading || isSendingRef.current) return;
+    isSendingRef.current = true;
 
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
@@ -177,9 +190,13 @@ export default function AiCoachPanel({
           focusKeywords,
         },
       };
+      const token = await useAuthStore.getState().getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const response = await fetch(`${API_BASE}/api/ai-coach/chat`, {
         method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers,
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
@@ -217,6 +234,7 @@ export default function AiCoachPanel({
       setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ **Connection Error**: Unable to reach the Prodify Intelligence backend. Please ensure the FastAPI server is running.` }]);
     } finally {
       setIsLoading(false);
+      isSendingRef.current = false;
     }
   };
 
@@ -232,9 +250,9 @@ export default function AiCoachPanel({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsOpen(true)}
-            className="fixed bottom-24 md:bottom-8 right-6 z-40 w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-accent shadow-lg shadow-primary/30 flex items-center justify-center text-white"
+            className="fixed bottom-24 md:bottom-8 right-6 z-40 w-14 h-14 rounded-none bg-[#e8ff47] shadow-lg shadow-black/50 flex items-center justify-center text-black"
           >
-            <Zap className="w-6 h-6" />
+            <Zap className="w-6 h-6 fill-current" />
           </motion.button>
         )}
       </AnimatePresence>
@@ -247,33 +265,23 @@ export default function AiCoachPanel({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 w-[calc(100%-2rem)] md:w-96 h-[30rem] bg-card border border-border/50 rounded-2xl shadow-2xl shadow-black/40 flex flex-col overflow-hidden"
+            className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 w-[calc(100%-2rem)] md:w-96 h-[32rem] bg-[#111111] border border-[#2a2a2a] rounded-none shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-gradient-to-r from-indigo-500/10 via-primary/10 to-cyan-500/10">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] bg-[#161616]">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 shadow-lg shadow-indigo-500/20 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-white" />
+                <div className="w-9 h-9 rounded-none bg-[#e8ff47]/10 flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-[#e8ff47]" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-foreground bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Prodify Intelligence</h3>
-                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-[9px] font-semibold text-emerald-400 uppercase tracking-wider">Online</span>
-                    </span>
+                    <h3 className="text-sm font-bold text-white">Prodify Intelligence</h3>
                   </div>
-                  <p className="text-[9px] text-muted-foreground/70">Context-aware AI · Workspace: {workspaceName}</p>
+                  <p className="text-[10px] text-muted-foreground/70 uppercase tracking-widest mt-0.5">Workspace AI</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20">
-                  <AlertTriangle className="w-3 h-3 text-amber-400" />
-                  <span className="text-[10px] font-medium text-amber-400">
-                    {localDistractionCount + distractionCount} disruptions
-                  </span>
-                </div>
-                <button onClick={() => setIsOpen(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <button onClick={() => setIsOpen(false)} className="text-muted-foreground hover:text-white transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -318,10 +326,10 @@ export default function AiCoachPanel({
                       <Zap className="w-3.5 h-3.5 text-indigo-400" />
                     </div>
                   )}
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                  <div className={`max-w-[85%] rounded-none px-4 py-2.5 text-sm leading-relaxed border ${
                     msg.role === 'user'
-                      ? 'bg-primary text-white rounded-br-md shadow-sm shadow-primary/20'
-                      : 'bg-gradient-to-r from-secondary/60 to-secondary/40 text-foreground rounded-bl-md border border-border/30'
+                      ? 'bg-[#e8ff47] text-black border-[#e8ff47]'
+                      : 'bg-[#1a1a1a] text-white border-[#2a2a2a]'
                   }`}>
                     {msg.role === 'assistant' ? (
                       <div className="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
@@ -330,12 +338,12 @@ export default function AiCoachPanel({
                         </ReactMarkdown>
                       </div>
                     ) : (
-                      <p className="text-[13px]">{msg.content}</p>
+                      <p className="text-[13px] font-medium">{msg.content}</p>
                     )}
                   </div>
                   {msg.role === 'user' && (
-                    <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
-                      <User className="w-3.5 h-3.5 text-accent" />
+                    <div className="w-7 h-7 rounded-none bg-[#e8ff47] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                      <User className="w-3.5 h-3.5 text-black" />
                     </div>
                   )}
                 </motion.div>
@@ -348,17 +356,17 @@ export default function AiCoachPanel({
                   animate={{ opacity: 1 }}
                   className="flex gap-2 items-start"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                  <div className="w-7 h-7 rounded-none bg-[#e8ff47]/10 flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <Zap className="w-3.5 h-3.5 text-[#e8ff47]" />
                   </div>
-                  <div className="bg-gradient-to-r from-secondary/60 to-secondary/40 rounded-2xl rounded-bl-md px-4 py-3 border border-border/30">
+                  <div className="bg-[#1a1a1a] rounded-none px-4 py-3 border border-[#2a2a2a]">
                     <div className="flex gap-1">
                       {[0, 1, 2].map(i => (
                         <motion.div
                           key={i}
                           animate={{ opacity: [0.3, 1, 0.3] }}
                           transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                          className="w-1.5 h-1.5 rounded-full bg-indigo-400"
+                          className="w-1.5 h-1.5 rounded-full bg-[#e8ff47]"
                         />
                       ))}
                     </div>
@@ -368,7 +376,7 @@ export default function AiCoachPanel({
             </div>
 
             {/* Input */}
-            <div className="p-3 border-t border-border/50 bg-gradient-to-r from-indigo-500/5 to-cyan-500/5">
+            <div className="p-3 border-t border-[#2a2a2a] bg-[#161616]">
               <form
                 onSubmit={(e) => { e.preventDefault(); sendMessage(input); }}
                 className="flex gap-2"
@@ -377,16 +385,16 @@ export default function AiCoachPanel({
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Ask Prodify Intelligence..."
-                  className="flex-1 bg-secondary/60 border-border/50 rounded-xl text-sm h-10 placeholder:text-muted-foreground/50"
+                  className="flex-1 bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none text-sm h-10 focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                   disabled={isLoading}
                 />
                 <Button
                   type="submit"
                   size="icon"
                   disabled={isLoading || !input.trim()}
-                  className="bg-gradient-to-br from-indigo-500 to-cyan-500 hover:from-indigo-400 hover:to-cyan-400 rounded-xl h-10 w-10 flex-shrink-0 shadow-lg shadow-indigo-500/20"
+                  className="bg-[#e8ff47] hover:bg-[#e8ff47]/90 text-black rounded-none h-10 w-10 flex-shrink-0"
                 >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Send className="w-4 h-4" />}
                 </Button>
               </form>
             </div>

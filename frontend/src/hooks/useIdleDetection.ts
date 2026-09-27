@@ -59,6 +59,10 @@ export function useIdleDetection(options?: IdleDetectionOptions): IdleDetectionR
   useEffect(() => {
     if (!enabled) return;
 
+    // Reset activity timer when re-enabled to prevent instant idle firing 
+    // if the hook was disabled (e.g. paused) for longer than the timeout.
+    lastActivityRef.current = Date.now();
+
     const handleActivity = () => {
       lastActivityRef.current = Date.now();
       if (isIdleRef.current) {

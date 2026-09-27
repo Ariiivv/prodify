@@ -13,6 +13,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import TrackingConsentModal from './components/auth/TrackingConsentModal';
 import ScrollToTop from './components/ScrollToTop';
 import ErrorBoundary from './components/ErrorBoundary';
+import { Toaster } from '@/components/ui/sonner';
 
 const queryClient = new QueryClient();
 
@@ -68,6 +69,14 @@ function App() {
                 }
                 
                 await initialize();
+                
+                try {
+                  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+                  await getCurrentWindow().setFocus();
+                } catch (e) {
+                  console.error('Failed to focus window:', e);
+                }
+                
                 window.location.href = '/';
               } catch (err: any) {
                 console.error('Deep link auth error:', err);
@@ -108,6 +117,7 @@ function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TrackingConsentModal />
+        <Toaster richColors position="top-right" style={{ zIndex: 9999 }} />
         <BrowserRouter>
           <ScrollToTop />
           <Routes>

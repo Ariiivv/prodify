@@ -216,7 +216,7 @@ def add_workspace_metrics(
         burnout_score=payload.burnout_score,
         time_of_day=payload.time_of_day,
         mode=workspace.mode,
-        completed=payload.completed,
+        completed=int(payload.completed),
     )
     
     db.add(metrics)
