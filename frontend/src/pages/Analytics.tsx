@@ -12,6 +12,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
+import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCalendar';
 
 const focusChartConfig = {
   focus: {
@@ -38,15 +39,17 @@ export default function Analytics() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [distractingApps, setDistractingApps] = useState<any[]>([]);
+  const [homeMetrics, setHomeMetrics] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [sessRes, wsRes, appsRes] = await Promise.all([
+        const [sessRes, wsRes, appsRes, homeRes] = await Promise.all([
           fetch(`${API_BASE}/api/telemetry/sessions?limit=200`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
           fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
           fetch(`${API_BASE}/api/analytics/distracting-apps`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
+          fetch(`${API_BASE}/api/metrics/home`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
         ]);
         if (sessRes && sessRes.ok) {
           const data = await sessRes.json();
@@ -59,6 +62,10 @@ export default function Analytics() {
         if (appsRes && appsRes.ok) {
           const data = await appsRes.json();
           setDistractingApps(data);
+        }
+        if (homeRes && homeRes.ok) {
+          const data = await homeRes.json();
+          setHomeMetrics(data);
         }
       } catch (err) {
         console.error('Error fetching analytics data:', err);
@@ -153,8 +160,27 @@ export default function Analytics() {
           <p className="text-muted-foreground text-sm">Complete focus sessions to see your analytics</p>
         </motion.div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Focus Over Time */}
+        <>
+          {homeMetrics?.calendar && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12 }}
+              className="rounded-2xl border border-border/50 bg-card/50 p-6 mb-6"
+            >
+              <h3 className="text-sm font-semibold text-foreground mb-1">Overall Goal Progress</h3>
+              <p className="text-xs text-muted-foreground mb-4">Your combined focus performance across all active workspaces</p>
+              <div className="max-w-xl">
+                <StructuredGoalCalendar 
+                  workspaceId={0} 
+                  calendar={homeMetrics.calendar} 
+                />
+              </div>
+            </motion.div>
+          )}
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Focus Over Time */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -213,6 +239,7 @@ export default function Analytics() {
             </motion.div>
           )}
         </div>
+        </>
       )}
     </div>
   );
