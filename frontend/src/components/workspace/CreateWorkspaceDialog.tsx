@@ -153,8 +153,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
         onClick={() => setOpen(true)}
         className={
           variant === 'primary'
-            ? "rounded-none bg-[#e8ff47] hover:bg-[#e8ff47]/80 text-black text-xs font-semibold px-4 py-2"
-            : "border border-[#2a2a2a] text-white bg-transparent hover:bg-[#1a1a1a] px-4 py-2 text-xs rounded-none"
+            ? "rounded-xl bg-blue-500 hover:bg-blue-500/80 text-black text-xs font-semibold px-4 py-2"
+            : "border border-zinc-800 text-white bg-transparent hover:bg-zinc-900 px-4 py-2 text-xs rounded-xl"
         }
       >
         <Plus className="w-3.5 h-3.5 mr-1" />
@@ -173,7 +173,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#111111] border border-[#2a2a2a] rounded-none p-6 w-full max-w-lg my-8 shadow-2xl"
+              className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 w-full max-w-lg my-8 shadow-2xl"
             >
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -186,12 +186,12 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Category Select (Pills) */}
-                <div className="flex bg-transparent border border-[#2a2a2a] p-1 rounded-full">
+                <div className="flex bg-transparent border border-zinc-800 p-1 rounded-full">
                   <button
                     type="button"
                     onClick={() => setCategory('sprint')}
                     className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
-                      category === 'sprint' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
+                      category === 'sprint' ? 'bg-zinc-800 text-blue-500' : 'text-muted-foreground hover:text-white'
                     }`}
                   >
                     🎯 Sprint (Deadline Driven)
@@ -200,7 +200,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                     type="button"
                     onClick={() => setCategory('mastery')}
                     className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
-                      category === 'mastery' ? 'bg-[#2a2a2a] text-[#e8ff47]' : 'text-muted-foreground hover:text-white'
+                      category === 'mastery' ? 'bg-zinc-800 text-blue-500' : 'text-muted-foreground hover:text-white'
                     }`}
                   >
                     📚 Mastery (Continuous Track)
@@ -215,7 +215,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g., Design Sprint"
-                    className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                    className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                   />
                 </div>
 
@@ -227,7 +227,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                     onChange={(e) => setGoalDescription(e.target.value)}
                     placeholder="What are you focusing on in this workspace?"
                     rows={2}
-                    className="flex w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-none px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#e8ff47] resize-none"
+                    className="flex w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 resize-none"
                   />
                 </div>
 
@@ -242,7 +242,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                       onChange={(e) => setFocusDuration(e.target.value)}
                       placeholder="45"
                       min="1"
-                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                      className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                     />
                   </div>
                   <div>
@@ -254,7 +254,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                       onChange={(e) => setBreakDuration(e.target.value)}
                       placeholder="5"
                       min="1"
-                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                      className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -270,7 +270,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                       onChange={(e) => setLongBreakDuration(e.target.value)}
                       placeholder="15"
                       min="1"
-                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                      className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                     />
                   </div>
                   <div>
@@ -282,7 +282,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                       onChange={(e) => setLongBreakInterval(e.target.value)}
                       placeholder="4"
                       min="1"
-                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                      className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -292,7 +292,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                   <Switch
                     checked={cameraEnabled}
                     onCheckedChange={setCameraEnabled}
-                    className="mt-0.5 data-[state=checked]:bg-[#e8ff47] data-[state=unchecked]:bg-[#2a2a2a] border-transparent"
+                    className="mt-0.5 data-[state=checked]:bg-blue-500 data-[state=unchecked]:bg-zinc-800 border-transparent"
                   />
                   <div className="flex flex-col">
                     <label className="text-sm font-bold text-white leading-none mb-1">
@@ -323,7 +323,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                             onChange={(e) => setTargetHours(e.target.value)}
                             placeholder="20"
                             min="1"
-                            className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                            className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                           />
                         </div>
                         <div>
@@ -332,13 +332,13 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                             <PopoverTrigger asChild>
                               <Button
                                 variant="outline"
-                                className={`w-full justify-start text-left font-normal bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none hover:bg-[#2a2a2a] hover:text-white ${!deadline && 'text-muted-foreground'}`}
+                                className={`w-full justify-start text-left font-normal bg-zinc-900 border-zinc-800 text-white rounded-xl hover:bg-zinc-800 hover:text-white ${!deadline && 'text-muted-foreground'}`}
                               >
                                 <CalendarDays className="mr-2 h-4 w-4 shrink-0" />
                                 {deadline ? format(deadline, 'PPP') : <span>Pick a date</span>}
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0 bg-[#111111] border-[#2a2a2a] rounded-none z-[9999] shadow-2xl relative">
+                            <PopoverContent className="w-auto p-0 bg-zinc-950 border-zinc-800 rounded-xl z-[9999] shadow-2xl relative">
                               <Calendar
                                 mode="single"
                                 selected={deadline}
@@ -375,8 +375,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                               }}
                               className={`px-3 py-1.5 text-xs font-medium rounded-sm border ${
                                 ((parseInt(dailyHours) || 0) * 60 + (parseInt(dailyMinutes) || 0)) === preset 
-                                  ? 'bg-[#e8ff47]/10 border-[#e8ff47] text-[#e8ff47]' 
-                                  : 'border-[#2a2a2a] text-muted-foreground hover:bg-[#1a1a1a] hover:text-white'
+                                  ? 'bg-blue-500/10 border-blue-500 text-blue-500' 
+                                  : 'border-zinc-800 text-muted-foreground hover:bg-zinc-900 hover:text-white'
                               }`}
                             >
                               {preset >= 60 ? `${preset / 60}h` : `${preset}m`}
@@ -393,7 +393,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                               onChange={(e) => setDailyHours(e.target.value)}
                               placeholder="1"
                               min="0"
-                              className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                              className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                             />
                           </div>
                           <div>
@@ -405,7 +405,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                               placeholder="0"
                               min="0"
                               max="59"
-                              className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                              className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                             />
                           </div>
                         </div>
@@ -426,7 +426,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                     onChange={(e) => setFocusKeywords(e.target.value)}
                     placeholder="e.g., I am writing code in VS Code and reading React documentation on Chrome..."
                     rows={3}
-                    className="flex w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-none px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#e8ff47] resize-none"
+                    className="flex w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 resize-none"
                   />
                 </div>
 
@@ -435,7 +435,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                   <Button
                     type="submit"
                     disabled={!name.trim() || isSubmitting}
-                    className="w-full bg-[#e8ff47] hover:bg-[#e8ff47]/90 text-black font-bold rounded-none h-11"
+                    className="w-full bg-blue-500 hover:bg-blue-500/90 text-black font-bold rounded-xl h-11"
                   >
                     {isSubmitting ? "Creating..." : "Create Workspace"}
                   </Button>

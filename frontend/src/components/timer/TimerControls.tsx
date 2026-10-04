@@ -125,7 +125,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
               onClick={handleStartFocus}
               size="lg"
               variant="outline"
-              className="border border-[#2a2a2a] text-white bg-transparent hover:bg-[#1a1a1a] px-6 py-6 rounded-2xl"
+              className="border border-zinc-800 text-white bg-transparent hover:bg-zinc-900 px-6 py-6 rounded-2xl"
             >
               <Zap className="w-5 h-5 mr-2" />
               New Focus
@@ -138,7 +138,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={() => handleAction(pauseBreak)}
               size="lg"
-              className="bg-[#2a2a2a] text-white border border-[#2a2a2a] hover:bg-[#1a1a1a] px-6 py-6 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-zinc-800 text-white border border-zinc-800 hover:bg-zinc-900 px-6 py-6 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Pause className="w-5 h-5 mr-2" />
               Pause Break

@@ -637,9 +637,9 @@ export default function WorkspacePage() {
             <div className="mb-8 flex flex-col items-center w-full">
               {/* Pomofocus Mode Pills */}
               <div className="flex items-center gap-2 mb-6 bg-secondary/30 p-1.5 rounded-full border border-border/40">
-                <button onClick={() => switchMode('FOCUS')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Focus</button>
-                <button onClick={() => switchMode('SHORT_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Short Break</button>
-                <button onClick={() => switchMode('LONG_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Long Break</button>
+                <button onClick={() => switchMode('FOCUS')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-blue-500 text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Focus</button>
+                <button onClick={() => switchMode('SHORT_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-blue-500 text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Short Break</button>
+                <button onClick={() => switchMode('LONG_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-blue-500 text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Long Break</button>
               </div>
 
               {/* Round Indicator */}
@@ -661,7 +661,7 @@ export default function WorkspacePage() {
                           return (
                             <div 
                               key={i} 
-                              className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-[#e8ff47]' : 'bg-border'}`} 
+                              className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-blue-500' : 'bg-border'}`} 
                             />
                           );
                         })}
@@ -745,12 +745,12 @@ export default function WorkspacePage() {
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="w-full max-w-lg bg-[#111111] border border-red-500/50 rounded-none p-6 shadow-2xl relative overflow-hidden"
+                className="w-full max-w-lg bg-zinc-950 border border-red-500/50 rounded-xl p-6 shadow-2xl relative overflow-hidden"
               >
                 <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
                 
                 <div className="flex items-start gap-4">
-                  <div className="shrink-0 mt-1 w-10 h-10 rounded-none bg-red-500/10 flex items-center justify-center text-red-500">
+                  <div className="shrink-0 mt-1 w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500">
                     <AlertTriangle className="w-5 h-5" />
                   </div>
                   
@@ -774,7 +774,7 @@ export default function WorkspacePage() {
                   <div className="flex flex-col sm:flex-row gap-3">
                     <button 
                       onClick={() => useTimerStore.getState().resumeFocus()}
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-none transition-colors shadow-sm"
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-xl transition-colors shadow-sm"
                     >
                       Back to Focus
                     </button>
@@ -785,7 +785,7 @@ export default function WorkspacePage() {
                         useTimerStore.getState().decrementDistraction();
                         useTimerStore.getState().resumeFocus();
                       }}
-                      className="flex-1 border border-[#444] text-[#ccc] hover:bg-[#2a2a2a] hover:text-white font-medium py-2 px-4 rounded-none transition-colors"
+                      className="flex-1 border border-[#444] text-[#ccc] hover:bg-zinc-800 hover:text-white font-medium py-2 px-4 rounded-xl transition-colors"
                     >
                       This is relevant
                     </button>
@@ -883,8 +883,8 @@ export default function WorkspacePage() {
             />
           )}
             <div className="grid grid-cols-1 gap-3 mb-4">
-              <div className="flex items-center gap-3 bg-[#111111] border border-[#2a2a2a] p-3">
-                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-none">
+              <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3">
+                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                   <Activity className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -893,7 +893,7 @@ export default function WorkspacePage() {
                     {metrics?.pace ? (
                       <>
                         <span className={
-                          metrics.pace.label === 'Strong' ? 'text-[#e8ff47]' :
+                          metrics.pace.label === 'Strong' ? 'text-blue-500' :
                           metrics.pace.label === 'Solid' ? 'text-green-400' :
                           metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
                         }>
@@ -909,8 +909,8 @@ export default function WorkspacePage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 bg-[#111111] border border-[#2a2a2a] p-3">
-                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-none">
+              <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3">
+                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                   <Brain className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -928,8 +928,8 @@ export default function WorkspacePage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 bg-[#111111] border border-[#2a2a2a] p-3">
-                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-none">
+              <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3">
+                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                   <Clock className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex flex-col min-w-0">

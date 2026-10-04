@@ -47,14 +47,14 @@ export default function TrackingConsentModal() {
         <motion.div
           initial={{ scale: 0.95, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
-          className="bg-[#111111] border border-[#2a2a2a] max-w-lg w-full p-8 shadow-2xl relative overflow-hidden"
+          className="bg-zinc-950 border border-zinc-800 max-w-lg w-full p-8 shadow-2xl relative overflow-hidden"
         >
           {/* Subtle glow effect */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-[#e8ff47] to-transparent opacity-20" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1 bg-gradient-to-r from-transparent via-[#3b82f6] to-transparent opacity-20" />
 
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-3 bg-[#e8ff47]/10 rounded-full">
-              <Shield className="w-6 h-6 text-[#e8ff47]" />
+            <div className="p-3 bg-blue-500/10 rounded-full">
+              <Shield className="w-6 h-6 text-blue-500" />
             </div>
             <h2 className="text-2xl font-bold text-white tracking-tight">Privacy & Tracking Consent</h2>
           </div>
@@ -95,17 +95,17 @@ export default function TrackingConsentModal() {
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4 border-t border-[#2a2a2a]">
+          <div className="flex gap-3 pt-4 border-t border-zinc-800">
             <Button
               onClick={handleDecline}
               variant="outline"
-              className="flex-1 bg-transparent border-[#2a2a2a] text-white hover:bg-[#1a1a1a] rounded-none"
+              className="flex-1 bg-transparent border-zinc-800 text-white hover:bg-zinc-900 rounded-xl"
             >
               Exit App
             </Button>
             <Button
               onClick={handleAgree}
-              className="flex-1 bg-[#e8ff47] hover:bg-[#e8ff47]/90 text-black font-bold rounded-none"
+              className="flex-1 bg-blue-500 hover:bg-blue-500/90 text-black font-bold rounded-xl"
             >
               I Agree & Continue
             </Button>

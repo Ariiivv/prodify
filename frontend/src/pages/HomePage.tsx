@@ -189,7 +189,7 @@ const HomePage: React.FC = () => {
 
         {/* ── Data Warnings Banner ── */}
         {dataWarnings.length > 0 && (
-          <div className="flex items-center justify-between mb-4 bg-[#161616] border border-[#2a2a2a] p-3 rounded-md">
+          <div className="flex items-center justify-between mb-4 bg-zinc-900 border border-zinc-800 p-3 rounded-md">
             <span className="text-sm font-medium text-amber-500">
               Some data couldn't load: {dataWarnings.join(', ')}
             </span>
@@ -206,10 +206,10 @@ const HomePage: React.FC = () => {
         <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row flex-wrap items-center justify-between gap-4 md:gap-8 bg-[#111111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-none p-4 mb-10 w-full"
+            className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row flex-wrap items-center justify-between gap-4 md:gap-8 bg-zinc-950/80 backdrop-blur-md border border-zinc-800 rounded-xl p-4 mb-10 w-full"
           >
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                 <Target className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
@@ -218,7 +218,7 @@ const HomePage: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                 <Activity className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
@@ -230,7 +230,7 @@ const HomePage: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                 <Brain className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
@@ -242,7 +242,7 @@ const HomePage: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                 <Clock className="w-5 h-5 text-white" />
               </div>
               <div className="flex flex-col">
@@ -255,15 +255,15 @@ const HomePage: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-[#e8ff47]/10 border border-[#e8ff47]/20 rounded-none">
-                <Flame className="w-5 h-5 text-[#e8ff47]" />
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                <Flame className="w-5 h-5 text-blue-500" />
               </div>
               <div className="flex flex-col">
                 <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Global Streak</span>
                 <span className="text-white font-mono font-bold text-sm sm:text-base">
                   {homeMetrics?.current_streak || 0} Day{homeMetrics?.current_streak !== 1 && 's'}
                 </span>
-                <span className="text-[10px] text-[#e8ff47]">Best: {homeMetrics?.longest_streak || 0}d</span>
+                <span className="text-[10px] text-blue-500">Best: {homeMetrics?.longest_streak || 0}d</span>
               </div>
             </div>
           </motion.div>
@@ -273,17 +273,17 @@ const HomePage: React.FC = () => {
 
           {/* Workspaces */}
           <div className="lg:col-span-2">
-            <div className="flex items-center justify-between mb-4 border-b border-[#2a2a2a] pb-3">
+            <div className="flex items-center justify-between mb-4 border-b border-zinc-800 pb-3">
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setActiveTab('all')}
-                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'all' ? 'text-[#e8ff47]' : 'text-prodify-muted hover:text-white'}`}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'all' ? 'text-blue-500' : 'text-prodify-muted hover:text-white'}`}
                 >
                   All ({workspaces.length})
                 </button>
                 <button
                   onClick={() => setActiveTab('sprint')}
-                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'sprint' ? 'text-[#e8ff47]' : 'text-prodify-muted hover:text-white'}`}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'sprint' ? 'text-blue-500' : 'text-prodify-muted hover:text-white'}`}
                 >
                   🎯 Sprints ({sprintCount})
                 </button>

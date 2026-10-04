@@ -60,7 +60,7 @@ export default function TimerRing({ timeRemaining, totalDuration, state }: Timer
         <motion.circle
           cx="140" cy="140" r={radius}
           fill="none"
-          stroke="#e8ff47"
+          stroke="#3b82f6"
           strokeWidth="6"
           strokeLinecap="round"
           strokeDasharray={circumference}

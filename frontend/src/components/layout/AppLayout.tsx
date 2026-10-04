@@ -21,9 +21,9 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
       {/* Sidebar — fixed to viewport so Profile/Sign Out never get clipped */}
-      <aside className="hidden md:flex fixed inset-y-0 left-0 w-20 z-50 flex-col items-center py-8 border-r border-[#2a2a2a] bg-[#111111]">
+      <aside className="hidden md:flex fixed inset-y-0 left-0 w-20 z-50 flex-col items-center py-8 border-r border-zinc-800 bg-zinc-950">
         <Link to="/" className="mb-12 flex flex-col items-center gap-1">
-          <div className="w-10 h-10 bg-[#1a1a1a] border border-[#2a2a2a] rounded flex items-center justify-center transition-colors hover:text-white text-muted-foreground">
+          <div className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded flex items-center justify-center transition-colors hover:text-white text-muted-foreground">
             <Sparkles className="w-5 h-5" />
           </div>
         </Link>
@@ -39,13 +39,13 @@ export default function AppLayout() {
               >
                 <div className={`w-10 h-10 flex items-center justify-center transition-all duration-200 rounded ${
                   isActive
-                    ? 'bg-[#e8ff47]/10 text-[#e8ff47]'
-                    : 'text-muted-foreground hover:text-white hover:bg-[#1a1a1a]'
+                    ? 'bg-blue-500/10 text-blue-500'
+                    : 'text-muted-foreground hover:text-white hover:bg-zinc-900'
                 }`}>
                   {isActive && (
                     <motion.div
                       layoutId="nav-indicator"
-                      className="absolute left-0 w-[2px] h-6 bg-[#e8ff47]"
+                      className="absolute left-0 w-[2px] h-6 bg-blue-500"
                       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                     />
                   )}
@@ -64,7 +64,7 @@ export default function AppLayout() {
             to="/settings"
             className="relative group flex flex-col items-center gap-1.5 w-full"
           >
-            <div className="w-10 h-10 bg-[#1a1a1a] flex items-center justify-center text-muted-foreground hover:text-[#e8ff47] hover:border hover:border-[#e8ff47] transition-all rounded">
+            <div className="w-10 h-10 bg-zinc-900 flex items-center justify-center text-muted-foreground hover:text-blue-500 hover:border hover:border-blue-500 transition-all rounded">
               <User className="w-5 h-5" />
             </div>
             <span className="text-xs text-[#666666] font-medium">Profile</span>

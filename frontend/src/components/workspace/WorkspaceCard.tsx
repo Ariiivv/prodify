@@ -96,7 +96,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
           if (!dayLog || !dayLog.status) {
             className += "border border-[#333333] bg-transparent";
           } else if (dayLog.status === 'golden' || dayLog.status === 'green') {
-            className += "bg-[#e8ff47] shadow-[0_0_8px_rgba(232,255,71,0.4)]";
+            className += "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.5)]";
           } else if (dayLog.status === 'yellow') {
             className += "bg-amber-400/80";
           } else if (dayLog.status === 'red') {
@@ -112,7 +112,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
                 <TooltipTrigger asChild>
                   <div className={className} />
                 </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs bg-[#111111] border-[#2a2a2a] text-white">
+                <TooltipContent side="top" className="text-xs bg-zinc-950 border-zinc-800 text-white">
                   {tooltipText}
                 </TooltipContent>
               </Tooltip>
@@ -163,20 +163,20 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
         transition={{ delay: index * 0.05 }}
         whileHover={{ y: -4, transition: { duration: 0.18 } }}
         onClick={() => navigate(`/workspace/${workspace.id}`)}
-        className="relative flex flex-col rounded-none border border-[#2a2a2a] bg-[#161616] p-5 cursor-pointer overflow-hidden group h-full"
+        className="relative flex flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-5 cursor-pointer overflow-hidden group h-full"
       >
-        <div className={`absolute inset-0 bg-gradient-to-br ${isSprint ? 'from-[#e8ff47]/5' : 'from-[#8b5cf6]/5'} to-transparent opacity-0 group-hover:opacity-100 transition-opacity`} />
+        <div className={`absolute inset-0 bg-gradient-to-br ${isSprint ? 'from-blue-500/5' : 'from-[#8b5cf6]/5'} to-transparent opacity-0 group-hover:opacity-100 transition-opacity`} />
         
         <div className="relative z-10 flex flex-col h-full flex-grow">
           <div className="flex items-center justify-between mb-4">
-            <div className={`w-10 h-10 rounded-none flex items-center justify-center ${isSprint ? 'bg-[#e8ff47]/10' : 'bg-[#8b5cf6]/10'}`}>
-              <Layers className={`w-5 h-5 ${isSprint ? 'text-[#e8ff47]' : 'text-[#8b5cf6]'}`} />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isSprint ? 'bg-blue-500/10' : 'bg-[#8b5cf6]/10'}`}>
+              <Layers className={`w-5 h-5 ${isSprint ? 'text-blue-500' : 'text-[#8b5cf6]'}`} />
             </div>
             <div className="flex items-center gap-1">
               <ArrowRight className="w-4 h-4 text-[#888888] opacity-0 group-hover:opacity-100 transition-opacity" />
               <button
                 onClick={handleDeleteClick}
-                className="w-7 h-7 rounded-none flex items-center justify-center text-[#888888] hover:text-red-400 hover:bg-white/5 transition-all opacity-0 group-hover:opacity-100"
+                className="w-7 h-7 rounded-xl flex items-center justify-center text-[#888888] hover:text-red-400 hover:bg-white/5 transition-all opacity-0 group-hover:opacity-100"
                 title="Delete workspace"
               >
                 <Trash2 className="w-4 h-4" />
@@ -184,17 +184,17 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                   <button
-                    className="w-7 h-7 rounded-none flex items-center justify-center text-[#888888] hover:text-white hover:bg-white/5 transition-all"
+                    className="w-7 h-7 rounded-xl flex items-center justify-center text-[#888888] hover:text-white hover:bg-white/5 transition-all"
                   >
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-none border-[#2a2a2a] bg-[#111111] shadow-xl text-white">
-                  <DropdownMenuItem onClick={handleEdit} className="cursor-pointer rounded-none hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:text-white">
+                <DropdownMenuContent align="end" className="rounded-xl border-zinc-800 bg-zinc-950 shadow-xl text-white">
+                  <DropdownMenuItem onClick={handleEdit} className="cursor-pointer rounded-xl hover:bg-zinc-800 focus:bg-zinc-800 focus:text-white">
                     <Pencil className="w-4 h-4 mr-2" />
                     Edit
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDeleteClick} className="cursor-pointer rounded-none text-red-400 hover:text-red-300 focus:text-red-300 hover:bg-[#2a2a2a] focus:bg-[#2a2a2a]">
+                  <DropdownMenuItem onClick={handleDeleteClick} className="cursor-pointer rounded-xl text-red-400 hover:text-red-300 focus:text-red-300 hover:bg-zinc-800 focus:bg-zinc-800">
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
@@ -226,13 +226,13 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
                 <span className="text-white font-mono font-bold">{totalHoursLogged}h</span>
               </div>
               
-              <div className="bg-[#111111] border border-[#2a2a2a] p-2 flex justify-between items-center">
+              <div className="bg-zinc-950 border border-zinc-800 p-2 flex justify-between items-center">
                 <span className="text-[10px] text-[#888888] uppercase tracking-wider font-bold">Pace</span>
                 {isLoadingMetrics || !metrics ? (
                    <span className="text-xs text-[#888888] font-mono animate-pulse">loading...</span>
                 ) : (
                   <span className={`text-xs font-mono font-bold ${
-                    metrics.pace.label === 'Strong' ? 'text-[#e8ff47]' : 
+                    metrics.pace.label === 'Strong' ? 'text-blue-500' : 
                     metrics.pace.label === 'Solid' ? 'text-green-400' :
                     metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
                   }`}>
@@ -241,12 +241,12 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
                 )}
               </div>
               
-              <div className="flex items-center justify-between mt-2 pt-3 border-t border-[#2a2a2a]">
-                <span className={`${isSprint ? 'text-[#e8ff47] bg-[#e8ff47]/10 border-[#e8ff47]/20' : 'text-[#8b5cf6] bg-[#8b5cf6]/10 border-[#8b5cf6]/20'} px-2 py-1 rounded-none text-[10px] font-bold tracking-wide uppercase border`}>
+              <div className="flex items-center justify-between mt-2 pt-3 border-t border-zinc-800">
+                <span className={`${isSprint ? 'text-blue-500 bg-blue-500/10 border-blue-500/20' : 'text-[#8b5cf6] bg-[#8b5cf6]/10 border-[#8b5cf6]/20'} px-2 py-1 rounded-xl text-[10px] font-bold tracking-wide uppercase border`}>
                   {isSprint ? '⚡ Sprint' : '🌌 Mastery'}
                 </span>
                 
-                <button className={`text-[10px] font-bold text-white uppercase tracking-wider ${isSprint ? 'hover:text-[#e8ff47]' : 'hover:text-[#8b5cf6]'} transition-colors flex items-center gap-1`}>
+                <button className={`text-[10px] font-bold text-white uppercase tracking-wider ${isSprint ? 'hover:text-blue-500' : 'hover:text-[#8b5cf6]'} transition-colors flex items-center gap-1`}>
                   Continue Track <ArrowRight className="w-3 h-3" />
                 </button>
               </div>
@@ -270,8 +270,8 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-sm z-50 p-6 flex flex-col gap-4 rounded-none shadow-2xl"
-              style={{ backgroundColor: '#111111', border: '1px solid #2a2a2a' }}
+              className="relative w-full max-w-sm z-50 p-6 flex flex-col gap-4 rounded-xl shadow-2xl"
+              style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}
             >
               <div>
                 <h3 className="text-lg font-bold text-white mb-2">Delete Workspace?</h3>
@@ -280,15 +280,15 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
               <div className="flex flex-col gap-2 mt-2">
                 <button
                   onClick={() => confirmDelete(true)}
-                  className="w-full py-2.5 text-sm font-semibold text-black transition-colors rounded-none"
-                  style={{ backgroundColor: '#e8ff47' }}
+                  className="w-full py-2.5 text-sm font-semibold text-black transition-colors rounded-xl"
+                  style={{ backgroundColor: '#3b82f6' }}
                 >
                   Keep Data
                 </button>
                 <button
                   onClick={() => confirmDelete(false)}
-                  className="w-full py-2.5 text-sm font-semibold text-red-400 hover:text-red-300 transition-colors rounded-none"
-                  style={{ border: '1px solid #2a2a2a', backgroundColor: '#111111' }}
+                  className="w-full py-2.5 text-sm font-semibold text-red-400 hover:text-red-300 transition-colors rounded-xl"
+                  style={{ border: '1px solid #27272a', backgroundColor: '#09090b' }}
                 >
                   Delete Everything
                 </button>

@@ -238,8 +238,8 @@ export default function Settings() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-sm z-50 p-6 flex flex-col gap-4 rounded-none shadow-2xl"
-              style={{ backgroundColor: '#111111', border: '1px solid #2a2a2a' }}
+              className="relative w-full max-w-sm z-50 p-6 flex flex-col gap-4 rounded-xl shadow-2xl"
+              style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}
             >
               <div>
                 <h3 className="text-lg font-bold text-red-500 mb-2 flex items-center gap-2">
@@ -256,7 +256,7 @@ export default function Settings() {
                   value={resetInput}
                   onChange={(e) => setResetInput(e.target.value)}
                   placeholder="RESET"
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white rounded-none px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                  className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
                 />
               </div>
 
@@ -264,14 +264,14 @@ export default function Settings() {
                 <button
                   disabled={resetInput !== 'RESET' || isDeleting}
                   onClick={executeDataReset}
-                  className="w-full py-2.5 text-sm font-semibold text-white transition-colors rounded-none disabled:opacity-50 disabled:cursor-not-allowed bg-red-600 hover:bg-red-700"
+                  className="w-full py-2.5 text-sm font-semibold text-white transition-colors rounded-xl disabled:opacity-50 disabled:cursor-not-allowed bg-red-600 hover:bg-red-700"
                 >
                   {isDeleting ? 'Resetting...' : 'Permanently Reset'}
                 </button>
                 <button
                   onClick={() => setResetDialogVisible(false)}
                   disabled={isDeleting}
-                  className="w-full py-2.5 text-sm font-semibold text-gray-400 hover:text-white transition-colors rounded-none border border-[#2a2a2a] bg-[#111111]"
+                  className="w-full py-2.5 text-sm font-semibold text-gray-400 hover:text-white transition-colors rounded-xl border border-zinc-800 bg-zinc-950"
                 >
                   Cancel
                 </button>

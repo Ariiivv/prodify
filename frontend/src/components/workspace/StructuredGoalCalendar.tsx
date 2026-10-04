@@ -35,7 +35,7 @@ interface StructuredGoalCalendarProps {
 
 const STATUS_STYLES: Record<string, { cell: string; label: string }> = {
   golden: {
-    cell: 'bg-[#e8ff47] text-black shadow-[0_0_8px_rgba(232,255,71,0.4)]',
+    cell: 'bg-blue-500 text-black shadow-[0_0_12px_rgba(59,130,246,0.5)]',
     label: 'Exceeded goal',
   },
   green: {
@@ -141,7 +141,7 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
 
   if (loading) {
     return (
-      <div className="w-full h-48 bg-[#111111] border border-[#2a2a2a] rounded-none animate-pulse my-4" />
+      <div className="w-full h-48 bg-zinc-950 border border-zinc-800 rounded-xl animate-pulse my-4" />
     );
   }
 
@@ -165,13 +165,13 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
                   <Info className="w-3.5 h-3.5" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top" className="bg-[#1a1a1a] border-[#333] text-xs max-w-[230px]">
+              <TooltipContent side="top" className="bg-zinc-900 border-zinc-700 text-xs max-w-[230px]">
                 <p className="font-bold text-white mb-1.5">Daily goal progress</p>
                 <div className="space-y-1 text-[#bbb]">
                   <p><span className="inline-block w-2.5 h-2.5 bg-red-500 mr-1.5 align-middle" />Missed — under half the daily target</p>
                   <p><span className="inline-block w-2.5 h-2.5 bg-amber-400 mr-1.5 align-middle" />Under — at least half, target not met</p>
                   <p><span className="inline-block w-2.5 h-2.5 bg-green-400 mr-1.5 align-middle" />Met — daily target reached</p>
-                  <p><span className="inline-block w-2.5 h-2.5 bg-[#e8ff47] mr-1.5 align-middle" />Exceeded — 150%+ of target</p>
+                  <p><span className="inline-block w-2.5 h-2.5 bg-blue-500 mr-1.5 align-middle" />Exceeded — 150%+ of target</p>
                 </div>
                 <p className="text-[#888] mt-1.5">Hover any finished day for its logged time.</p>
               </TooltipContent>
@@ -187,7 +187,7 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
-      <div className="w-full bg-[#111111] border border-[#2a2a2a] p-4 shadow-xl">
+      <div className="w-full bg-zinc-950 border border-zinc-800 p-4 shadow-xl">
         <div className="grid grid-cols-7 gap-1 mb-2">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
             <div key={label} className="text-center text-[10px] font-bold uppercase tracking-wider text-[#888]">
@@ -229,7 +229,7 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
                     </div>
                   </TooltipTrigger>
                   {interactive && (
-                    <TooltipContent side="top" className="bg-[#1a1a1a] border-[#333] text-xs">
+                    <TooltipContent side="top" className="bg-zinc-900 border-zinc-700 text-xs">
                       <p className="font-bold text-white">{label}</p>
                       <p className="text-[#bbb]">{detail}</p>
                       <p className="text-[#888]">{format(parseISO(dateStr), 'MMM d, yyyy')}</p>

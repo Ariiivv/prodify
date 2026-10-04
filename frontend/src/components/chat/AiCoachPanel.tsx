@@ -257,7 +257,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsOpen(true)}
-            className="fixed bottom-24 md:bottom-8 right-6 z-40 w-14 h-14 rounded-none bg-[#e8ff47] shadow-lg shadow-black/50 flex items-center justify-center text-black"
+            className="fixed bottom-24 md:bottom-8 right-6 z-40 w-14 h-14 rounded-xl bg-blue-500 shadow-lg shadow-black/50 flex items-center justify-center text-black"
           >
             <Zap className="w-6 h-6 fill-current" />
           </motion.button>
@@ -272,13 +272,13 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 w-[calc(100%-2rem)] md:w-[28rem] h-[36rem] max-h-[85vh] bg-[#111111] border border-[#2a2a2a] rounded-none shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
+            className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 w-[calc(100%-2rem)] md:w-[28rem] h-[36rem] max-h-[85vh] bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] bg-[#161616]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-none bg-[#e8ff47]/10 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-[#e8ff47]" />
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-blue-500" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -333,10 +333,10 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
                       <Zap className="w-3.5 h-3.5 text-indigo-400" />
                     </div>
                   )}
-                  <div className={`max-w-[85%] rounded-none px-4 py-2.5 text-sm leading-relaxed border ${
+                  <div className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed border ${
                     msg.role === 'user'
-                      ? 'bg-[#e8ff47] text-black border-[#e8ff47]'
-                      : 'bg-[#1a1a1a] text-white border-[#2a2a2a]'
+                      ? 'bg-blue-500 text-black border-blue-500'
+                      : 'bg-zinc-900 text-white border-zinc-800'
                   }`}>
                     {msg.role === 'assistant' ? (
                       <div className="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
@@ -349,7 +349,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
                     )}
                   </div>
                   {msg.role === 'user' && (
-                    <div className="w-7 h-7 rounded-none bg-[#e8ff47] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                    <div className="w-7 h-7 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
                       <User className="w-3.5 h-3.5 text-black" />
                     </div>
                   )}
@@ -363,17 +363,17 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
                   animate={{ opacity: 1 }}
                   className="flex gap-2 items-start"
                 >
-                  <div className="w-7 h-7 rounded-none bg-[#e8ff47]/10 flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <Zap className="w-3.5 h-3.5 text-[#e8ff47]" />
+                  <div className="w-7 h-7 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <Zap className="w-3.5 h-3.5 text-blue-500" />
                   </div>
-                  <div className="bg-[#1a1a1a] rounded-none px-4 py-3 border border-[#2a2a2a]">
+                  <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800">
                     <div className="flex gap-1">
                       {[0, 1, 2].map(i => (
                         <motion.div
                           key={i}
                           animate={{ opacity: [0.3, 1, 0.3] }}
                           transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                          className="w-1.5 h-1.5 rounded-full bg-[#e8ff47]"
+                          className="w-1.5 h-1.5 rounded-full bg-blue-500"
                         />
                       ))}
                     </div>
@@ -383,7 +383,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
             </div>
 
             {/* Input */}
-            <div className="p-3 border-t border-[#2a2a2a] bg-[#161616]">
+            <div className="p-3 border-t border-zinc-800 bg-zinc-900">
               <form
                 onSubmit={(e) => { e.preventDefault(); sendMessage(input); }}
                 className="flex gap-2"
@@ -392,14 +392,14 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Ask Prodify Intelligence..."
-                  className="flex-1 bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none text-sm h-10 focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                  className="flex-1 bg-zinc-900 border-zinc-800 text-white rounded-xl text-sm h-10 focus-visible:ring-1 focus-visible:ring-blue-500"
                   disabled={isLoading}
                 />
                 <Button
                   type="submit"
                   size="icon"
                   disabled={isLoading || !input.trim()}
-                  className="bg-[#e8ff47] hover:bg-[#e8ff47]/90 text-black rounded-none h-10 w-10 flex-shrink-0"
+                  className="bg-blue-500 hover:bg-blue-500/90 text-black rounded-xl h-10 w-10 flex-shrink-0"
                 >
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Send className="w-4 h-4" />}
                 </Button>

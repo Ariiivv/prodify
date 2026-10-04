@@ -404,7 +404,7 @@ const WebcamStream = React.memo(function WebcamStream({ onDistractionDetected, o
       </div>
       {videoDevices.length > 1 && (
         <select 
-          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-xs p-1.5 outline-none cursor-pointer rounded-none"
+          className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs p-1.5 outline-none cursor-pointer rounded-xl"
           value={selectedDeviceId || ''}
           onChange={(e) => {
             setSelectedDeviceId(e.target.value);
