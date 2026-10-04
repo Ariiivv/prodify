@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Layers, BarChart3 } from 'lucide-react';
+import { Layers, BarChart3, Activity, Brain, Clock, Target, Flame } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useAuthStore } from '@/store/authStore';
 
@@ -142,19 +142,11 @@ const HomePage: React.FC = () => {
   const todaySessions = sessions.filter(s => s.created_date && s.created_date.startsWith(today));
   const dailyFocusMinutes = todaySessions.reduce((sum, s) => sum + (s.duration_minutes || 0), 0);
   const todayFocusHours = (dailyFocusMinutes / 60).toFixed(1);
-  const dailyTargetHours = 4; // Default target
+  const dailyTargetMinutes = workspaces.reduce((sum, ws) => sum + (ws.daily_target_minutes || 0), 0);
+    const targetDisplay = dailyTargetMinutes > 0 ? ` / ${(dailyTargetMinutes / 60).toFixed(1)}h` : '';
 
-  const avgBurnout = todaySessions.length > 0
-    ? Math.round(todaySessions.reduce((s, r) => s + (r.burnout_score || 0), 0) / todaySessions.length * 100)
-    : 0;
-  const stamina = Math.max(0, Math.min(100, 100 - avgBurnout));
-
-  const todayDistractions = todaySessions.reduce((sum, s) => sum + (s.distraction_count || 0), 0);
   
-  const alignmentScore = todaySessions.length > 0 
-    ? Math.max(0, 100 - (todayDistractions / todaySessions.length * 5)).toFixed(1) 
-    : '—';
-
+  
   const sprintCount = workspaces.filter(ws => ws.category === 'sprint').length;
   const masteryCount = workspaces.filter(ws => ws.category === 'mastery' || !ws.category).length;
 
@@ -212,70 +204,69 @@ const HomePage: React.FC = () => {
 
         {/* ── Focus Command Strip ── */}
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row flex-wrap items-center justify-between gap-4 md:gap-8 bg-[#111111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-none p-4 mb-10 w-full"
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl hidden sm:block">⏱️</span>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Today's Focus</span>
-              <span className="text-white font-mono font-bold text-sm sm:text-base">{todayFocusHours}h / {dailyTargetHours}h</span>
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row flex-wrap items-center justify-between gap-4 md:gap-8 bg-[#111111]/80 backdrop-blur-md border border-[#2a2a2a] rounded-none p-4 mb-10 w-full"
+          >
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+                <Target className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Today's Focus</span>
+                <span className="text-white font-mono font-bold text-sm sm:text-base">{todayFocusHours}h{targetDisplay}</span>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl hidden sm:block">🎯</span>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Alignment & Form</span>
-              <span className="text-white font-mono font-bold text-sm sm:text-base">
-                {alignmentScore}% <span className="text-[#888888] text-[10px]">today</span>
-                {' · '}
-                ⚡ {homeMetrics?.momentum?.score || 0}% <span className="text-[#888888] text-[10px]">7d</span>
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+                <Activity className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Momentum</span>
+                <span className="text-white font-mono font-bold text-sm sm:text-base">
+                  {homeMetrics?.momentum?.score != null ? `${Math.round(homeMetrics.momentum.score)}%` : '0%'}
+                  <span className="text-[#888888] text-[10px] ml-1">7d</span>
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl hidden sm:block">🔥</span>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Global Streak</span>
-              <span className="text-white font-mono font-bold text-sm sm:text-base">
-                {homeMetrics?.current_streak || 0} Day{homeMetrics?.current_streak !== 1 && 's'}
-              </span>
-              <span className="text-[10px] text-[#e8ff47]">Best: {homeMetrics?.longest_streak || 0}d</span>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+                <Brain className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Deep Work</span>
+                <span className="text-white font-mono font-bold text-sm sm:text-base">
+                  {homeMetrics?.deep_work_ratio_aggregate != null ? `${homeMetrics.deep_work_ratio_aggregate}%` : '-'}
+                  <span className="text-[#888888] text-[10px] ml-1">7d</span>
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl hidden sm:block">🧠</span>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Deep Work</span>
-              <span className="text-white font-mono font-bold text-sm sm:text-base">
-                {homeMetrics?.deep_work_ratio_aggregate != null ? `${homeMetrics.deep_work_ratio_aggregate}%` : '—'}
-                <span className="text-[#888888] text-[10px] ml-1">7d</span>
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-white/5 border border-white/10 rounded-none">
+                <Clock className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Peak Window</span>
+                <span className="text-white font-mono font-bold text-sm sm:text-base">
+                  {homeMetrics?.peak_focus_window && !('insufficient_data' in homeMetrics.peak_focus_window) 
+                    ? (homeMetrics.peak_focus_window as any).peak_range 
+                    : 'Learning...'}
+                </span>
+              </div>
             </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <span className="text-2xl hidden sm:block">⏱️</span>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Peak Window</span>
-              <span className="text-white font-mono font-bold text-sm sm:text-base">
-                {homeMetrics?.peak_focus_window && !('insufficient_data' in homeMetrics.peak_focus_window) 
-                  ? (homeMetrics.peak_focus_window as any).peak_range 
-                  : 'Learning...'}
-              </span>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-[#e8ff47]/10 border border-[#e8ff47]/20 rounded-none">
+                <Flame className="w-5 h-5 text-[#e8ff47]" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Global Streak</span>
+                <span className="text-white font-mono font-bold text-sm sm:text-base">
+                  {homeMetrics?.current_streak || 0} Day{homeMetrics?.current_streak !== 1 && 's'}
+                </span>
+                <span className="text-[10px] text-[#e8ff47]">Best: {homeMetrics?.longest_streak || 0}d</span>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl hidden sm:block">💚</span>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Cognitive Vitality</span>
-              <span className={`font-mono font-bold text-sm sm:text-base ${stamina > 50 ? 'text-[#e8ff47]' : 'text-amber-500'}`}>
-                {stamina}% stamina
-              </span>
-            </div>
-          </div>
-        </motion.div>
+          </motion.div>
 
         {/* ── Main Grid: Workspaces + Sidebar ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="workspaces">

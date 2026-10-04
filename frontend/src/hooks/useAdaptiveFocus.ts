@@ -225,7 +225,7 @@ export function useAdaptiveFocus({
                 setCurrentTabTitle(active.title);
 
                 // Skip re-classification if the window hasn't changed (heartbeat dedup)
-                // if (key === lastClassifiedRef.current) return;
+                if (key === lastClassifiedRef.current) return;
                 lastClassifiedRef.current = key;
                 
                 if (whitelistedWindowsRef.current.has(active.title.toLowerCase())) {

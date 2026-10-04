@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Layers, ArrowRight, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { Layers, ArrowRight, MoreVertical, Pencil, Trash2, Flame } from 'lucide-react';
 import { format, subDays, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
@@ -30,7 +30,7 @@ interface WorkspaceMetrics {
     quality: number;
   };
   deep_work_ratio: number | null;
-  calendar: { date: string; status: 'red' | 'yellow' | 'green' | 'golden' | null }[];
+  calendar: { date: string; status: 'red' | 'yellow' | 'green' | 'golden' | null; actual_minutes?: number; target_minutes?: number }[];
   workspace_streak_current: number;
   workspace_streak_longest: number;
 }
@@ -60,6 +60,8 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
         if (res.ok && isMounted) {
           const data = await res.json();
           setMetrics(data);
+        } else if (!res.ok) {
+          console.error(`Failed to fetch workspace metrics: HTTP ${res.status}`);
         }
       } catch (err) {
         console.error('Failed to fetch workspace metrics', err);
@@ -89,7 +91,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
       <div className="flex items-center gap-1.5 mt-3 mb-1">
         {last7Days.map(dateStr => {
           const dayLog = metrics.calendar.find((c) => c.date === dateStr);
-          let className = "w-2.5 h-2.5 rounded-full transition-all duration-300 ";
+          let className = "w-2.5 h-2.5 rounded-[3px] transition-all duration-300 ";
           
           if (!dayLog || !dayLog.status) {
             className += "border border-[#333333] bg-transparent";
@@ -204,8 +206,8 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-sm font-bold text-white">{workspace.name}</h3>
             {currentStreak > 0 && (
-              <span className="text-[10px] font-bold text-orange-400 bg-orange-400/10 px-1.5 py-0.5 rounded-sm border border-orange-400/20 shadow-[0_0_8px_rgba(251,146,60,0.2)]">
-                🔥 {currentStreak}d
+              <span className="text-[10px] font-bold text-orange-400 bg-orange-400/10 px-1.5 py-0.5 rounded-sm border border-orange-400/20 shadow-[0_0_8px_rgba(251,146,60,0.2)] flex items-center">
+                <Flame className="w-3 h-3 mr-0.5 inline" /> {currentStreak}d
               </span>
             )}
           </div>

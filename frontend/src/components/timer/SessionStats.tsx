@@ -9,10 +9,10 @@ interface SessionStatsProps {
 
 export default function SessionStats({ sessionCount, distractionCount, focusMinutes, workDuration }: SessionStatsProps) {
   const stats = [
-    { label: 'Sessions', value: sessionCount, icon: Trophy, color: 'text-primary' },
-    { label: 'Focus', value: `${focusMinutes}m`, icon: Clock, color: 'text-accent' },
-    { label: 'Distractions', value: distractionCount, icon: AlertCircle, color: distractionCount > 3 ? 'text-destructive' : 'text-amber-400' },
-    { label: 'Duration', value: `${workDuration}m`, icon: Zap, color: 'text-green-400' },
+    { label: 'Completed Sessions', value: sessionCount, icon: Trophy, color: 'text-primary' },
+    { label: 'Current Focus Time', value: `${focusMinutes}m`, icon: Clock, color: 'text-accent' },
+    { label: 'Current Distractions', value: distractionCount, icon: AlertCircle, color: distractionCount > 3 ? 'text-destructive' : 'text-amber-400' },
+    { label: 'Time Per Session', value: `${workDuration}m`, icon: Zap, color: 'text-green-400' },
   ];
 
   return (

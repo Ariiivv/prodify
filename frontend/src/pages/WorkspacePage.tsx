@@ -1,27 +1,55 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, CameraOff, AlertTriangle, Webcam } from 'lucide-react';
-import { useTimerStore, initTimer, useTimer, switchMode, resetDaily, updateLastActiveDate } from '@/lib/timerStore';
+import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock } from 'lucide-react';
+import { useTimerStore, initTimer, useTimer, switchMode } from '@/lib/timerStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { useIdleDetection } from '@/hooks/useIdleDetection';
 import { useAdaptiveFocus } from '@/hooks/useAdaptiveFocus';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
-import { audioEngine } from '@/lib/audio';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 
 import WebcamStream from '@/components/workspace/WebcamStream';
 import TimerRing from '@/components/timer/TimerRing';
 import TimerControls from '@/components/timer/TimerControls';
-import BurnoutGauge from '@/components/timer/BurnoutGauge';
 import SessionStats from '@/components/timer/SessionStats';
-import EnforcementModal from '@/components/timer/EnforcementModal';
 import AiCoachPanel from '@/components/chat/AiCoachPanel';
 import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCalendar';
 
 type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
+
+interface WorkspaceMetrics {
+  pace: {
+    score: number;
+    label: string;
+    consistency: number;
+    volume: number;
+    quality: number;
+  };
+  deep_work_ratio: number | null;
+  calendar: { date: string; status: 'red' | 'yellow' | 'green' | 'golden' | null; actual_minutes?: number; target_minutes?: number }[];
+  workspace_streak_current: number;
+  workspace_streak_longest: number;
+  today_target_minutes: number;
+  today_actual_minutes: number;
+}
+
+function formatHoursLeftToday(targetMinutes: number, actualMinutes: number): string {
+  const remaining = Math.max(0, Math.round((targetMinutes || 0) - (actualMinutes || 0)));
+  if ((targetMinutes || 0) > 0 && remaining <= 0) return 'Target met';
+  if ((targetMinutes || 0) <= 0) return actualMinutes > 0 ? `${formatDuration(actualMinutes)} logged` : 'No daily target';
+  return `${formatDuration(remaining)} left`;
+}
+
+function formatDuration(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${minutes}m`;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const staggerContainerVariants: any = {
@@ -106,6 +134,7 @@ export default function WorkspacePage() {
   // Component State
   const [burnoutProb, setBurnoutProb] = useState(0);
   const [workspace, setWorkspace] = useState<any>(null);
+  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('disabled');
@@ -121,7 +150,7 @@ export default function WorkspacePage() {
   const sessionIntent = workspace?.current_goal || getIntentString(workspace?.focus_keywords);
 
   // If keywords are defined, disable tab-visibility enforcement (trust camera/gaze)
-  const { enforcementTriggered, setEnforcementTriggered } = useTabVisibility({
+  useTabVisibility({
     disabled: workspaceKeywords.length > 0,
   });
 
@@ -324,6 +353,29 @@ export default function WorkspacePage() {
       .catch(() => setIsLoading(false));
   }, [wsId]);
 
+  // Workspace metrics — same fetch pattern as WorkspaceCard
+  useEffect(() => {
+    if (!wsId) return;
+    let isMounted = true;
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/metrics/workspace/${wsId}`, {
+          headers: getAuthHeaders(),
+          cache: 'no-store'
+        });
+        if (res.ok && isMounted) {
+          setMetrics(await res.json());
+        } else if (!res.ok) {
+          console.error(`Failed to fetch workspace metrics: HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.error('Failed to fetch workspace metrics', err);
+      }
+    };
+    fetchMetrics();
+    return () => { isMounted = false; };
+  }, [wsId, timerState.sessionCount]);
+
   // Initialize timer
   useEffect(() => {
     if (workspace && wsId) {
@@ -371,6 +423,7 @@ export default function WorkspacePage() {
 
   const previousStateRef = useRef(timerState.currentState);
   const maxElapsedRef = useRef(0);
+  const breakNotifiedRef = useRef<string | null>(null);
 
   // Track max elapsed time to prevent it reading 0 on reset
   useEffect(() => {
@@ -382,18 +435,55 @@ export default function WorkspacePage() {
     }
   }, [timerState.timeRemaining, timerState.currentState, timerState.focusDuration]);
 
-  // Log session completion & save metrics
+  // Log session completion & save metrics, and pop break-transition toasts.
   useEffect(() => {
     const prev = previousStateRef.current;
     const current = timerState.currentState;
     const isFocus = prev === 'FOCUS_RUNNING' || prev === 'FOCUS_PAUSED';
     const isEnded = current === 'IDLE' || current === 'SESSION_COMPLETED';
 
+    // Break finished → focus starts again (auto-advanced by the store).
+    // SESSION_COMPLETED here is transient: break→focus also passes through it.
+    const breakJustEnded =
+      (prev === 'BREAK_RUNNING' || prev === 'BREAK_PAUSED') &&
+      (current === 'FOCUS_RUNNING' || current === 'SESSION_COMPLETED');
+    if (breakJustEnded && breakNotifiedRef.current !== `${timerState.sessionCount}-${timerState.roundCount}`) {
+      breakNotifiedRef.current = `${timerState.sessionCount}-${timerState.roundCount}`;
+      toast.success('Break over — back to focus! 💪', { duration: 4000 });
+      import('@tauri-apps/plugin-notification').then(async ({ isPermissionGranted, requestPermission, sendNotification }) => {
+        try {
+          let granted = await isPermissionGranted();
+          if (!granted) granted = (await requestPermission()) === 'granted';
+          if (granted) sendNotification({ title: 'Break over', body: 'Back to your focus session!' });
+        } catch (err) {
+          console.error('Failed to send break-over notification:', err);
+        }
+      }).catch((err) => console.error('Failed to load notifications:', err));
+      // Bring the app window forward so the toast is actually seen.
+      import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+        const appWindow = getCurrentWindow();
+        (async () => {
+          try {
+            await appWindow.unminimize();
+            await appWindow.show();
+            await appWindow.setAlwaysOnTop(true);
+            await appWindow.setFocus();
+            setTimeout(async () => {
+              await appWindow.setAlwaysOnTop(false);
+            }, 3500);
+          } catch (err) {
+            console.error('Failed to elevate window:', err);
+          }
+        })();
+      }).catch((err) => console.error('Failed to load window API:', err));
+    }
+
     if (isFocus && isEnded && workspace && wsId) {
       const completed = current === 'SESSION_COMPLETED';
       
-      // Notify user on completion
-      if (completed && loggedCompletionRef.current !== timerState.sessionCount) {
+      // Notify user on completion — but ONLY for focus→done, never for
+      // break→focus (that path is handled by breakJustEnded above).
+      if (completed && isFocus && loggedCompletionRef.current !== timerState.sessionCount) {
         toast.success(`Yayy! You completed session ${timerState.sessionCount} of this workspace! 🎉`, { duration: 4000 });
         
         // Force App Window to Front
@@ -467,8 +557,6 @@ export default function WorkspacePage() {
   const focusMinutes = (timerState.currentState === 'IDLE' || timerState.currentState === 'SESSION_COMPLETED')
     ? 0
     : Math.max(0, Math.floor((timerState.focusDuration - timerState.timeRemaining) / 60));
-
-  const handleDismissEnforcement = useCallback(() => setEnforcementTriggered(false), [setEnforcementTriggered]);
 
   const totalDuration = timerState.sessionMode === 'LONG_BREAK' 
     ? timerState.defaultLongBreakDuration 
@@ -694,6 +782,7 @@ export default function WorkspacePage() {
                       onClick={() => {
                         toast.success("Noted as relevant", { description: "We'll try to learn from this." });
                         markAsRelevant();
+                        useTimerStore.getState().decrementDistraction();
                         useTimerStore.getState().resumeFocus();
                       }}
                       className="flex-1 border border-[#444] text-[#ccc] hover:bg-[#2a2a2a] hover:text-white font-medium py-2 px-4 rounded-none transition-colors"
@@ -793,19 +882,80 @@ export default function WorkspacePage() {
               lastFocusedApp=""
             />
           )}
-          <BurnoutGauge burnoutProbability={burnoutProb} currentState={timerState.currentState} />
+            <div className="grid grid-cols-1 gap-3 mb-4">
+              <div className="flex items-center gap-3 bg-[#111111] border border-[#2a2a2a] p-3">
+                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-none">
+                  <Activity className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Pace</span>
+                  <span className="text-white font-mono font-bold text-sm">
+                    {metrics?.pace ? (
+                      <>
+                        <span className={
+                          metrics.pace.label === 'Strong' ? 'text-[#e8ff47]' :
+                          metrics.pace.label === 'Solid' ? 'text-green-400' :
+                          metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
+                        }>
+                          {metrics.pace.label}
+                        </span>
+                        <span className="text-[#888888] ml-1">{Math.round(metrics.pace.score)}</span>
+                        <span className="text-[#888888] text-[10px] ml-1">7d</span>
+                      </>
+                    ) : (
+                      <span className="text-[#888888] animate-pulse">loading...</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-[#111111] border border-[#2a2a2a] p-3">
+                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-none">
+                  <Brain className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Deep Work Ratio</span>
+                  <span className="text-white font-mono font-bold text-sm">
+                    {metrics ? (
+                      <>
+                        {metrics.deep_work_ratio != null ? `${Math.round(metrics.deep_work_ratio)}%` : '-'}
+                        <span className="text-[#888888] text-[10px] ml-1">7d</span>
+                      </>
+                    ) : (
+                      <span className="text-[#888888] animate-pulse">loading...</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-[#111111] border border-[#2a2a2a] p-3">
+                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-none">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Today</span>
+                  <span className="text-white font-mono font-bold text-sm">
+                    {metrics ? (
+                      formatHoursLeftToday(metrics.today_target_minutes, metrics.today_actual_minutes)
+                    ) : (
+                      <span className="text-[#888888] animate-pulse">loading...</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+          {workspace?.id && (
+            <StructuredGoalCalendar 
+              workspaceId={workspace.id} 
+              mode={workspace.mode} 
+              sessionCount={timerState.sessionCount}
+              calendar={metrics?.calendar}
+            />
+          )}
           {(timerState.currentState === 'SESSION_COMPLETED' || timerState.sessionCount > 0) && (
             <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
           )}
 
-          {workspace?.mode?.toLowerCase().includes('structured') && workspace?.id && (
-            <StructuredGoalCalendar 
-              workspaceId={workspace.id} 
-              mode={workspace.mode} 
-              sessionCount={timerState.sessionCount} 
-              
-            />
-          )}
         </motion.div>
       </motion.div>
 
@@ -818,6 +968,7 @@ export default function WorkspacePage() {
             workspaceId={wsId}
             focusMinutes={focusMinutes}
             distractionCount={timerState.distractionCount}
+            distractedSeconds={timerState.distractedSeconds || 0}
             burnoutProbability={burnoutProb}
             currentState={timerState.currentState}
             sessionCount={timerState.sessionCount}

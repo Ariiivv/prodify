@@ -187,18 +187,35 @@ def _compute_calendar(
         ]
 
         if not active_ws:
-            calendar.append({"date": current.isoformat(), "status": None})
+            calendar.append({
+                "date": current.isoformat(),
+                "status": None,
+                "actual_minutes": 0.0,
+                "target_minutes": max(list(ws_targets.values()), default=0),
+            })
             current += timedelta(days=1)
             continue
 
         worst_status: Optional[str] = None
+        # For tooltips: report the day's totals (single-workspace case is exact;
+        # multi-workspace Home view reports worst status + summed minutes).
+        day_target = 0
+        day_actual = 0.0
         for ws_id in active_ws:
             actual = daily_data.get(ws_id, {}).get(current, 0.0)
-            status = _day_status(actual, ws_targets[ws_id])
+            tgt = ws_targets[ws_id]
+            day_target += tgt
+            day_actual += actual
+            status = _day_status(actual, tgt)
             if worst_status is None or _STATUS_ORDER[status] < _STATUS_ORDER[worst_status]:
                 worst_status = status
 
-        calendar.append({"date": current.isoformat(), "status": worst_status})
+        calendar.append({
+            "date": current.isoformat(),
+            "status": worst_status,
+            "actual_minutes": round(day_actual, 1),
+            "target_minutes": day_target,
+        })
         current += timedelta(days=1)
 
     return calendar
@@ -584,10 +601,16 @@ def compute_workspace_metrics(db: DBSession, user: models.User, workspace_id: in
     # Deep Work Ratio (workspace-scoped)
     dwr = _deep_work_ratio(db, [workspace_id], today)
 
+    today_target = int(workspace.daily_target_minutes or 0)
+    today_actual_map = _get_workspace_daily_minutes(db, [workspace_id], today, today)
+    today_actual = float(today_actual_map.get(workspace_id, {}).get(today, 0.0))
+
     return {
         "pace": pace,
         "deep_work_ratio": dwr,
         "calendar": calendar,
         "workspace_streak_current": ws_current,
         "workspace_streak_longest": persisted_longest,
+        "today_target_minutes": today_target,
+        "today_actual_minutes": round(today_actual, 1),
     }

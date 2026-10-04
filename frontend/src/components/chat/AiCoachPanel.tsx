@@ -18,6 +18,7 @@ interface AiCoachPanelProps {
   workspaceId?: number;
   focusMinutes: number;
   distractionCount: number;
+  distractedSeconds?: number;
   burnoutProbability: number;
   currentState: string;
   sessionCount: number;
@@ -46,6 +47,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
   workspaceId,
   focusMinutes,
   distractionCount,
+  distractedSeconds = 0,
   burnoutProbability,
   currentState,
   sessionCount,

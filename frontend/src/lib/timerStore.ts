@@ -58,6 +58,7 @@ interface TimerStore {
   getActiveFocusDuration: () => number;
   getActiveBreakDuration: () => number;
   incrementDistraction: () => void;
+  decrementDistraction: () => void;
 }
 
 const makeInitialState = (): WorkspaceTimerState => ({
@@ -382,6 +383,11 @@ export const useTimerStore = create<TimerStore>()(
       const current = getWorkspaceState().distractionCount;
       setWorkspaceState({ distractionCount: current + 1 });
     },
+
+    decrementDistraction: () => {
+      const current = getWorkspaceState().distractionCount;
+      setWorkspaceState({ distractionCount: Math.max(0, current - 1) });
+    },
   };
     },
     {
@@ -441,6 +447,7 @@ export function useTimer() {
     breakDuration: bd,
     sessionCount: ws?.sessionCount ?? 0,
     distractionCount: ws?.distractionCount ?? 0,
+    distractedSeconds: ws?.distractedSeconds ?? 0,
     pauseReason: ws?.pauseReason ?? null,
     roundCount: ws?.roundCount ?? 0,
     sessionMode: ws?.sessionMode ?? 'FOCUS',

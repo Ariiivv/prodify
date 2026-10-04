@@ -49,9 +49,11 @@ def get_workspace_metrics(
     {
         pace: {score, label, consistency, volume, quality},
         deep_work_ratio: float | null,
-        calendar: [{date, status}],
+        calendar: [{date, status, actual_minutes, target_minutes}],
         workspace_streak_current: int,
-        workspace_streak_longest: int
+        workspace_streak_longest: int,
+        today_target_minutes: int,
+        today_actual_minutes: float
     }
     """
     result = compute_workspace_metrics(db, current_user, workspace_id)
