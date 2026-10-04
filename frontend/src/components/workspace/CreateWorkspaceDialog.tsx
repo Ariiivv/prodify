@@ -32,6 +32,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [focusKeywords, setFocusKeywords] = useState('');
   const [goalDescription, setGoalDescription] = useState('');
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [themeColor, setThemeColor] = useState<string>('#3b82f6');
+  const THEME_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const navigate = useNavigate();
@@ -95,6 +97,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
         daily_target_minutes: category === 'mastery' ? dailyMin : 60,
         focus_keywords: focusKeywords.trim() || null,
         current_goal: goalDescription.trim() || null,
+        theme_color: themeColor,
         camera_enabled: cameraEnabled,
       };
 
@@ -413,6 +416,27 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                
+                {/* Theme Color */}
+                <div className="pt-2">
+                  <label className="text-sm font-bold text-white block">Theme Color</label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Choose an accent color for this workspace.
+                  </p>
+                  <div className="flex gap-3">
+                    {THEME_COLORS.map(color => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setThemeColor(color)}
+                        className={`w-8 h-8 rounded-full transition-transform ${themeColor === color ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-950 scale-110' : 'hover:scale-110'}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
 
                 {/* Focus Keywords */}
                 <div className="pt-2">

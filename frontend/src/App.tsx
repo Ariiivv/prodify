@@ -14,7 +14,7 @@ import { Toaster } from '@/components/ui/sonner';
 // Route-based code splitting — heavy pages are loaded on-demand
 const HomePage = lazy(() => import('./pages/HomePage'));
 const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
-const Analytics = lazy(() => import('./pages/Analytics'));
+const Report = lazy(() => import('./pages/Report'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 const PageLoader = () => (
@@ -138,7 +138,7 @@ function App() {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<Suspense fallback={<PageLoader />}><HomePage /></Suspense>} />
                 <Route path="/workspace/:id" element={<Suspense fallback={<PageLoader />}><WorkspacePage /></Suspense>} />
-                <Route path="/analytics" element={<Suspense fallback={<PageLoader />}><Analytics /></Suspense>} />
+                <Route path="/report" element={<Suspense fallback={<PageLoader />}><Report /></Suspense>} />
                 <Route path="/settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
               </Route>
             </Route>

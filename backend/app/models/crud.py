@@ -18,6 +18,8 @@ def create_workspace(
     long_break_duration: Optional[int] = 15,
     long_break_interval: Optional[int] = 4,
     focus_keywords: Optional[str] = None,
+    theme_color: Optional[str] = '#3b82f6',
+    theme_color: Optional[str] = '#3b82f6',
     current_goal: Optional[str] = None,
     camera_enabled: bool = False,
 ) -> models.Workspace:
@@ -35,6 +37,7 @@ def create_workspace(
         long_break_duration=long_break_duration,
         long_break_interval=long_break_interval,
         focus_keywords=focus_keywords,
+        theme_color=theme_color,
         current_goal=current_goal,
         camera_enabled=camera_enabled,
     )
@@ -78,6 +81,8 @@ def update_workspace(
     long_break_duration: Optional[int] = 15,
     long_break_interval: Optional[int] = 4,
     focus_keywords: Optional[str] = None,
+    theme_color: Optional[str] = '#3b82f6',
+    theme_color: Optional[str] = '#3b82f6',
     current_goal: Optional[str] = None,
     camera_enabled: bool = False,
 ) -> models.Workspace:
@@ -98,6 +103,8 @@ def update_workspace(
     workspace.long_break_duration = long_break_duration
     workspace.long_break_interval = long_break_interval
     workspace.focus_keywords = focus_keywords
+    if theme_color is not None:
+        workspace.theme_color = theme_color
     workspace.current_goal = current_goal
     workspace.camera_enabled = camera_enabled
 

@@ -42,6 +42,7 @@ class Workspace(Base):
     current_streak = Column(Integer, nullable=False, default=0)
     longest_streak = Column(Integer, nullable=False, default=0)
     current_goal = Column(String, nullable=True)
+    theme_color = Column(String, nullable=True, default='#3b82f6')
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

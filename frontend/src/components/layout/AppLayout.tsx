@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
   { path: '/#workspaces', icon: LayoutGrid, label: 'Workspaces' },
-  { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { path: '/report', icon: BarChart3, label: 'Report' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 

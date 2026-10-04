@@ -28,6 +28,7 @@ class WorkspacePayload(BaseModel):
     long_break_interval: int = Field(default=4, ge=1, le=20)
     focus_keywords: Optional[str] = Field(default=None, max_length=2000)
     current_goal: Optional[str] = Field(default=None, max_length=2000)
+    theme_color: Optional[str] = Field(default='#3b82f6', max_length=20)
     camera_enabled: bool = False
 
     @field_validator('category', mode='after')
