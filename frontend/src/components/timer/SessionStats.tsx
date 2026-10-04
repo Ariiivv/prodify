@@ -5,9 +5,10 @@ interface SessionStatsProps {
   distractionCount: number;
   focusMinutes: number;
   workDuration: number;
+  onDistractionClick?: () => void;
 }
 
-export default function SessionStats({ sessionCount, distractionCount, focusMinutes, workDuration }: SessionStatsProps) {
+export default function SessionStats({ sessionCount, distractionCount, focusMinutes, workDuration, onDistractionClick }: SessionStatsProps) {
   const stats = [
     { label: 'Completed Sessions', value: sessionCount, icon: Trophy, color: 'text-primary' },
     { label: 'Current Focus Time', value: `${focusMinutes}m`, icon: Clock, color: 'text-accent' },
@@ -17,15 +18,23 @@ export default function SessionStats({ sessionCount, distractionCount, focusMinu
 
   return (
     <div className="grid grid-cols-2 gap-3">
-      {stats.map(({ label, value, icon: Icon, color }) => (
-        <div key={label} className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Icon className={`w-3.5 h-3.5 ${color}`} />
-            <span className="text-xs text-muted-foreground">{label}</span>
-          </div>
-          <span className="text-xl font-bold text-foreground">{value}</span>
-        </div>
-      ))}
+      {stats.map(({ label, value, icon: Icon, color }) => {
+        const isDistraction = label === 'Current Distractions';
+        const Wrapper = isDistraction && onDistractionClick ? 'button' : 'div';
+        const wrapperProps = isDistraction && onDistractionClick 
+          ? { onClick: onDistractionClick, className: "rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 backdrop-blur-sm p-4 text-left transition-colors cursor-pointer" } 
+          : { className: "rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-4" };
+          
+        return (
+          <Wrapper key={label} {...(wrapperProps as any)}>
+            <div className="flex items-center gap-2 mb-1">
+              <Icon className={`w-3.5 h-3.5 ${color}`} />
+              <span className={`text-xs ${isDistraction ? 'text-red-400' : 'text-muted-foreground'}`}>{label}</span>
+            </div>
+            <span className={`text-xl font-bold ${isDistraction ? 'text-red-500' : 'text-foreground'}`}>{value}</span>
+          </Wrapper>
+        );
+      })}
     </div>
   );
 }

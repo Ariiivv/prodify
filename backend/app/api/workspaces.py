@@ -156,6 +156,30 @@ def delete_workspace(
         db.query(models.WorkspaceMetrics).filter(models.WorkspaceMetrics.workspace_id == workspace_id).delete(synchronize_session=False)
     db.commit()
 
+
+class DistractionOut(BaseModel):
+    id: int
+    app_name: str
+    window_title: str
+    timestamp: datetime
+    reason: Optional[str]
+
+@router.get("/{workspace_id}/distractions", response_model=list[DistractionOut])
+def get_workspace_distractions(
+    workspace_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    get_owned_workspace(workspace_id, current_user, db)
+    return (
+        db.query(models.ActivityLog)
+        .filter(models.ActivityLog.workspace_id == workspace_id, models.ActivityLog.is_focused == 0)
+        .order_by(models.ActivityLog.timestamp.desc())
+        .limit(100)
+        .all()
+    )
+
+
 @router.get("/{workspace_id}/chat-history", response_model=list[ChatMessageOut])
 def get_chat_history(
     workspace_id: int,
