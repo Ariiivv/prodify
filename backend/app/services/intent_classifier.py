@@ -107,18 +107,20 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
         f"Application Name: \"{app_name}\"\n"
         f"Active Window Title: \"{window_title}\"\n\n"
         f"### EVALUATION PRINCIPLES:\n\n"
-        f"1. Declared Goal as the Sole Reference:\n"
+        f"1. Declared Goal as the Sole Reference & Abbreviation Resolution:\n"
         f"   - Read the user's declared goal carefully: \"{intent}\".\n"
         f"   - Base your decision strictly on the domain, subject, or task specified by the user.\n"
         f"   - Do NOT assume, demand, or evaluate against outside frameworks, languages, or tools not specified in \"{intent}\".\n"
-        f"   - Judge by semantic substance and meaning, NEVER by superficial keywords.\n\n"
+        f"   - INTELLIGENT ABBREVIATION RESOLUTION: Users often use shorthand or acronyms (e.g., 'rdr2' for Red Dead Redemption 2, 'ml' for machine learning). You MUST actively resolve and match these abbreviations against the full window title content before judging relevance.\n"
+        f"   - Base your decision strictly on the semantic substance and meaning of the goal, NEVER requiring literal keyword overlap.\n\n"
         f"2. Content-Level Decision:\n"
         f"   - Does the substance of \"{window_title}\" directly teach, reference, implement, or facilitate the domain of \"{intent}\"?\n"
         f"     * If YES -> Output VERDICT: TRUE.\n"
         f"     * If NO (e.g., entertainment, celebrity media, sports commentary, casual phone/tech reviews, gaming gameplay, memes, drama, or unrelated social feeds) -> Output VERDICT: FALSE.\n\n"
-        f"3. Navigation Grace for Multipurpose Tools:\n"
+        f"3. Navigation Grace & Relevant Search Queries:\n"
         f"   - Multipurpose applications (browsers, search engines, file managers, desktop shells) can host both work and distractions.\n"
-        f"   - If the user is on a browser homepage, blank/new tab, search bar, or directory root looking for resources -> Output VERDICT: TRUE (navigation grace).\n"
+        f"   - If the user is on a browser homepage, blank/new tab, or directory root looking for resources -> Output VERDICT: TRUE (navigation grace).\n"
+        f"   - MID-SEARCH GRACE: If the user is actively typing a search query that plausibly relates to the goal (even an incomplete query or an abbreviation), evaluate it as navigation/research and output VERDICT: TRUE. Do NOT flag relevant searches as generic distraction. (However, searching for a genuinely unrelated topic MUST still be flagged as FALSE).\n"
         f"   - Once a specific video, article, stream, or post is open and playing/reading, evaluate its SPECIFIC topic. If that content is off-topic entertainment -> Output VERDICT: FALSE.\n\n"
         f"4. Supporting Tools & Auxiliary Workflows:\n"
         f"   - Standard tools used to perform digital work (IDEs, code editors, terminal windows, official documentation, file directories) that support \"{intent}\" -> Output VERDICT: TRUE.\n\n"
@@ -222,10 +224,14 @@ def update_focus_state(
 
     # Identify transient OS utility flickers (only known OS shell processes)
     _OS_SHELLS = {"explorer.exe", "shellexperiencehost.exe"}
+    
     is_transient = (
-        "task switch" in title_lower
-        or "task switching" in title_lower
-        or (app_lower in _OS_SHELLS and title_lower in ["", "running applications", "task switching"])
+        (app_lower in _OS_SHELLS and (
+            "task switch" in title_lower 
+            or "task view" in title_lower 
+            or "snap assist" in title_lower
+            or title_lower in ["", "running applications"]
+        ))
         or app_lower in ["snippingtool.exe", "screenclippinghost.exe"]
     )
 

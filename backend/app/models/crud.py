@@ -15,7 +15,10 @@ def create_workspace(
     daily_target_minutes: Optional[int] = 60,
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
+    long_break_duration: Optional[int] = 15,
+    long_break_interval: Optional[int] = 4,
     focus_keywords: Optional[str] = None,
+    current_goal: Optional[str] = None,
     camera_enabled: bool = False,
 ) -> models.Workspace:
     """Create a new workspace for a given user."""
@@ -29,7 +32,10 @@ def create_workspace(
         daily_target_minutes=daily_target_minutes,
         work_duration=work_duration,
         break_duration=break_duration,
+        long_break_duration=long_break_duration,
+        long_break_interval=long_break_interval,
         focus_keywords=focus_keywords,
+        current_goal=current_goal,
         camera_enabled=camera_enabled,
     )
     db.add(workspace)
@@ -69,7 +75,10 @@ def update_workspace(
     daily_target_minutes: Optional[int] = 60,
     work_duration: Optional[int] = 45,
     break_duration: Optional[int] = 5,
+    long_break_duration: Optional[int] = 15,
+    long_break_interval: Optional[int] = 4,
     focus_keywords: Optional[str] = None,
+    current_goal: Optional[str] = None,
     camera_enabled: bool = False,
 ) -> models.Workspace:
     """Update an existing workspace's fields."""
@@ -86,7 +95,10 @@ def update_workspace(
     workspace.daily_target_minutes = daily_target_minutes
     workspace.work_duration = work_duration
     workspace.break_duration = break_duration
+    workspace.long_break_duration = long_break_duration
+    workspace.long_break_interval = long_break_interval
     workspace.focus_keywords = focus_keywords
+    workspace.current_goal = current_goal
     workspace.camera_enabled = camera_enabled
 
     db.commit()

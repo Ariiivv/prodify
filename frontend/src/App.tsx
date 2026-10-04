@@ -1,12 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/authStore';
 import AppLayout from './components/layout/AppLayout';
-import HomePage from './pages/HomePage';
-import WorkspacePage from './pages/WorkspacePage';
-import Analytics from './pages/Analytics';
-import Settings from './pages/Settings';
 import Auth from './pages/Auth';
 import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -14,6 +10,18 @@ import TrackingConsentModal from './components/auth/TrackingConsentModal';
 import ScrollToTop from './components/ScrollToTop';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
+
+// Route-based code splitting — heavy pages are loaded on-demand
+const HomePage = lazy(() => import('./pages/HomePage'));
+const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Settings = lazy(() => import('./pages/Settings'));
+
+const PageLoader = () => (
+  <div className="min-h-[60vh] flex items-center justify-center">
+    <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+  </div>
+);
 
 const queryClient = new QueryClient();
 
@@ -128,10 +136,10 @@ function App() {
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/workspace/:id" element={<WorkspacePage />} />
-                <Route path="/analytics" element={<Analytics />} />
-                <Route path="/settings" element={<Settings />} />
+                <Route path="/" element={<Suspense fallback={<PageLoader />}><HomePage /></Suspense>} />
+                <Route path="/workspace/:id" element={<Suspense fallback={<PageLoader />}><WorkspacePage /></Suspense>} />
+                <Route path="/analytics" element={<Suspense fallback={<PageLoader />}><Analytics /></Suspense>} />
+                <Route path="/settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
               </Route>
             </Route>
           </Routes>

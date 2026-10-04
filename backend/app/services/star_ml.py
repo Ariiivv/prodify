@@ -151,24 +151,42 @@ def tool_get_session_history(db: Session) -> dict:
 
 
 def tool_optimize_workspace_goal(db: Session) -> dict:
-    """Calculates a custom daily commitment schedule based on target hours, deadline, and past session history."""
+    """Returns the complete context for the user's workspace including targets, daily goals, and 60-day historical session data."""
     logger.info("[STAR ML TOOL] optimize_workspace_goal called")
-    from app.services.goal_optimizer import calculate_daily_plan
-    # Fetch active or latest structured workspace if available
-    ws = (
-        db.query(models.Workspace)
-        .order_by(models.Workspace.id.desc())
-        .first()
-    )
-    target_hours = ws.target_hours if ws and ws.target_hours else 20.0
-    deadline = ws.deadline if ws and ws.deadline else None
-    name = ws.name if ws else "Your Goal Workspace"
-    return calculate_daily_plan(
-        target_hours=target_hours,
-        deadline=deadline,
-        db=db,
-        workspace_name=name,
-    )
+    ws = db.query(models.Workspace).order_by(models.Workspace.id.desc()).first()
+    if not ws:
+        return {"error": "No workspace found"}
+    
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow().date() - timedelta(days=60)
+    metrics = db.query(models.WorkspaceMetrics).filter(
+        models.WorkspaceMetrics.workspace_id == ws.id,
+        models.WorkspaceMetrics.session_date >= cutoff
+    ).all()
+    
+    history_by_date = {}
+    for m in metrics:
+        d = str(m.session_date)
+        if d not in history_by_date:
+            history_by_date[d] = {"focus_minutes": 0, "distractions": 0, "completed": 0}
+        history_by_date[d]["focus_minutes"] += m.focus_minutes
+        history_by_date[d]["distractions"] += m.distraction_count
+        if m.completed:
+             history_by_date[d]["completed"] += 1
+             
+    total_hours = sum(m.focus_minutes for m in metrics) / 60.0
+    
+    return {
+        "workspace_name": ws.name,
+        "mode": ws.mode,
+        "category": ws.category,
+        "target_hours": ws.target_hours,
+        "deadline": str(ws.deadline) if ws.deadline else None,
+        "daily_target_minutes": ws.daily_target_minutes,
+        "work_duration_settings": ws.work_duration,
+        "60_day_total_focus_hours": round(total_hours, 2),
+        "daily_history_log": history_by_date
+    }
 
 
 def analyze_user_patterns(db: Session) -> dict:

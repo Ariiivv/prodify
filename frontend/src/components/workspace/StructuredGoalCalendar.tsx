@@ -3,25 +3,24 @@ import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { 
   format, addMonths, subMonths, startOfMonth, endOfMonth, 
   startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, 
-  isSameDay, parseISO, isAfter, isBefore, startOfDay
+  isSameDay
 } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-export interface DailyGoal {
+export interface CalendarDay {
   date: string;
-  target_minutes_for_day: number;
-  actual_minutes_logged: number;
-  status: 'none' | 'under' | 'met' | 'exceeded' | 'future' | 'today';
+  status: 'red' | 'yellow' | 'green' | 'golden' | null;
 }
 
 interface StructuredGoalCalendarProps {
   workspaceId: number;
   mode: string;
   sessionCount: number;
+  onTodayGoalFetch?: (targetMinutes: number) => void;
 }
 
 export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ workspaceId, mode, sessionCount }) => {
-  const [goals, setGoals] = useState<DailyGoal[]>([]);
+  const [calendar, setCalendar] = useState<CalendarDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -31,41 +30,38 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ 
       return;
     }
 
-    const fetchGoals = async () => {
+    const fetchCalendar = async () => {
       try {
-        const response = await fetch(`${API_BASE}/workspaces/${workspaceId}/daily-goals`, { headers: getAuthHeaders() });
+        const response = await fetch(`${API_BASE}/api/metrics/workspace/${workspaceId}`, { headers: getAuthHeaders() });
         if (response.ok) {
           const data = await response.json();
-          setGoals(data);
+          setCalendar(data.calendar || []);
         }
       } catch (error) {
-        console.error('Failed to fetch daily goals:', error);
+        console.error('Failed to fetch calendar:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchGoals();
+    fetchCalendar();
   }, [workspaceId, mode, sessionCount]);
 
-  const goalsMap = useMemo(() => {
-    const map = new Map<string, DailyGoal>();
-    goals.forEach(g => map.set(g.date, g));
+  const calendarMap = useMemo(() => {
+    const map = new Map<string, CalendarDay>();
+    calendar.forEach(d => map.set(d.date.split('T')[0], d));
     return map;
-  }, [goals]);
+  }, [calendar]);
 
-  if (loading || !mode || !mode.toLowerCase().includes('structured') || goals.length === 0) {
+  if (loading || !mode || !mode.toLowerCase().includes('structured') || calendar.length === 0) {
     return null;
   }
 
-  const todayGoal = goals.find((g) => g.status === 'today');
-  
   // Calculate calendar grid
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
   const startDate = startOfWeek(monthStart);
   const endDate = endOfWeek(monthEnd);
-  const dateFormat = "d";
   const days = eachDayOfInterval({ start: startDate, end: endDate });
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -73,12 +69,6 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ 
 
   return (
     <div className="w-full flex flex-col items-center gap-2 my-2">
-      {todayGoal && (
-        <p className="text-xs font-medium text-muted-foreground mb-1">
-          Today's goal: <span className="text-white">{todayGoal.target_minutes_for_day} minutes</span> ({todayGoal.actual_minutes_logged} logged)
-        </p>
-      )}
-      
       <div className="w-full max-w-[260px] bg-[#111111] border border-[#2a2a2a] p-3 rounded-xl shadow-lg">
         <div className="flex justify-between items-center mb-3">
           <button onClick={prevMonth} className="text-muted-foreground hover:text-white transition-colors p-0.5">
@@ -101,42 +91,39 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({ 
         <div className="grid grid-cols-7 gap-1 text-center">
           {days.map(day => {
             const dateStr = format(day, 'yyyy-MM-dd');
-            const goal = goalsMap.get(dateStr);
+            const dayData = calendarMap.get(dateStr);
             const isSameMnth = isSameMonth(day, monthStart);
             const isTdy = isSameDay(day, new Date());
             
-            let tooltip = "";
+            let tooltip = dateStr;
             let bgColor = "bg-transparent";
             let textColor = isSameMnth ? "text-prodify-muted" : "text-transparent";
             let border = isSameMnth ? "border border-transparent" : "";
 
-            if (goal) {
+            if (dayData && dayData.status) {
                textColor = "text-white";
-               const actual = goal.actual_minutes_logged;
-               const target = goal.target_minutes_for_day;
+               const status = dayData.status;
                
-               if (goal.status === 'future') {
-                 bgColor = "bg-transparent";
-                 border = "border border-prodify-border";
-                 tooltip = `Target: ${target} min`;
-               } else {
-                 if (actual === 0) {
-                   bgColor = "bg-prodify-danger/20";
-                 } else if (actual < target / 2) {
-                   bgColor = "bg-prodify-danger";
-                 } else if (actual < target) {
-                   bgColor = "bg-prodify-warning";
-                   // Adding a slight text shadow to ensure the white text is readable against the bright yellow/lime backgrounds
-                   textColor = "text-white drop-shadow-md";
-                 } else if (actual <= target * 1.5) {
-                   bgColor = "bg-prodify-success";
-                   textColor = "text-white drop-shadow-md";
-                 } else {
-                   bgColor = "bg-prodify-accent";
-                   textColor = "text-white drop-shadow-md";
-                 }
-                 tooltip = `${dateStr}\nTarget: ${target} min\nActual: ${actual} min`;
+               if (status === 'golden') {
+                 bgColor = "bg-prodify-accent";
+                 textColor = "text-white drop-shadow-md";
+                 tooltip += " (Exceeded)";
+               } else if (status === 'green') {
+                 bgColor = "bg-prodify-success";
+                 textColor = "text-white drop-shadow-md";
+                 tooltip += " (Met)";
+               } else if (status === 'yellow') {
+                 bgColor = "bg-prodify-warning";
+                 textColor = "text-white drop-shadow-md";
+                 tooltip += " (Under)";
+               } else if (status === 'red') {
+                 bgColor = "bg-prodify-danger";
+                 tooltip += " (Missed)";
                }
+            } else if (dayData && dayData.status === null) {
+               bgColor = "bg-transparent";
+               border = "border border-prodify-border";
+               tooltip += " (Upcoming/No Goal)";
             } else if (!isSameMnth) {
                bgColor = "bg-transparent opacity-0 pointer-events-none";
                border = "";

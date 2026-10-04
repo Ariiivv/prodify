@@ -1,23 +1,11 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Layers, Timer, ArrowRight, Flame, MoreVertical, Pencil, Trash2 } from 'lucide-react';
-import { format, subDays } from 'date-fns';
+import { Layers, ArrowRight, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { format, subDays, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-
-interface GoalPlan {
-  target_hours: number;
-  deadline: string;
-  deadline_display: string;
-  days_remaining: number;
-  historical_sprint_minutes: number;
-  daily_minutes_required: number;
-  sessions_per_day: number;
-  morning_sessions: number;
-  afternoon_sessions: number;
-}
 
 interface Workspace {
   id: number;
@@ -33,48 +21,53 @@ interface Workspace {
   description?: string;
 }
 
-
-interface RecentLog {
-  date: string;
-  target_met: boolean;
-  minutes_logged: number;
-  target_minutes_required: number;
+interface WorkspaceMetrics {
+  pace: {
+    score: number;
+    label: string;
+    consistency: number;
+    volume: number;
+    quality: number;
+  };
+  deep_work_ratio: number | null;
+  calendar: { date: string; status: 'red' | 'yellow' | 'green' | 'golden' | null }[];
+  workspace_streak_current: number;
+  workspace_streak_longest: number;
 }
 
 interface WorkspaceCardProps {
   workspace: Workspace;
   index?: number;
   onDeleted?: (workspaceId: number) => void;
-  goalPlan?: GoalPlan;
   totalMinutesLogged?: number;
 }
 
-export default function WorkspaceCard({ workspace, index = 0, onDeleted, goalPlan, totalMinutesLogged = 0 }: WorkspaceCardProps) {
+const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, onDeleted, totalMinutesLogged = 0 }: WorkspaceCardProps) {
   const navigate = useNavigate();
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
-  const [isLoadingLogs, setIsLoadingLogs] = useState(true);
+  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
-    const fetchLogs = async () => {
+    const fetchMetrics = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/analytics/workspace/${workspace.id}/recent`, {
+        const res = await fetch(`${API_BASE}/api/metrics/workspace/${workspace.id}`, {
           headers: getAuthHeaders(),
           cache: 'no-store'
         });
         if (res.ok && isMounted) {
           const data = await res.json();
-          setRecentLogs(data);
+          setMetrics(data);
         }
       } catch (err) {
-        console.error('Failed to fetch recent logs', err);
+        console.error('Failed to fetch workspace metrics', err);
       } finally {
-        if (isMounted) setIsLoadingLogs(false);
+        if (isMounted) setIsLoadingMetrics(false);
       }
     };
-    fetchLogs();
+    fetchMetrics();
     return () => { isMounted = false; };
   }, [workspace.id]);
 
@@ -82,7 +75,7 @@ export default function WorkspaceCard({ workspace, index = 0, onDeleted, goalPla
   const last7Days = Array.from({length: 7}).map((_, i) => format(subDays(today, 6 - i), 'yyyy-MM-dd'));
 
   const renderConsistencyChain = () => {
-    if (isLoadingLogs) {
+    if (isLoadingMetrics || !metrics) {
       return (
         <div className="flex items-center gap-1.5 mt-3 mb-1">
           {Array.from({length: 7}).map((_, i) => (
@@ -91,22 +84,25 @@ export default function WorkspaceCard({ workspace, index = 0, onDeleted, goalPla
         </div>
       );
     }
+
     return (
       <div className="flex items-center gap-1.5 mt-3 mb-1">
         {last7Days.map(dateStr => {
-          const log = recentLogs.find(l => l.date === dateStr);
-          let state = 'missed';
-          if (log?.target_met) state = 'met';
-          else if (log && log.minutes_logged > 0) state = 'partial';
-          
+          const dayLog = metrics.calendar.find((c) => c.date === dateStr);
           let className = "w-2.5 h-2.5 rounded-full transition-all duration-300 ";
-          if (state === 'met') className += "bg-[#e8ff47] shadow-[0_0_8px_#e8ff47]";
-          else if (state === 'partial') className += "bg-amber-400/80";
-          else className += "border border-[#333333] bg-transparent";
+          
+          if (!dayLog || !dayLog.status) {
+            className += "border border-[#333333] bg-transparent";
+          } else if (dayLog.status === 'golden' || dayLog.status === 'green') {
+            className += "bg-[#e8ff47] shadow-[0_0_8px_rgba(232,255,71,0.4)]";
+          } else if (dayLog.status === 'yellow') {
+            className += "bg-amber-400/80";
+          } else if (dayLog.status === 'red') {
+            className += "bg-red-500/80";
+          }
 
-          const tooltipText = log 
-            ? `${format(new Date(dateStr), 'MMM d')}: ${log.minutes_logged}m / ${log.target_minutes_required}m` 
-            : `${format(new Date(dateStr), 'MMM d')}: No activity`;
+          const statusDisplay = dayLog?.status ? dayLog.status.charAt(0).toUpperCase() + dayLog.status.slice(1) : 'No activity';
+          const tooltipText = `${format(parseISO(dateStr), 'MMM d')}: ${statusDisplay}`;
           
           return (
             <TooltipProvider key={dateStr} delayDuration={100}>
@@ -124,7 +120,6 @@ export default function WorkspaceCard({ workspace, index = 0, onDeleted, goalPla
       </div>
     );
   };
-
 
   const confirmDelete = async (keepMetrics: boolean) => {
     try {
@@ -156,6 +151,7 @@ export default function WorkspaceCard({ workspace, index = 0, onDeleted, goalPla
 
   const isSprint = workspace.category === 'sprint';
   const totalHoursLogged = (totalMinutesLogged / 60).toFixed(1);
+  const currentStreak = metrics ? metrics.workspace_streak_current : (workspace.current_streak || 0);
 
   return (
     <>
@@ -205,89 +201,58 @@ export default function WorkspaceCard({ workspace, index = 0, onDeleted, goalPla
             </div>
           </div>
           
-          
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-sm font-bold text-white">{workspace.name}</h3>
-            {(workspace.current_streak || 0) > 0 && (
+            {currentStreak > 0 && (
               <span className="text-[10px] font-bold text-orange-400 bg-orange-400/10 px-1.5 py-0.5 rounded-sm border border-orange-400/20 shadow-[0_0_8px_rgba(251,146,60,0.2)]">
-                🔥 {workspace.current_streak}d
+                🔥 {currentStreak}d
               </span>
             )}
           </div>
 
-          
-          <p className="text-xs text-[#888888] line-clamp-2 mb-5">
+          <p className="text-xs text-[#888888] line-clamp-2 mb-5 flex-grow">
             {workspace.focus_keywords || workspace.description || `${workspace.mode || 'structured'} track`}
           </p>
           
           <div className="mt-auto pt-2">
             {renderConsistencyChain()}
             <div className="mt-2" />
-            {isSprint ? (
-              <div className="space-y-3">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-white font-mono font-bold">{totalHoursLogged}h / {workspace.target_hours || '?'}h</span>
-                  {goalPlan?.days_remaining !== undefined && (
-                    <span className="text-[#111111] bg-[#e8ff47] px-2 py-0.5 rounded-none font-bold font-mono">
-                      {goalPlan.days_remaining}d left
-                    </span>
-                  )}
-                </div>
-                
-                {goalPlan ? (
-                  <div className="bg-[#111111] border border-[#2a2a2a] p-2 flex justify-between items-center">
-                    <span className="text-[10px] text-[#888888] uppercase tracking-wider font-bold">Pacing</span>
-                    {goalPlan.daily_minutes_required > 480 ? (
-                      <span className="text-xs text-red-400 font-bold flex items-center gap-1">⚠️ At Risk</span>
-                    ) : (
-                      <span className="text-xs text-white font-mono font-bold">{(goalPlan.daily_minutes_required / 60).toFixed(1)}h / day</span>
-                    )}
-                  </div>
-                ) : workspace.target_hours && workspace.deadline ? (
-                  (() => {
-                    const remaining = Math.max(0, (workspace.target_hours || 0) - parseFloat(totalHoursLogged));
-                    const daysLeft = Math.max(1, Math.ceil((new Date(workspace.deadline).getTime() - Date.now()) / 86400000));
-                    const dailyHours = remaining / daysLeft;
-                    return (
-                      <div className="bg-[#111111] border border-[#2a2a2a] p-2 flex justify-between items-center">
-                        <span className="text-[10px] text-[#888888] uppercase tracking-wider font-bold">Pacing</span>
-                        {dailyHours > 8 ? (
-                          <span className="text-xs text-red-400 font-bold flex items-center gap-1">⚠️ At Risk</span>
-                        ) : (
-                          <span className="text-xs text-white font-mono font-bold">{dailyHours.toFixed(1)}h / day</span>
-                        )}
-                      </div>
-                    );
-                  })()
-                ) : null}
+            
+            <div className="space-y-4">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-[#888888] uppercase tracking-wider text-[10px] font-bold">Total Logged</span>
+                <span className="text-white font-mono font-bold">{totalHoursLogged}h</span>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#888888] uppercase tracking-wider text-[10px] font-bold">Daily Goal</span>
-                  <span className="text-white font-mono font-bold">{workspace.daily_target_minutes || 60}m</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#888888] uppercase tracking-wider text-[10px] font-bold">Total Logged</span>
-                  <span className="text-white font-mono font-bold">{totalHoursLogged}h</span>
-                </div>
-                
-                <div className="flex items-center justify-between mt-2 pt-3 border-t border-[#2a2a2a]">
-                  <span className="text-[#8b5cf6] bg-[#8b5cf6]/10 px-2 py-1 rounded-none text-[10px] font-bold tracking-wide uppercase border border-[#8b5cf6]/20">
-                    📚 Continuous
+              
+              <div className="bg-[#111111] border border-[#2a2a2a] p-2 flex justify-between items-center">
+                <span className="text-[10px] text-[#888888] uppercase tracking-wider font-bold">Pace</span>
+                {isLoadingMetrics || !metrics ? (
+                   <span className="text-xs text-[#888888] font-mono animate-pulse">loading...</span>
+                ) : (
+                  <span className={`text-xs font-mono font-bold ${
+                    metrics.pace.label === 'Strong' ? 'text-[#e8ff47]' : 
+                    metrics.pace.label === 'Solid' ? 'text-green-400' :
+                    metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
+                  }`}>
+                    {metrics.pace.label} <span className="text-[#888888] ml-1">{metrics.pace.score.toFixed(0)}</span>
                   </span>
-                  
-                  <button className="text-[10px] font-bold text-white uppercase tracking-wider hover:text-[#8b5cf6] transition-colors flex items-center gap-1">
-                    Continue Track <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
+                )}
               </div>
-            )}
+              
+              <div className="flex items-center justify-between mt-2 pt-3 border-t border-[#2a2a2a]">
+                <span className={`${isSprint ? 'text-[#e8ff47] bg-[#e8ff47]/10 border-[#e8ff47]/20' : 'text-[#8b5cf6] bg-[#8b5cf6]/10 border-[#8b5cf6]/20'} px-2 py-1 rounded-none text-[10px] font-bold tracking-wide uppercase border`}>
+                  {isSprint ? '⚡ Sprint' : '🌌 Mastery'}
+                </span>
+                
+                <button className={`text-[10px] font-bold text-white uppercase tracking-wider ${isSprint ? 'hover:text-[#e8ff47]' : 'hover:text-[#8b5cf6]'} transition-colors flex items-center gap-1`}>
+                  Continue Track <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </motion.div>
 
-      {/* Smart Deletion Dialog */}
       <AnimatePresence>
         {isDeleting && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -338,4 +303,6 @@ export default function WorkspaceCard({ workspace, index = 0, onDeleted, goalPla
       </AnimatePresence>
     </>
   );
-}
+});
+
+export default WorkspaceCard;

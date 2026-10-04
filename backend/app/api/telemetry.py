@@ -66,7 +66,9 @@ class SessionCreate(BaseModel):
     workspace_id: int
     duration_minutes: int
     distraction_count: int = 0
+    distracted_seconds: float = 0.0
     burnout_score: float = 0.0
+    timezone: Optional[str] = None  # IANA timezone string, e.g. "America/New_York"
 
 
 def require_owned_workspace(workspace_id: int, user_id: str, db: Session) -> models.Workspace:
@@ -134,10 +136,28 @@ def create_completed_session(
         session_type="FOCUS",
         status="COMPLETED",
         burnout_score=max(0.0, min(1.0, payload.burnout_score)),
+        distraction_count=max(0, payload.distraction_count),
+        distracted_seconds=max(0.0, payload.distracted_seconds),
+        timezone=payload.timezone,
     )
     db.add(session)
     db.commit()
     db.refresh(session)
+
+    # Persist the distraction count as a summary TelemetryLog so it survives
+    # beyond the response and is queryable via the existing TelemetryLog join.
+    if payload.distraction_count > 0:
+        summary_log = models.TelemetryLog(
+            workspace_id=payload.workspace_id,
+            session_id=session.id,
+            metric_type="SESSION_DISTRACTION_SUMMARY",
+            distraction_type="AGGREGATE",
+            value=float(payload.distraction_count),
+            reason=f"{payload.distraction_count} distractions during {payload.duration_minutes}min session",
+        )
+        db.add(summary_log)
+        db.commit()
+
     return SessionResponse(
         id=session.id,
         workspace_id=session.workspace_id,

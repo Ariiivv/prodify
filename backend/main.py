@@ -1,4 +1,9 @@
 import logging
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
@@ -10,7 +15,7 @@ load_dotenv(dotenv_path=env_path)
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import ai_coach, auth, telemetry, workspaces, analytics, users
+from app.api import ai_coach, auth, telemetry, workspaces, analytics, users, metrics
 from app.models.connection import create_db_and_tables
 
 # Vision engine is optional — mediapipe/cv2 may not be installed on WSL/headless
@@ -82,6 +87,7 @@ app.include_router(workspaces.router, prefix="/workspaces")
 app.include_router(telemetry.router, prefix="/api")
 app.include_router(ai_coach.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(metrics.router, prefix="/api")
 
 
 @app.websocket("/vision")

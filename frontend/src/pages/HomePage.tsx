@@ -49,6 +49,26 @@ interface DistractionData {
   total_events: number;
 }
 
+interface HomeMetrics {
+  momentum: {
+    score: number;
+    label: string;
+    consistency: number;
+    volume: number;
+    quality: number;
+  };
+  total_workspaces: number;
+  deep_work_ratio_aggregate: number | null;
+  peak_focus_window: {
+    insufficient_data: boolean;
+    peak_range?: string;
+    alignment_rate?: number;
+  };
+  current_streak: number;
+  longest_streak: number;
+  calendar: any[];
+}
+
 const HomePage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'all' | 'sprint' | 'mastery'>('all');
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
@@ -56,7 +76,8 @@ const HomePage: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [goalPlans, setGoalPlans] = useState<Record<number, GoalPlan>>({});
-  const [globalStats, setGlobalStats] = useState<{current_global_streak: number, longest_global_streak: number, ten_day_rolling_score: number} | null>(null);
+  const [recentLogs, setRecentLogs] = useState<Record<number, any[]>>({});
+    const [homeMetrics, setHomeMetrics] = useState<HomeMetrics | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -67,66 +88,39 @@ const HomePage: React.FC = () => {
         headers = getAuthHeaders();
       }
 
-      const wsRes = await fetch(`${API_BASE}/workspaces`, { 
-        headers,
-        cache: 'no-store'
-      });
+      const [resAgg, resMetrics, resSessions] = await Promise.all([
+        fetch(`${API_BASE}/workspaces`, { headers, cache: 'no-store' }),
+        fetch(`${API_BASE}/api/metrics/home`, { headers, cache: 'no-store' }),
+        fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers, cache: 'no-store' })
+      ]);
 
-      // Fetch global analytics stats
-      const statsRes = await fetch(`${API_BASE}/api/analytics/global`, { headers, cache: 'no-store' }).catch(() => {
-        setDataWarnings(prev => Array.from(new Set([...prev, "Analytics unavailable"])));
-        return null;
-      });
-      if (statsRes && statsRes.ok) {
-        setGlobalStats(await statsRes.json());
-      }
+      const warnings = [];
 
-
-      if (wsRes.ok) {
-        const wsData: Workspace[] = await wsRes.json();
-        setWorkspaces(wsData);
-        setIsLoading(false); // Unblock UI immediately so workspaces appear
-
-        // Fetch Goal Optimizer plans for sprint workspaces with targets
-        const goalWorkspaces = wsData.filter(
-          ws => ws.category === 'sprint' && ws.target_hours && ws.target_hours > 0 && ws.deadline
-        );
-        const plans: Record<number, GoalPlan> = {};
-        await Promise.all(
-          goalWorkspaces.map(async ws => {
-            try {
-              const planRes = await fetch(
-                `${API_BASE}/api/goal-optimizer/plan?target_hours=${ws.target_hours}&deadline=${ws.deadline}&workspace_name=${encodeURIComponent(ws.name)}`,
-                { headers: getAuthHeaders() }
-              );
-              if (planRes.ok) {
-                plans[ws.id] = await planRes.json();
-              }
-            } catch {
-              // Goal optimizer not available - skip silently
-              setDataWarnings(prev => Array.from(new Set([...prev, "Goal optimizer unavailable"])));
-            }
-          })
-        );
-        setGoalPlans(plans);
+      if (resAgg.ok) {
+        const data = await resAgg.json();
+        setWorkspaces(data);
       } else {
-        console.error("Failed to fetch workspaces:", wsRes.status, await wsRes.text());
-        setIsLoading(false);
+        warnings.push("Workspaces");
       }
 
-      // Fetch recent sessions
-      const sessListRes = await fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => {
-        setDataWarnings(prev => Array.from(new Set([...prev, "Recent sessions unavailable"])));
-        return null;
-      });
-      if (sessListRes && sessListRes.ok) {
-        const sessData: Session[] = await sessListRes.json();
-        setSessions(sessData);
+      if (resMetrics.ok) {
+        setHomeMetrics(await resMetrics.json());
+      } else {
+        warnings.push("Metrics");
       }
 
+      if (resSessions.ok) {
+        setSessions(await resSessions.json());
+      } else {
+        warnings.push("Sessions");
+      }
+
+      if (warnings.length > 0) {
+        setDataWarnings(prev => Array.from(new Set([...prev, `Failed to load: ${warnings.join(', ')}`])));
+      }
+      setIsLoading(false);
     } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
+      console.error('Failed to fetch dashboard data:', error);
       setIsLoading(false);
     }
   }, []);
@@ -236,7 +230,7 @@ const HomePage: React.FC = () => {
               <span className="text-white font-mono font-bold text-sm sm:text-base">
                 {alignmentScore}% <span className="text-[#888888] text-[10px]">today</span>
                 {' · '}
-                ⚡ {globalStats ? Math.round(globalStats.ten_day_rolling_score * 100) : 0}% <span className="text-[#888888] text-[10px]">10d</span>
+                ⚡ {homeMetrics?.momentum?.score || 0}% <span className="text-[#888888] text-[10px]">7d</span>
               </span>
             </div>
           </div>
@@ -245,16 +239,31 @@ const HomePage: React.FC = () => {
             <div className="flex flex-col">
               <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Global Streak</span>
               <span className="text-white font-mono font-bold text-sm sm:text-base">
-                {globalStats?.current_global_streak || 0} Day{globalStats?.current_global_streak !== 1 && 's'}
+                {homeMetrics?.current_streak || 0} Day{homeMetrics?.current_streak !== 1 && 's'}
               </span>
-              <span className="text-[10px] text-[#e8ff47]">Best: {globalStats?.longest_global_streak || 0}d</span>
+              <span className="text-[10px] text-[#e8ff47]">Best: {homeMetrics?.longest_streak || 0}d</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-2xl hidden sm:block">🛡️</span>
+            <span className="text-2xl hidden sm:block">🧠</span>
             <div className="flex flex-col">
-              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Deflections</span>
-              <span className="text-white font-mono font-bold text-sm sm:text-base">{todayDistractions} blocked</span>
+              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Deep Work</span>
+              <span className="text-white font-mono font-bold text-sm sm:text-base">
+                {homeMetrics?.deep_work_ratio_aggregate != null ? `${homeMetrics.deep_work_ratio_aggregate}%` : '—'}
+                <span className="text-[#888888] text-[10px] ml-1">7d</span>
+              </span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <span className="text-2xl hidden sm:block">⏱️</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Peak Window</span>
+              <span className="text-white font-mono font-bold text-sm sm:text-base">
+                {homeMetrics?.peak_focus_window && !('insufficient_data' in homeMetrics.peak_focus_window) 
+                  ? (homeMetrics.peak_focus_window as any).peak_range 
+                  : 'Learning...'}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -329,8 +338,7 @@ const HomePage: React.FC = () => {
                       workspace={ws} 
                       index={i} 
                       onDeleted={handleDeleted} 
-                      goalPlan={goalPlans[ws.id]}
-                      totalMinutesLogged={wsSessionMinutes}
+                                                                  totalMinutesLogged={wsSessionMinutes}
                     />
                   );
                 })}

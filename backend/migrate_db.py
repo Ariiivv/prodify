@@ -34,6 +34,16 @@ def migrate():
         except Exception as e:
             logger.info(f"Column category may already exist or error: {e}. Skipping.")
 
+        try:
+            with engine.connect() as conn:
+                from sqlalchemy import text
+                conn.execute(text("ALTER TABLE workspaces ADD COLUMN long_break_duration INTEGER NOT NULL DEFAULT 15"))
+                conn.execute(text("ALTER TABLE workspaces ADD COLUMN long_break_interval INTEGER NOT NULL DEFAULT 4"))
+                conn.commit()
+                logger.info("Successfully added long_break columns to workspaces.")
+        except Exception as e:
+            logger.info(f"Columns long_break may already exist or error: {e}. Skipping.")
+
     except Exception as e:
         logger.error(f"Error during migration: {e}")
 

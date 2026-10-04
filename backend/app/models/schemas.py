@@ -35,10 +35,13 @@ class Workspace(Base):
     daily_target_minutes = Column(Integer, nullable=True, default=60) # For Mastery Mode
     work_duration = Column(Integer, nullable=False, default=45) # in minutes
     break_duration = Column(Integer, nullable=False, default=5)  # in minutes
+    long_break_duration = Column(Integer, nullable=False, default=15) # in minutes
+    long_break_interval = Column(Integer, nullable=False, default=4) # number of sessions before long break
     focus_keywords = Column(String, nullable=True) # JSON array of focus keywords for adaptive tracking
     camera_enabled = Column(Boolean, nullable=False, default=False)
     current_streak = Column(Integer, nullable=False, default=0)
     longest_streak = Column(Integer, nullable=False, default=0)
+    current_goal = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -84,6 +87,9 @@ class Session(Base):
     status = Column(String, nullable=False) # e.g., "COMPLETED", "PAUSED", "ABORTED"
     pause_reason = Column(String, nullable=True) # For FOCUS_PAUSED
     burnout_score = Column(Float, nullable=False, default=0.0)
+    distraction_count = Column(Integer, nullable=False, default=0)
+    distracted_seconds = Column(Float, nullable=False, default=0.0)
+    timezone = Column(String, nullable=True)  # IANA timezone string, e.g. "America/New_York"
 
     workspace = relationship("Workspace", back_populates="sessions")
     telemetry_logs = relationship("TelemetryLog", back_populates="session")

@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CameraOff, AlertTriangle, Webcam } from 'lucide-react';
-import { useTimerStore, initTimer, useTimer } from '@/lib/timerStore';
+import { useTimerStore, initTimer, useTimer, switchMode, resetDaily, updateLastActiveDate } from '@/lib/timerStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { useIdleDetection } from '@/hooks/useIdleDetection';
 import { useAdaptiveFocus } from '@/hooks/useAdaptiveFocus';
@@ -91,6 +91,18 @@ export default function WorkspacePage() {
   const wsId = id ? parseInt(id) : null;
   const timerState = useTimer();
 
+  // Pause timer if user navigates away
+  useEffect(() => {
+    return () => {
+      const store = useTimerStore.getState();
+      const ws = store.workspaces[wsId || -1];
+      if (ws && (ws.currentState === 'FOCUS_RUNNING' || ws.currentState === 'BREAK_RUNNING')) {
+        if (ws.currentState === 'FOCUS_RUNNING') store.pauseFocus('Navigated away');
+        if (ws.currentState === 'BREAK_RUNNING') store.pauseBreak();
+      }
+    };
+  }, [wsId]);
+
   // Component State
   const [burnoutProb, setBurnoutProb] = useState(0);
   const [workspace, setWorkspace] = useState<any>(null);
@@ -100,13 +112,13 @@ export default function WorkspacePage() {
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
   const [engagementState, setEngagementState] = useState<string>('ACTIVE_WORK');
   const [lastFocusedWindow, setLastFocusedWindow] = useState<string>('');
-  const loggedCompletionRef = useRef<number | null>(null);
+    const loggedCompletionRef = useRef<number | null>(null);
   const lastBurnoutMinuteRef = useRef<number | null>(null);
 
   // Compute workspace keywords for frontend-side matching
-  const workspaceKeywords = parseKeywords(workspace?.focus_keywords);
+  const workspaceKeywords = useMemo(() => parseKeywords(workspace?.focus_keywords), [workspace?.focus_keywords]);
   // Extract the raw intent string for the AI backend
-  const sessionIntent = getIntentString(workspace?.focus_keywords);
+  const sessionIntent = workspace?.current_goal || getIntentString(workspace?.focus_keywords);
 
   // If keywords are defined, disable tab-visibility enforcement (trust camera/gaze)
   const { enforcementTriggered, setEnforcementTriggered } = useTabVisibility({
@@ -315,8 +327,19 @@ export default function WorkspacePage() {
   // Initialize timer
   useEffect(() => {
     if (workspace && wsId) {
-      useTimerStore.getState().setActiveWorkspace(wsId, workspace.work_duration || 25, workspace.break_duration || 5);
-      initTimer(workspace.work_duration || 25, workspace.break_duration || 5);
+      useTimerStore.getState().setActiveWorkspace(
+        wsId, 
+        workspace.work_duration || 25, 
+        workspace.break_duration || 5, 
+        workspace.long_break_duration || 15, 
+        workspace.long_break_interval || 4
+      );
+      initTimer(
+        workspace.work_duration || 25, 
+        workspace.break_duration || 5, 
+        workspace.long_break_duration || 15, 
+        workspace.long_break_interval || 4
+      );
     }
   }, [workspace, wsId]);
 
@@ -368,6 +391,31 @@ export default function WorkspacePage() {
 
     if (isFocus && isEnded && workspace && wsId) {
       const completed = current === 'SESSION_COMPLETED';
+      
+      // Notify user on completion
+      if (completed && loggedCompletionRef.current !== timerState.sessionCount) {
+        toast.success(`Yayy! You completed session ${timerState.sessionCount} of this workspace! 🎉`, { duration: 4000 });
+        
+        // Force App Window to Front
+        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+          const appWindow = getCurrentWindow();
+          const elevate = async () => {
+            try {
+              await appWindow.unminimize();
+              await appWindow.show();
+              await appWindow.setAlwaysOnTop(true);
+              await appWindow.setFocus();
+              setTimeout(async () => {
+                await appWindow.setAlwaysOnTop(false);
+              }, 3500);
+            } catch (err) {
+              console.error('Failed to elevate window:', err);
+            }
+          };
+          elevate();
+        });
+      }
+
       const currentHour = new Date().getHours();
       let time_of_day = 'night';
       if (currentHour >= 5 && currentHour < 12) time_of_day = 'morning';
@@ -397,6 +445,8 @@ export default function WorkspacePage() {
             workspace_id: wsId,
             duration_minutes: workspace.work_duration || 45,
             distraction_count: timerState.distractionCount,
+            distracted_seconds: timerState.distractedSeconds || 0,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             burnout_score: burnoutProb,
           }),
         }).catch(error => {
@@ -499,25 +549,38 @@ export default function WorkspacePage() {
             <div className="mb-8 flex flex-col items-center w-full">
               {/* Pomofocus Mode Pills */}
               <div className="flex items-center gap-2 mb-6 bg-secondary/30 p-1.5 rounded-full border border-border/40">
-                <div className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${timerState.sessionMode === 'FOCUS' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground'}`}>Focus</div>
-                <div className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground'}`}>Short Break</div>
-                <div className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground'}`}>Long Break</div>
+                <button onClick={() => switchMode('FOCUS')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Focus</button>
+                <button onClick={() => switchMode('SHORT_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Short Break</button>
+                <button onClick={() => switchMode('LONG_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-[#e8ff47] text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Long Break</button>
               </div>
 
               {/* Round Indicator */}
               <div className="flex flex-col items-center mb-6">
-                <span className="text-sm font-bold text-muted-foreground tracking-widest uppercase mb-2">
-                  Session {timerState.roundCount === 0 ? 1 : (timerState.roundCount % timerState.longBreakInterval === 0 ? timerState.longBreakInterval : (timerState.roundCount % timerState.longBreakInterval) + 1)} of {timerState.longBreakInterval} today
-                </span>
-                <div className="flex gap-2">
-                  {Array.from({ length: timerState.longBreakInterval }).map((_, i) => {
-                    const currentRoundNum = timerState.roundCount % timerState.longBreakInterval;
-                    const isCompleted = timerState.roundCount > 0 && (i < currentRoundNum || currentRoundNum === 0);
-                    return (
-                      <div key={i} className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-[#e8ff47]' : 'bg-border'}`} />
-                    );
-                  })}
-                </div>
+                {(() => {
+                  const dailyTarget = workspace?.daily_target_minutes || 60;
+                  const sessionDuration = workspace?.work_duration || 25;
+                  const totalSessionsForDay = Math.max(1, Math.ceil(dailyTarget / sessionDuration));
+                  const displaySessionNumber = Math.min(timerState.sessionCount + (timerState.sessionMode === 'FOCUS' ? 1 : 0), totalSessionsForDay);
+                  
+                  return (
+                    <>
+                      <span className="text-sm font-bold text-muted-foreground tracking-widest uppercase mb-2">
+                        Session {displaySessionNumber} of {totalSessionsForDay} today
+                      </span>
+                      <div className="flex gap-2 flex-wrap justify-center max-w-[280px]">
+                        {Array.from({ length: totalSessionsForDay }).map((_, i) => {
+                          const isCompleted = i < timerState.sessionCount;
+                          return (
+                            <div 
+                              key={i} 
+                              className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-[#e8ff47]' : 'bg-border'}`} 
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
@@ -740,6 +803,7 @@ export default function WorkspacePage() {
               workspaceId={workspace.id} 
               mode={workspace.mode} 
               sessionCount={timerState.sessionCount} 
+              
             />
           )}
         </motion.div>

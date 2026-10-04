@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { audioEngine } from '@/lib/audio';
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 
@@ -26,9 +27,12 @@ interface WorkspaceTimerState {
   pauseReason: string | null;
   sessionCount: number;
   distractionCount: number;
+  distractedSeconds: number;
+  lastPausedAt: number | null;
   intervalId: ReturnType<typeof setInterval> | null;
   roundCount: number;
   sessionMode: 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
+  lastActiveDate: string;
 }
 
 interface TimerStore {
@@ -39,7 +43,7 @@ interface TimerStore {
   defaultLongBreakDuration: number;
   longBreakInterval: number;
 
-  setActiveWorkspace: (workspaceId: number, focusDuration?: number, breakDuration?: number) => void;
+  setActiveWorkspace: (workspaceId: number, focusDuration?: number, breakDuration?: number, longBreakDuration?: number, longBreakInterval?: number) => void;
   getState: (workspaceId: number) => WorkspaceTimerState;
   startFocus: () => void;
   pauseFocus: (reason: string) => void;
@@ -49,6 +53,7 @@ interface TimerStore {
   resumeBreak: () => void;
   resetTimer: () => void;
   completeSession: () => void;
+  switchMode: (mode: 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK') => void;
   tick: () => void;
   getActiveFocusDuration: () => number;
   getActiveBreakDuration: () => number;
@@ -61,12 +66,17 @@ const makeInitialState = (): WorkspaceTimerState => ({
   pauseReason: null,
   sessionCount: 0,
   distractionCount: 0,
+  distractedSeconds: 0,
+  lastPausedAt: null,
   intervalId: null,
   roundCount: 0,
   sessionMode: 'FOCUS',
+  lastActiveDate: new Date().toISOString().split('T')[0],
 });
 
-export const useTimerStore = create<TimerStore>((set, get) => {
+export const useTimerStore = create<TimerStore>()(
+  persist(
+    (set, get) => {
   const getWorkspaceState = (): WorkspaceTimerState => {
     const { activeWorkspaceId, workspaces } = get();
     if (activeWorkspaceId === null || !workspaces[activeWorkspaceId]) {
@@ -95,7 +105,7 @@ export const useTimerStore = create<TimerStore>((set, get) => {
     defaultLongBreakDuration: 15 * 60,
     longBreakInterval: 4,
 
-    setActiveWorkspace: (workspaceId: number, focusDuration?: number, breakDuration?: number) => {
+    setActiveWorkspace: (workspaceId: number, focusDuration?: number, breakDuration?: number, longBreakDuration?: number, longBreakInterval?: number) => {
       const state = get();
       // Clear the PREVIOUSLY active workspace's interval — otherwise the orphaned
       // setInterval keeps calling get().tick(), which will decrement the NEW
@@ -113,6 +123,8 @@ export const useTimerStore = create<TimerStore>((set, get) => {
       }
       const fd = focusDuration !== undefined ? focusDuration * 60 : state.defaultFocusDuration;
       const bd = breakDuration !== undefined ? breakDuration * 60 : state.defaultBreakDuration;
+      const lbd = longBreakDuration !== undefined ? longBreakDuration * 60 : state.defaultLongBreakDuration;
+      const lbi = longBreakInterval !== undefined ? longBreakInterval : state.longBreakInterval;
       // Always force the activated workspace to IDLE with no running interval.
       // Reset the timeRemaining to ensure a clean start if navigating away mid-session and back.
       set({
@@ -130,6 +142,8 @@ export const useTimerStore = create<TimerStore>((set, get) => {
         },
         defaultFocusDuration: fd,
         defaultBreakDuration: bd,
+        defaultLongBreakDuration: lbd,
+        longBreakInterval: lbi,
       });
       if (!existing) {
         setWorkspaceState({ timeRemaining: fd });
@@ -175,15 +189,20 @@ export const useTimerStore = create<TimerStore>((set, get) => {
         currentState: 'FOCUS_PAUSED',
         pauseReason: reason,
         intervalId: null,
+        lastPausedAt: Date.now(),
       });
     },
 
     resumeFocus: () => {
       const id = setInterval(() => get().tick(), 1000);
+      const ws = getWorkspaceState();
+      const additionalDistractedSeconds = ws.lastPausedAt ? (Date.now() - ws.lastPausedAt) / 1000 : 0;
       setWorkspaceState({
         currentState: 'FOCUS_RUNNING',
         intervalId: id,
         pauseReason: null,
+        lastPausedAt: null,
+        distractedSeconds: (ws.distractedSeconds || 0) + additionalDistractedSeconds,
       });
     },
 
@@ -245,14 +264,27 @@ export const useTimerStore = create<TimerStore>((set, get) => {
     },
 
     resetTimer: () => {
-      const id = getWorkspaceState().intervalId;
+      const ws = getWorkspaceState();
+      const id = ws.intervalId;
       if (id) clearInterval(id);
-      const fd = get().getActiveFocusDuration();
+
+      // Reset only the CURRENT phase's timer back to its full duration.
+      // Do NOT change sessionMode, roundCount, or sessionCount.
+      let resetDuration: number;
+      if (ws.sessionMode === 'LONG_BREAK') {
+        resetDuration = get().defaultLongBreakDuration;
+      } else if (ws.sessionMode === 'SHORT_BREAK') {
+        resetDuration = get().defaultBreakDuration;
+      } else {
+        resetDuration = get().getActiveFocusDuration();
+      }
+
+      // Go to the appropriate idle/paused state for the current phase
+      const resetState: FSMState = ws.sessionMode === 'FOCUS' ? 'IDLE' : 'BREAK_PAUSED';
       setWorkspaceState({
-        currentState: 'IDLE',
-        timeRemaining: fd,
+        currentState: resetState,
+        timeRemaining: resetDuration,
         intervalId: null,
-        sessionMode: 'FOCUS',
       });
     },
 
@@ -282,13 +314,59 @@ export const useTimerStore = create<TimerStore>((set, get) => {
         nextTime = get().defaultFocusDuration;
       }
 
+      // First, briefly enter SESSION_COMPLETED so the chime effect fires
+      // in TimerControls (useEffect on state === 'SESSION_COMPLETED').
       setWorkspaceState({
         currentState: 'SESSION_COMPLETED',
         sessionCount,
         roundCount,
         sessionMode: nextMode,
-        timeRemaining: nextTime, // pre-load next phase duration
+        timeRemaining: nextTime,
         intervalId: null,
+        distractionCount: 0,
+        distractedSeconds: 0,
+      });
+
+      // Auto-advance: immediately start the next phase after a microtask
+      // so that SESSION_COMPLETED is observable for effects (chime, logging).
+      setTimeout(() => {
+        const current = getWorkspaceState();
+        // Only auto-advance if still in SESSION_COMPLETED (user hasn't manually acted)
+        if (current.currentState === 'SESSION_COMPLETED') {
+          if (nextMode === 'FOCUS') {
+            get().startFocus();
+          } else {
+            get().startBreak();
+          }
+        }
+      }, 500);
+    },
+
+    /**
+     * Switch to a specific mode manually (user clicking "Focus"/"Short Break"/"Long Break" tabs).
+     * This does NOT count as completing a round — it just lets the user preview/jump to a phase.
+     * Preserves roundCount and sessionCount.
+     */
+    switchMode: (mode: 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK') => {
+      const ws = getWorkspaceState();
+      const id = ws.intervalId;
+      if (id) clearInterval(id);
+
+      let duration: number;
+      if (mode === 'LONG_BREAK') {
+        duration = get().defaultLongBreakDuration;
+      } else if (mode === 'SHORT_BREAK') {
+        duration = get().defaultBreakDuration;
+      } else {
+        duration = get().getActiveFocusDuration();
+      }
+
+      setWorkspaceState({
+        currentState: mode === 'FOCUS' ? 'IDLE' : 'BREAK_PAUSED',
+        timeRemaining: duration,
+        intervalId: null,
+        sessionMode: mode,
+        // DO NOT touch roundCount or sessionCount
       });
     },
 
@@ -305,7 +383,29 @@ export const useTimerStore = create<TimerStore>((set, get) => {
       setWorkspaceState({ distractionCount: current + 1 });
     },
   };
-});
+    },
+    {
+      name: 'prodify-timer-storage',
+      partialize: (state) => {
+        const persistedWorkspaces = { ...state.workspaces };
+        for (const key in persistedWorkspaces) {
+          const ws = persistedWorkspaces[key];
+          let newState = ws.currentState;
+          if (newState === 'FOCUS_RUNNING') newState = 'FOCUS_PAUSED';
+          if (newState === 'BREAK_RUNNING') newState = 'BREAK_PAUSED';
+          
+          persistedWorkspaces[key] = { 
+            ...ws, 
+            intervalId: null,
+            currentState: newState,
+            pauseReason: ws.currentState === 'FOCUS_RUNNING' ? 'Navigated Away' : ws.pauseReason
+          };
+        }
+        return { ...state, workspaces: persistedWorkspaces };
+      }
+    }
+  )
+);
 
 // Convenience function exports for components that use direct function imports
 export function startFocus() { useTimerStore.getState().startFocus(); }
@@ -315,15 +415,18 @@ export function startBreak() { useTimerStore.getState().startBreak(); }
 export function pauseBreak() { useTimerStore.getState().pauseBreak(); }
 export function resumeBreak() { useTimerStore.getState().resumeBreak(); }
 export function resetTimer() { useTimerStore.getState().resetTimer(); }
+export function resetDaily() { useTimerStore.getState().resetDaily(); }
+export function updateLastActiveDate() { useTimerStore.getState().updateLastActiveDate(); }
+export function switchMode(mode: 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK') { useTimerStore.getState().switchMode(mode); }
 export function incrementDistraction() { useTimerStore.getState().incrementDistraction(); }
 export function getTimerState() {
   const store = useTimerStore.getState();
   const ws = store.workspaces[store.activeWorkspaceId ?? -1];
   return ws || { currentState: 'IDLE', timeRemaining: 25 * 60, focusDuration: 25 * 60, breakDuration: 5 * 60, sessionCount: 0, distractionCount: 0, pauseReason: null, roundCount: 0, sessionMode: 'FOCUS' };
 }
-export function initTimer(focusMinutes = 25, breakMinutes = 5) {
+export function initTimer(focusMinutes = 25, breakMinutes = 5, longBreakMinutes = 15, longBreakInterval = 4) {
   // initTimer is called when workspace loads - set defaults
-  useTimerStore.setState({ defaultFocusDuration: focusMinutes * 60, defaultBreakDuration: breakMinutes * 60, defaultLongBreakDuration: breakMinutes * 3 * 60 });
+  useTimerStore.setState({ defaultFocusDuration: focusMinutes * 60, defaultBreakDuration: breakMinutes * 60, defaultLongBreakDuration: longBreakMinutes * 60, longBreakInterval: longBreakInterval });
 }
 export function useTimer() {
   // Subscribe to timerStore for the active workspace
@@ -341,6 +444,7 @@ export function useTimer() {
     pauseReason: ws?.pauseReason ?? null,
     roundCount: ws?.roundCount ?? 0,
     sessionMode: ws?.sessionMode ?? 'FOCUS',
+    lastActiveDate: ws?.lastActiveDate ?? new Date().toISOString().split('T')[0],
     longBreakInterval: store.longBreakInterval,
     defaultLongBreakDuration: store.defaultLongBreakDuration,
   };

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Webcam from 'react-webcam';
 import { getWsUrl } from '@/lib/config';
 import { CameraOff, Camera, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -22,7 +22,7 @@ interface WebcamStreamProps {
 const FRAME_INTERVAL_MS = 2000; // Send a frame every 2 seconds
 const CAMERA_TIMEOUT_MS = 10_000; // Fail-fast if getUserMedia doesn't resolve in 10s
 
-export default function WebcamStream({ onDistractionDetected, onStatus, onEngagementState, isEnabled }: WebcamStreamProps) {
+const WebcamStream = React.memo(function WebcamStream({ onDistractionDetected, onStatus, onEngagementState, isEnabled }: WebcamStreamProps) {
   const webcamRef = useRef<Webcam>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -421,7 +421,7 @@ export default function WebcamStream({ onDistractionDetected, onStatus, onEngage
       )}
     </div>
   );
-}
+});
 
 // Helper to show a toast with permission instructions
 function toastPermissionHint() {
@@ -430,6 +430,8 @@ function toastPermissionHint() {
     duration: 5000,
   });
 }
+
+export default WebcamStream;
 
 // Export type for external use
 export type { CameraStatus, CameraErrorInfo };

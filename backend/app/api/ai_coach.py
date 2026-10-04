@@ -113,7 +113,12 @@ async def chat_endpoint(
         if is_debrief:
             distractions = ctx.get("distractionCount", 0)
             work_dur = ctx.get("workDuration", 25)
-            prompt = f"The user just successfully finished a {work_dur}-minute focus session with only {distractions} distractions. Acknowledge this enthusiastically in one sentence, and ask them what they accomplished to journal it."
+            distracted_secs = ctx.get("distractedSeconds", 0)
+            if distracted_secs > 300:
+                mins = int(distracted_secs // 60)
+                prompt = f"The user just finished a {work_dur}-minute session, but they paused or were absent for {mins} minutes during it. Scold them constructively for taking such a long un-planned break, as it ruins their metrics, and ask what took so long."
+            else:
+                prompt = f"The user just successfully finished a {work_dur}-minute focus session with only {distractions} minor distractions. Acknowledge this enthusiastically in one sentence, and ask them what they accomplished to journal it."
             reply = await engine.generate_coaching_response(
                 message=prompt,
                 context=ctx,
@@ -235,16 +240,9 @@ async def ai_function_call(
 
             explanation = result.get("explanation", f"Workspace '{workspace.name}' created successfully!")
 
-            # Trigger GoalOptimizer for Structured Goal Workspaces
+            # Adjust explanation for structured goals
             if "Structured" in mode or target_hours or deadline:
-                from app.services.goal_optimizer import calculate_daily_plan
-                plan = calculate_daily_plan(
-                    target_hours=target_hours or 20.0,
-                    deadline=deadline,
-                    db=db,
-                    workspace_name=workspace.name,
-                )
-                explanation = f"{explanation}\n\n{plan['commitment_markdown']}"
+                explanation = f"{explanation}\n\nWorkspace successfully scheduled for {target_hours or 20} hours before {deadline or 'the deadline'}."
 
             return FunctionCallResponse(
                 intent="create_workspace",
@@ -269,48 +267,9 @@ async def ai_function_call(
 
 
 # ---------------------------------------------------------------------------
-# Goal Optimizer Endpoints
+# Goal Optimizer Endpoints (Removed in Phase 2)
 # ---------------------------------------------------------------------------
 
-class GoalPlanRequest(BaseModel):
-    target_hours: float = 20.0
-    deadline: Optional[str] = None
-    workspace_name: Optional[str] = "Goal Workspace"
-
-
-@router.post("/goal-optimizer/plan")
-@router.post("/ai-coach/goal-optimizer/plan")
-def generate_goal_plan(
-    payload: GoalPlanRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    """Calculate predictive daily commitment plan."""
-    from app.services.goal_optimizer import calculate_daily_plan
-    return calculate_daily_plan(
-        target_hours=payload.target_hours,
-        deadline=payload.deadline,
-        db=db,
-        workspace_name=payload.workspace_name or "Goal Workspace",
-    )
-
-
-@router.get("/goal-optimizer/plan")
-@router.get("/ai-coach/goal-optimizer/plan")
-def get_goal_plan(
-    target_hours: float = 20.0,
-    deadline: Optional[str] = None,
-    workspace_name: str = "Goal Workspace",
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    from app.services.goal_optimizer import calculate_daily_plan
-    return calculate_daily_plan(
-        target_hours=target_hours,
-        deadline=deadline,
-        db=db,
-        workspace_name=workspace_name,
-    )
 
 @router.get("/ai-coach/daily-insight")
 async def get_daily_insight(

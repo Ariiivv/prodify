@@ -23,6 +23,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [category, setCategory] = useState('mastery');
   const [focusDuration, setFocusDuration] = useState('25');
   const [breakDuration, setBreakDuration] = useState('5');
+  const [longBreakDuration, setLongBreakDuration] = useState('15');
+  const [longBreakInterval, setLongBreakInterval] = useState('4');
   const [targetHours, setTargetHours] = useState('');
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
   const [dailyHours, setDailyHours] = useState('1');
@@ -44,12 +46,22 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
 
     const workDur = parseInt(focusDuration);
     const breakDur = parseInt(breakDuration);
+    const longBreakDur = parseInt(longBreakDuration);
+    const longBreakInt = parseInt(longBreakInterval);
     if (isNaN(workDur) || workDur < 1) {
       toast.error("Focus duration must be at least 1 minute");
       return;
     }
     if (isNaN(breakDur) || breakDur < 1) {
       toast.error("Break duration must be at least 1 minute");
+      return;
+    }
+    if (isNaN(longBreakDur) || longBreakDur < 1) {
+      toast.error("Long break duration must be at least 1 minute");
+      return;
+    }
+    if (isNaN(longBreakInt) || longBreakInt < 1) {
+      toast.error("Long break interval must be at least 1");
       return;
     }
 
@@ -74,16 +86,16 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
         name: name.trim(),
         mode,
         category,
-        theme_color: 'violet',
         work_duration: workDur,
         break_duration: breakDur,
+        long_break_duration: longBreakDur,
+        long_break_interval: longBreakInt,
         target_hours: category === 'sprint' && targetHours.trim() ? parseFloat(targetHours) : null,
-        // Format as YYYY-MM-DD local time, safely preventing timezone offset issues
         deadline: category === 'sprint' && deadline ? format(deadline, 'yyyy-MM-dd') : null,
         daily_target_minutes: category === 'mastery' ? dailyMin : 60,
         focus_keywords: focusKeywords.trim() || null,
-        camera_enabled: cameraEnabled,
         current_goal: goalDescription.trim() || null,
+        camera_enabled: cameraEnabled,
       };
 
       const response = await fetch(`${API_BASE}/workspaces`, {
@@ -114,6 +126,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       setCategory('mastery');
       setFocusDuration('25');
       setBreakDuration('5');
+      setLongBreakDuration('15');
+      setLongBreakInterval('4');
       setTargetHours('');
       setDeadline(undefined);
       setDailyHours('1');
@@ -232,13 +246,41 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Break Duration (min)</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Short Break (min)</label>
                     <Input
                       type="number"
                       required
                       value={breakDuration}
                       onChange={(e) => setBreakDuration(e.target.value)}
                       placeholder="5"
+                      min="1"
+                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                    />
+                  </div>
+                </div>
+
+                {/* Long Break Settings */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Long Break (min)</label>
+                    <Input
+                      type="number"
+                      required
+                      value={longBreakDuration}
+                      onChange={(e) => setLongBreakDuration(e.target.value)}
+                      placeholder="15"
+                      min="1"
+                      className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Long Break Interval</label>
+                    <Input
+                      type="number"
+                      required
+                      value={longBreakInterval}
+                      onChange={(e) => setLongBreakInterval(e.target.value)}
+                      placeholder="4"
                       min="1"
                       className="bg-[#1a1a1a] border-[#2a2a2a] text-white rounded-none focus-visible:ring-1 focus-visible:ring-[#e8ff47]"
                     />

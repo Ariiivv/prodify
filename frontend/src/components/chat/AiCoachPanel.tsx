@@ -40,7 +40,9 @@ function getTimeOfDayGreeting(): string {
   return 'Good evening';
 }
 
-export default function AiCoachPanel({
+import React from "react";
+
+const AiCoachPanel = React.memo(function AiCoachPanel({
   workspaceId,
   focusMinutes,
   distractionCount,
@@ -68,7 +70,7 @@ export default function AiCoachPanel({
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
   }, [messages]);
 
@@ -114,6 +116,7 @@ export default function AiCoachPanel({
         workspace_name: workspaceName,
         context: {
           distractionCount: localDistractionCount + distractionCount,
+          distractedSeconds,
           focusMinutes,
           burnoutProbability,
           currentState,
@@ -172,6 +175,8 @@ export default function AiCoachPanel({
     try {
       const payload = {
         message: text,
+        workspace_name: workspaceName || 'Default',
+        workspace_mode: currentState?.includes('BREAK') ? 'Break' : 'Structured',
         context: {
           distractionCount: localDistractionCount + distractionCount,
           timeLeft: timeRemainingString,
@@ -265,7 +270,7 @@ export default function AiCoachPanel({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 w-[calc(100%-2rem)] md:w-96 h-[32rem] bg-[#111111] border border-[#2a2a2a] rounded-none shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
+            className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 w-[calc(100%-2rem)] md:w-[28rem] h-[36rem] max-h-[85vh] bg-[#111111] border border-[#2a2a2a] rounded-none shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] bg-[#161616]">
@@ -403,4 +408,6 @@ export default function AiCoachPanel({
       </AnimatePresence>
     </>
   );
-}
+});
+
+export default AiCoachPanel;
