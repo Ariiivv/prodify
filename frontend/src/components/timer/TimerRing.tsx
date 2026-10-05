@@ -5,9 +5,18 @@ interface TimerRingProps {
   timeRemaining: number;
   totalDuration: number;
   state: string;
+  themeColor?: string;
+  sessionMode?: 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
 }
 
-export default function TimerRing({ timeRemaining, totalDuration, state }: TimerRingProps) {
+export default function TimerRing({ timeRemaining, totalDuration, state, themeColor, sessionMode }: TimerRingProps) {
+  const getRingColor = () => {
+    if (sessionMode === 'SHORT_BREAK') return '#10b981';
+    if (sessionMode === 'LONG_BREAK') return '#3b82f6';
+    return themeColor || '#3b82f6';
+  };
+  const activeColor = getRingColor();
+
   const progress = totalDuration > 0 ? (timeRemaining / totalDuration) : 1;
   const radius = 120;
   const circumference = 2 * Math.PI * radius;
@@ -60,7 +69,7 @@ export default function TimerRing({ timeRemaining, totalDuration, state }: Timer
         <motion.circle
           cx="140" cy="140" r={radius}
           fill="none"
-          stroke="#3b82f6"
+          stroke={activeColor}
           strokeWidth="6"
           strokeLinecap="round"
           strokeDasharray={circumference}

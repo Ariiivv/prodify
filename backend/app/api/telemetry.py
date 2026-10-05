@@ -50,6 +50,7 @@ class ActivityClassification(BaseModel):
 class SessionResponse(BaseModel):
     id: int
     workspace_id: int
+    workspace_name: str = "Unknown"
     duration_minutes: int
     distraction_count: int
     burnout_score: float = 0.0
@@ -109,6 +110,7 @@ def get_sessions(
         results.append(SessionResponse(
             id=s.id,
             workspace_id=s.workspace_id,
+            workspace_name=s.workspace.name if s.workspace else 'Unknown',
             duration_minutes=(s.duration or 0) // 60,
             distraction_count=distraction_count,
             burnout_score=s.burnout_score or 0.0,

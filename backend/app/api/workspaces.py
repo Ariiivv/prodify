@@ -18,7 +18,7 @@ router = APIRouter(tags=["workspaces"])
 class WorkspacePayload(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     mode: str = Field(default="structured", min_length=1, max_length=80)
-    category: Optional[str] = Field(default="mastery", pattern="^(sprint|mastery)$")
+    category: Optional[str] = Field(default="mastery", pattern="^(sprint|mastery|casual)$")
     target_hours: Optional[float] = Field(default=None, ge=0)
     deadline: Optional[date] = None
     daily_target_minutes: Optional[int] = Field(default=60, ge=0, le=720)

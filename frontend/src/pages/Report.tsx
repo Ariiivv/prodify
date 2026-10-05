@@ -17,21 +17,21 @@ import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCal
 const focusChartConfig = {
   focus: {
     label: 'Focus Minutes',
-    color: 'hsl(263, 70%, 58%)',
+    color: '#ffffff',
   },
 };
 
 const wsChartConfig = {
   minutes: {
     label: 'Focus Minutes',
-    color: 'hsl(187, 72%, 48%)',
+    color: '#ffffff',
   },
 };
 
 const appsChartConfig = {
   count: {
     label: 'Distraction Events',
-    color: 'hsl(340, 70%, 50%)',
+    color: '#ef4444',
   },
 };
 
@@ -89,16 +89,14 @@ export default function Report() {
 
   // Per-workspace data
   const wsData = useMemo(() => {
-    const wsMap: Record<string, string> = {};
-    workspaces.forEach((ws: any) => { wsMap[ws.id] = ws.name; });
     const byWs: Record<string, any> = {};
     sessions.forEach((s: any) => {
-      const name = wsMap[s.workspace_id] || 'Unknown';
+      const name = s.workspace_name || 'Unknown';
       if (!byWs[name]) byWs[name] = { name, minutes: 0 };
       byWs[name].minutes += s.duration_minutes || 0;
     });
     return Object.values(byWs).sort((a: any, b: any) => b.minutes - a.minutes).slice(0, 8);
-  }, [sessions, workspaces]);
+  }, [sessions]);
 
   const totalFocus = sessions.reduce((s: number, r: any) => s + (r.duration_minutes || 0), 0);
   const totalDistractions = sessions.reduce((s: number, r: any) => s + (r.distraction_count || 0), 0);
@@ -107,8 +105,8 @@ export default function Report() {
     : 0;
 
   const summaryStats = [
-    { label: 'Total Focus Hours', value: `${(totalFocus / 60).toFixed(1)}h`, icon: Clock, color: 'text-accent' },
-    { label: 'Total Sessions', value: sessions.length, icon: TrendingUp, color: 'text-primary' },
+    { label: 'Total Focus Hours', value: `${(totalFocus / 60).toFixed(1)}h`, icon: Clock, color: 'text-indigo-400' },
+    { label: 'Total Sessions', value: sessions.length, icon: TrendingUp, color: 'text-emerald-400' },
     { label: 'Total Distractions', value: totalDistractions, icon: AlertCircle, color: 'text-amber-400' },
     { label: 'Avg Burnout', value: `${avgBurnout}%`, icon: Flame, color: 'text-destructive' },
   ];
@@ -136,7 +134,7 @@ export default function Report() {
         className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10"
       >
         {summaryStats.map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-5">
+          <div key={label} className="rounded-xl border border-border bg-card shadow-sm backdrop-blur-sm p-5">
             <div className="flex items-center gap-2 mb-2">
               <Icon className={`w-4 h-4 ${color}`} />
               <span className="text-xs text-muted-foreground font-medium">{label}</span>
@@ -166,11 +164,11 @@ export default function Report() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12 }}
-              className="rounded-2xl border border-border/50 bg-card/50 p-6 mb-6"
+              className="rounded-xl border border-border bg-card shadow-sm p-6 mb-6"
             >
               <h3 className="text-sm font-semibold text-foreground mb-1">Overall Goal Progress</h3>
               <p className="text-xs text-muted-foreground mb-4">Your combined focus performance across all active workspaces</p>
-              <div className="max-w-xl">
+              <div className="w-full md:max-w-md lg:max-w-sm">
                 <StructuredGoalCalendar 
                   workspaceId={0} 
                   calendar={homeMetrics.calendar} 
@@ -185,16 +183,16 @@ export default function Report() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
-            className="rounded-2xl border border-border/50 bg-card/50 p-6"
+            className="rounded-xl border border-border bg-card shadow-sm p-6"
           >
             <h3 className="text-sm font-semibold text-foreground mb-4">Focus Minutes per Day</h3>
             <ChartContainer config={focusChartConfig} className="h-[220px] w-full">
-              <LineChart data={dailyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
+              <LineChart data={dailyData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: '#888', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: '#888', fontSize: 11 }} tickLine={false} axisLine={false} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Line type="monotone" dataKey="focus" name="Focus Minutes" stroke="var(--color-focus)" strokeWidth={2} dot={{ fill: 'var(--color-focus)' }} />
+                <Line type="monotone" dataKey="focus" name="Focus Minutes" stroke="var(--color-focus)" strokeWidth={2} dot={{ fill: 'var(--color-focus)', r: 4, strokeWidth: 2, stroke: '#000' }} />
               </LineChart>
             </ChartContainer>
           </motion.div>
@@ -204,16 +202,16 @@ export default function Report() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.25 }}
-            className="rounded-2xl border border-border/50 bg-card/50 p-6"
+            className="rounded-xl border border-border bg-card shadow-sm p-6"
           >
             <h3 className="text-sm font-semibold text-foreground mb-4">Focus Minutes per Workspace</h3>
-            <ChartContainer config={wsChartConfig} className="h-[220px] w-full">
-              <BarChart data={wsData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
+            <ChartContainer config={wsChartConfig} className="h-[220px] w-full overflow-hidden">
+              <BarChart data={wsData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: '#888', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: '#888', fontSize: 11 }} tickLine={false} axisLine={false} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="minutes" name="Focus Minutes" fill="var(--color-minutes)" radius={[6, 6, 0, 0]} />
+                <Bar maxBarSize={48} dataKey="minutes" name="Focus Minutes" fill="var(--color-minutes)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ChartContainer>
           </motion.div>
@@ -224,16 +222,16 @@ export default function Report() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35 }}
-              className="rounded-2xl border border-border/50 bg-card/50 p-6 lg:col-span-2 xl:col-span-1"
+              className="rounded-xl border border-border bg-card shadow-sm p-6 lg:col-span-2 xl:col-span-1"
             >
               <h3 className="text-sm font-semibold text-foreground mb-4">Top Distracting Apps</h3>
-              <ChartContainer config={appsChartConfig} className="h-[220px] w-full">
+              <ChartContainer config={appsChartConfig} className="h-[220px] w-full overflow-hidden">
                 <BarChart data={distractingApps} layout="vertical" margin={{ left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 14%)" horizontal={false} />
-                  <XAxis type="number" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="name" tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 11 }} tickLine={false} axisLine={false} width={80} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#222" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: '#888', fontSize: 11 }} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: '#888', fontSize: 11 }} tickLine={false} axisLine={false} width={80} />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" name="Distraction Events" fill="var(--color-count)" radius={[0, 6, 6, 0]} />
+                  <Bar maxBarSize={32} dataKey="count" name="Distraction Events" fill="var(--color-count)" radius={[0, 6, 6, 0]} />
                 </BarChart>
               </ChartContainer>
             </motion.div>

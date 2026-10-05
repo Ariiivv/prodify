@@ -79,7 +79,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
   const renderConsistencyChain = () => {
     if (isLoadingMetrics || !metrics) {
       return (
-        <div className="flex items-center gap-1.5 mt-3 mb-1">
+        <div className="flex items-center gap-1">
           {Array.from({length: 7}).map((_, i) => (
              <div key={i} className="w-2.5 h-2.5 rounded-full border border-[#333333] bg-transparent animate-pulse" />
           ))}
@@ -88,7 +88,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
     }
 
     return (
-      <div className="flex items-center gap-1.5 mt-3 mb-1">
+      <div className="flex items-center gap-1">
         {last7Days.map(dateStr => {
           const dayLog = metrics.calendar.find((c) => c.date === dateStr);
           let className = "w-2.5 h-2.5 rounded-[3px] transition-all duration-300 ";
@@ -96,7 +96,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
           if (!dayLog || !dayLog.status) {
             className += "border border-[#333333] bg-transparent";
           } else if (dayLog.status === 'golden' || dayLog.status === 'green') {
-            className += "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.5)]";
+            className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]";
           } else if (dayLog.status === 'yellow') {
             className += "bg-amber-400/80";
           } else if (dayLog.status === 'red') {
@@ -170,7 +170,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
         <div className="relative z-10 flex flex-col h-full flex-grow">
           <div className="flex items-center justify-between mb-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isSprint ? 'bg-blue-500/10' : 'bg-[#8b5cf6]/10'}`}>
-              <Layers className={`w-5 h-5 ${isSprint ? 'text-blue-500' : 'text-[#8b5cf6]'}`} />
+              <Layers className={`w-5 h-5 ${isSprint ? 'text-white' : 'text-[#8b5cf6]'}`} />
             </div>
             <div className="flex items-center gap-1">
               <ArrowRight className="w-4 h-4 text-[#888888] opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -217,22 +217,22 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
           </p>
           
           <div className="mt-auto pt-2">
-            {renderConsistencyChain()}
-            <div className="mt-2" />
-            
-            <div className="space-y-4">
+              {renderConsistencyChain()}
+              <div className="mt-2" />
+              
+              <div className="space-y-4">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-[#888888] uppercase tracking-wider text-[10px] font-bold">Total Logged</span>
                 <span className="text-white font-mono font-bold">{totalHoursLogged}h</span>
               </div>
               
-              <div className="bg-zinc-950 border border-zinc-800 p-2 flex justify-between items-center">
+              <div className="bg-[#0a0a0a] border border-[#222] rounded-sm p-2 flex justify-between items-center">
                 <span className="text-[10px] text-[#888888] uppercase tracking-wider font-bold">Pace</span>
                 {isLoadingMetrics || !metrics ? (
                    <span className="text-xs text-[#888888] font-mono animate-pulse">loading...</span>
                 ) : (
                   <span className={`text-xs font-mono font-bold ${
-                    metrics.pace.label === 'Strong' ? 'text-blue-500' : 
+                    metrics.pace.label === 'Strong' ? 'text-white' : 
                     metrics.pace.label === 'Solid' ? 'text-green-400' :
                     metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
                   }`}>

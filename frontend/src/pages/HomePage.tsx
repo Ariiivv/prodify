@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Layers, BarChart3, Activity, Brain, Clock, Target, Flame } from 'lucide-react';
+import { Layers, BarChart3, Activity, Brain, Clock, Target, Flame, Zap, TrendingUp } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useAuthStore } from '@/store/authStore';
 
@@ -149,6 +149,7 @@ const HomePage: React.FC = () => {
   
   const sprintCount = workspaces.filter(ws => ws.category === 'sprint').length;
   const masteryCount = workspaces.filter(ws => ws.category === 'mastery' || !ws.category).length;
+  const casualCount = workspaces.filter(ws => ws.category === 'casual').length;
 
   const filteredWorkspaces = workspaces.filter(ws => {
     if (activeTab === 'all') return true;
@@ -277,21 +278,27 @@ const HomePage: React.FC = () => {
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setActiveTab('all')}
-                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'all' ? 'text-blue-500' : 'text-prodify-muted hover:text-white'}`}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'all' ? 'text-white' : 'text-prodify-muted hover:text-white'}`}
                 >
                   All ({workspaces.length})
                 </button>
                 <button
-                  onClick={() => setActiveTab('sprint')}
-                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'sprint' ? 'text-blue-500' : 'text-prodify-muted hover:text-white'}`}
+                  onClick={() => setActiveTab('casual')}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors flex items-center gap-1.5 ${activeTab === 'casual' ? 'text-amber-400' : 'text-prodify-muted hover:text-white'}`}
                 >
-                  🎯 Sprints ({sprintCount})
+                  <Zap className="w-3.5 h-3.5" /> Quick Work ({casualCount})
                 </button>
                 <button
                   onClick={() => setActiveTab('mastery')}
-                  className={`px-3 py-1.5 text-xs font-bold transition-colors ${activeTab === 'mastery' ? 'text-[#8b5cf6]' : 'text-prodify-muted hover:text-white'}`}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors flex items-center gap-1.5 ${activeTab === 'mastery' ? 'text-[#8b5cf6]' : 'text-prodify-muted hover:text-white'}`}
                 >
-                  📚 Mastery ({masteryCount})
+                  <TrendingUp className="w-3.5 h-3.5" /> Mastery ({masteryCount})
+                </button>
+                <button
+                  onClick={() => setActiveTab('sprint')}
+                  className={`px-3 py-1.5 text-xs font-bold transition-colors flex items-center gap-1.5 ${activeTab === 'sprint' ? 'text-blue-500' : 'text-prodify-muted hover:text-white'}`}
+                >
+                  <Target className="w-3.5 h-3.5" /> Sprints ({sprintCount})
                 </button>
               </div>
             </div>

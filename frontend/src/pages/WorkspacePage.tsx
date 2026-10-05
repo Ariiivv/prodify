@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock } from 'lucide-react';
+import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock, Settings } from 'lucide-react';
 import { useTimerStore, initTimer, useTimer, switchMode } from '@/lib/timerStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { useIdleDetection } from '@/hooks/useIdleDetection';
@@ -17,6 +17,7 @@ import SessionStats from '@/components/timer/SessionStats';
 import AiCoachPanel from '@/components/chat/AiCoachPanel';
 import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCalendar';
+import { TimerSettingsModal } from '@/components/timer/TimerSettingsModal';
 
 type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
 
@@ -141,7 +142,8 @@ export default function WorkspacePage() {
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
   const [engagementState, setEngagementState] = useState<string>('ACTIVE_WORK');
   const [lastFocusedWindow, setLastFocusedWindow] = useState<string>('');
-    const loggedCompletionRef = useRef<number | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const loggedCompletionRef = useRef<number | null>(null);
   const lastBurnoutMinuteRef = useRef<number | null>(null);
 
   // Compute workspace keywords for frontend-side matching
@@ -558,6 +560,11 @@ export default function WorkspacePage() {
     ? 0
     : Math.max(0, Math.floor((timerState.focusDuration - timerState.timeRemaining) / 60));
 
+  
+  const activeColor = timerState.sessionMode === 'SHORT_BREAK' ? '#10b981' : 
+                      timerState.sessionMode === 'LONG_BREAK' ? '#3b82f6' : 
+                      (workspace?.theme_color || '#3b82f6');
+
   const totalDuration = timerState.sessionMode === 'LONG_BREAK' 
     ? timerState.defaultLongBreakDuration 
     : timerState.sessionMode === 'SHORT_BREAK' 
@@ -604,10 +611,17 @@ export default function WorkspacePage() {
           </Link>
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-foreground">{workspace.name}</h1>
-            <p className="text-xs text-muted-foreground capitalize">{workspace.mode || 'structured'} mode · {workspace.work_duration || 45}m focus</p>
+            <p className="text-xs text-muted-foreground">
+              {workspace.category === 'casual' ? '⚡ Quick Work' : 
+               workspace.category === 'sprint' ? '🎯 Sprint Track' : 
+               '🌱 Mastery Track'} 
+              {' · '}
+              {workspace.work_duration || 45}m Focus
+            </p>
           </div>
         </div>
 
+        <div className="flex items-center gap-3">
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -625,7 +639,17 @@ export default function WorkspacePage() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-10 h-10 rounded-lg flex items-center justify-center bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+        </div>
       </motion.div>
+      
+      <TimerSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <motion.div
         className="grid grid-cols-1 lg:grid-cols-3 gap-8"
@@ -636,42 +660,62 @@ export default function WorkspacePage() {
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center w-full">
             <div className="mb-8 flex flex-col items-center w-full">
               {/* Pomofocus Mode Pills */}
-              <div className="flex items-center gap-2 mb-6 bg-secondary/30 p-1.5 rounded-full border border-border/40">
-                <button onClick={() => switchMode('FOCUS')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-blue-500 text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Focus</button>
-                <button onClick={() => switchMode('SHORT_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-blue-500 text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Short Break</button>
-                <button onClick={() => switchMode('LONG_BREAK')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-blue-500 text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Long Break</button>
-              </div>
+                <div className="flex items-center gap-2 mb-6 bg-secondary/30 p-1.5 rounded-full border border-border/40">
+                  <button 
+                    onClick={() => switchMode('FOCUS')} 
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-500 cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    style={timerState.sessionMode === 'FOCUS' ? { backgroundColor: activeColor } : {}}
+                  >
+                    Focus
+                  </button>
+                  <button 
+                    onClick={() => switchMode('SHORT_BREAK')} 
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-500 cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    style={timerState.sessionMode === 'SHORT_BREAK' ? { backgroundColor: activeColor } : {}}
+                  >
+                    Short Break
+                  </button>
+                  <button 
+                    onClick={() => switchMode('LONG_BREAK')} 
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-500 cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    style={timerState.sessionMode === 'LONG_BREAK' ? { backgroundColor: activeColor } : {}}
+                  >
+                    Long Break
+                  </button>
+                </div>
 
-              {/* Round Indicator */}
-              <div className="flex flex-col items-center mb-6">
-                {(() => {
-                  const dailyTarget = workspace?.daily_target_minutes || 60;
-                  const sessionDuration = workspace?.work_duration || 25;
-                  const totalSessionsForDay = Math.max(1, Math.ceil(dailyTarget / sessionDuration));
-                  const displaySessionNumber = Math.min(timerState.sessionCount + (timerState.sessionMode === 'FOCUS' ? 1 : 0), totalSessionsForDay);
-                  
-                  return (
-                    <>
-                      <span className="text-sm font-bold text-muted-foreground tracking-widest uppercase mb-2">
-                        Session {displaySessionNumber} of {totalSessionsForDay} today
-                      </span>
-                      <div className="flex gap-2 flex-wrap justify-center max-w-[280px]">
-                        {Array.from({ length: totalSessionsForDay }).map((_, i) => {
-                          const isCompleted = i < timerState.sessionCount;
-                          return (
-                            <div 
-                              key={i} 
-                              className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-blue-500' : 'bg-border'}`} 
-                            />
-                          );
-                        })}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
+                {/* Round Indicator */}
+                {workspace?.category !== 'casual' && (
+                  <div className="flex flex-col items-center mb-6">
+                  {(() => {
+                    const dailyTarget = workspace?.daily_target_minutes || 60;
+                    const sessionDuration = workspace?.work_duration || 25;
+                    const totalSessionsForDay = Math.max(1, Math.ceil(dailyTarget / sessionDuration));
+                    const displaySessionNumber = Math.min(timerState.sessionCount + (timerState.sessionMode === 'FOCUS' ? 1 : 0), totalSessionsForDay);
+                    
+                    return (
+                      <>
+                        <span className="text-sm font-bold text-muted-foreground tracking-widest uppercase mb-2">
+                          Session {displaySessionNumber} of {totalSessionsForDay} today
+                        </span>
+                        <div className="flex gap-2 flex-wrap justify-center max-w-[280px]">
+                          {Array.from({ length: totalSessionsForDay }).map((_, i) => {
+                            const isCompleted = i < timerState.sessionCount;
+                            return (
+                              <div 
+                                key={i} 
+                                className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-blue-500' : 'bg-border'}`} 
+                              />
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
 
-              <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} />
+              <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} themeColor={workspace?.theme_color} sessionMode={timerState.sessionMode} />
             </div>
 
             {isDetectionEnabled && timerState.currentState === 'IDLE' && cameraStatus === 'streaming' && engagementState === 'FACE_ABSENT' && (
@@ -883,33 +927,53 @@ export default function WorkspacePage() {
             />
           )}
             <div className="grid grid-cols-1 gap-3 mb-4">
-              <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3">
-                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
-                  <Activity className="w-5 h-5 text-white" />
+              {workspace?.category !== 'casual' ? (
+                <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
+                  <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
+                    <Activity className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Pace</span>
+                    <span className="text-white font-mono font-bold text-sm">
+                      {metrics?.pace ? (
+                        <>
+                          <span className={
+                            metrics.pace.label === 'Strong' ? 'text-blue-500' :
+                            metrics.pace.label === 'Solid' ? 'text-green-400' :
+                            metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
+                          }>
+                            {metrics.pace.label}
+                          </span>
+                          <span className="text-[#888888] ml-1">{Math.round(metrics.pace.score)}</span>
+                          <span className="text-[#888888] text-[10px] ml-1">7d</span>
+                        </>
+                      ) : (
+                        <span className="text-[#888888] animate-pulse">loading...</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Pace</span>
-                  <span className="text-white font-mono font-bold text-sm">
-                    {metrics?.pace ? (
-                      <>
-                        <span className={
-                          metrics.pace.label === 'Strong' ? 'text-blue-500' :
-                          metrics.pace.label === 'Solid' ? 'text-green-400' :
-                          metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
-                        }>
-                          {metrics.pace.label}
-                        </span>
-                        <span className="text-[#888888] ml-1">{Math.round(metrics.pace.score)}</span>
-                        <span className="text-[#888888] text-[10px] ml-1">7d</span>
-                      </>
-                    ) : (
-                      <span className="text-[#888888] animate-pulse">loading...</span>
-                    )}
-                  </span>
+              ) : (
+                <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
+                  <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
+                    <Activity className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Total Logged Today</span>
+                    <span className="text-white font-mono font-bold text-sm">
+                      {metrics ? (
+                        <>
+                          {Math.floor(metrics.today_actual_minutes / 60)}h {metrics.today_actual_minutes % 60}m
+                        </>
+                      ) : (
+                        <span className="text-[#888888] animate-pulse">loading...</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3">
+              <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
                 <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
                   <Brain className="w-5 h-5 text-white" />
                 </div>
@@ -919,7 +983,7 @@ export default function WorkspacePage() {
                     {metrics ? (
                       <>
                         {metrics.deep_work_ratio != null ? `${Math.round(metrics.deep_work_ratio)}%` : '-'}
-                        <span className="text-[#888888] text-[10px] ml-1">7d</span>
+                        {workspace?.category !== 'casual' ? <span className="text-[#888888] text-[10px] ml-1">7d</span> : <span className="text-[#888888] text-[10px] ml-1">Today</span>}
                       </>
                     ) : (
                       <span className="text-[#888888] animate-pulse">loading...</span>
@@ -927,31 +991,33 @@ export default function WorkspacePage() {
                   </span>
                 </div>
               </div>
-
-              <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3">
-                <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
-                  <Clock className="w-5 h-5 text-white" />
+              
+              {workspace?.category !== 'casual' && (
+                <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
+                  <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl">
+                    <Clock className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Today</span>
+                    <span className="text-white font-mono font-bold text-sm">
+                      {metrics ? (
+                        formatHoursLeftToday(metrics.today_target_minutes, metrics.today_actual_minutes)
+                      ) : (
+                        <span className="text-[#888888] animate-pulse">loading...</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[10px] text-prodify-muted uppercase tracking-wider font-semibold">Today</span>
-                  <span className="text-white font-mono font-bold text-sm">
-                    {metrics ? (
-                      formatHoursLeftToday(metrics.today_target_minutes, metrics.today_actual_minutes)
-                    ) : (
-                      <span className="text-[#888888] animate-pulse">loading...</span>
-                    )}
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
-          {workspace?.id && (
-            <StructuredGoalCalendar 
-              workspaceId={workspace.id} 
-              mode={workspace.mode} 
-              sessionCount={timerState.sessionCount}
-              calendar={metrics?.calendar}
-            />
-          )}
+          {workspace?.id && workspace?.category !== 'casual' && (
+              <StructuredGoalCalendar 
+                workspaceId={workspace.id} 
+                mode={workspace.mode} 
+                sessionCount={timerState.sessionCount}
+                calendar={metrics?.calendar}
+              />
+            )}
           {(timerState.currentState === 'SESSION_COMPLETED' || timerState.sessionCount > 0) && (
             <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
           )}

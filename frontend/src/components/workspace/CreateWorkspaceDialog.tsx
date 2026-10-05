@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, CalendarDays, Plus } from 'lucide-react';
+import { X, CalendarDays, Plus, Zap, TrendingUp, Target } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -170,45 +170,55 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm overflow-y-auto p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-950 border border-zinc-800 rounded-xl p-6 w-full max-w-lg my-8 shadow-2xl"
+              className="bg-zinc-950 border border-zinc-800 rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] overflow-hidden relative"
             >
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between p-6 border-b border-zinc-800 shrink-0 bg-zinc-950 z-10">
                 <div>
                   <h2 className="text-xl font-bold text-white">Create Workspace</h2>
                 </div>
-                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-white">
+                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-white p-1 rounded-md hover:bg-zinc-900 transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Category Select (Pills) */}
+              <div className="overflow-y-auto p-6 custom-scrollbar">
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Category Select (Pills) */}
                 <div className="flex bg-transparent border border-zinc-800 p-1 rounded-full">
-                  <button
-                    type="button"
-                    onClick={() => setCategory('sprint')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
-                      category === 'sprint' ? 'bg-zinc-800 text-blue-500' : 'text-muted-foreground hover:text-white'
-                    }`}
-                  >
-                    🎯 Sprint (Deadline Driven)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCategory('mastery')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-full transition-colors ${
-                      category === 'mastery' ? 'bg-zinc-800 text-blue-500' : 'text-muted-foreground hover:text-white'
-                    }`}
-                  >
-                    📚 Mastery (Continuous Track)
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setCategory('casual')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-full transition-colors ${
+                        category === 'casual' ? 'bg-zinc-800 text-white' : 'text-muted-foreground hover:text-white'
+                      }`}
+                    >
+                      <Zap className="w-3.5 h-3.5" /> Quick Work
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCategory('mastery')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-full transition-colors ${
+                        category === 'mastery' ? 'bg-zinc-800 text-white' : 'text-muted-foreground hover:text-white'
+                      }`}
+                    >
+                      <TrendingUp className="w-3.5 h-3.5" /> Mastery
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCategory('sprint')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-full transition-colors ${
+                        category === 'sprint' ? 'bg-zinc-800 text-white' : 'text-muted-foreground hover:text-white'
+                      }`}
+                    >
+                      <Target className="w-3.5 h-3.5" /> Sprint
+                    </button>
+                  </div>
 
                 {/* Workspace Name */}
                 <div>
@@ -465,6 +475,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                   </Button>
                 </div>
               </form>
+              </div>
             </motion.div>
           </motion.div>
         )}

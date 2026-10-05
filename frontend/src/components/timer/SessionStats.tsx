@@ -23,7 +23,7 @@ export default function SessionStats({ sessionCount, distractionCount, focusMinu
         const Wrapper = isDistraction && onDistractionClick ? 'button' : 'div';
         const wrapperProps = isDistraction && onDistractionClick 
           ? { onClick: onDistractionClick, className: "rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 backdrop-blur-sm p-4 text-left transition-colors cursor-pointer" } 
-          : { className: "rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-4" };
+          : { className: "rounded-xl border border-border bg-card shadow-sm p-4" };
           
         return (
           <Wrapper key={label} {...(wrapperProps as any)}>
