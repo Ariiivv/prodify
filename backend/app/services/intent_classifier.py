@@ -241,19 +241,7 @@ def update_focus_state(
             active_reason = state.get("active_distraction_reason") or reason
             return ("distracted" if state["status"] == "DISTRACTED" else "focused"), active_reason
 
-        if state["status"] == "DISTRACTED":
-            state["recovery_count"] = state.get("recovery_count", 0) + 1
-            if state["recovery_count"] >= 2:
-                state["status"] = "ALIGNED"
-                state["pending_count"] = 0
-                state["recovery_count"] = 0
-                state["active_distraction_target"] = ""
-                state["active_distraction_reason"] = ""
-                return "focused", reason
-            else:
-                return "distracted", state["active_distraction_reason"]
-
-        # ALIGNED or PENDING (or unhandled fallback): immediate reset
+        # Immediate clean unlatch / reset whenever the user focuses an aligned work window
         state["status"] = "ALIGNED"
         state["pending_count"] = 0
         state["recovery_count"] = 0
@@ -268,13 +256,16 @@ def update_focus_state(
             active_reason = state.get("active_distraction_reason") or reason
             return ("distracted" if state["status"] == "DISTRACTED" else "focused"), active_reason
 
-        # Any off-topic signal cancels a partial recovery
-        if state["status"] == "DISTRACTED":
-            state["recovery_count"] = 0
-
-        # Always update the distraction reason to match the CURRENT unaligned target
         state["active_distraction_target"] = current_target
         state["active_distraction_reason"] = reason
+
+        # Instant re-trigger: If this window is a Cache HIT for a distraction or already pending, latch immediately!
+        if is_cache_hit or state["status"] == "PENDING" or state["status"] == "DISTRACTED":
+            state["status"] = "DISTRACTED"
+            state["pending_count"] = 2
+            state["last_target"] = current_target
+            logger.info(f"[STATE] -> DISTRACTED (Instant Trigger{' Cache Hit' if is_cache_hit else ' Strike 2'}) on '{current_target}'")
+            return "distracted", state["active_distraction_reason"]
 
         if state["status"] == "ALIGNED":
             state["status"] = "PENDING"
@@ -283,18 +274,34 @@ def update_focus_state(
             logger.info(f"[STATE] ALIGNED -> PENDING (Strike 1) on '{current_target}'")
             return "focused", reason
 
-        elif state["status"] == "PENDING":
-            state["status"] = "DISTRACTED"
-            state["pending_count"] = 2
-            state["last_target"] = current_target
-            logger.info(f"[STATE] PENDING -> DISTRACTED (Strike 2 LATCHED) on '{current_target}'")
-            return "distracted", state["active_distraction_reason"]
-
-        elif state["status"] == "DISTRACTED":
-            state["last_target"] = current_target
-            return "distracted", state["active_distraction_reason"]
-
     return "focused", reason
+
+
+def reset_workspace_focus_state(workspace_id: int):
+    """Clean unlatch: resets workspace state machine back to ALIGNED immediately."""
+    if workspace_id in _workspace_states:
+        _workspace_states[workspace_id] = {
+            "status": "ALIGNED",
+            "pending_count": 0,
+            "recovery_count": 0,
+            "last_target": "",
+            "last_goal": _workspace_states[workspace_id].get("last_goal", ""),
+            "active_distraction_target": "",
+            "active_distraction_reason": ""
+        }
+        logger.info(f"[STATE] Workspace {workspace_id} focus state unlatched/reset to ALIGNED.")
+
+
+OS_SYSTEM_UTILITIES = {
+    "snippingtool.exe",
+    "screenclippinghost.exe",
+    "shellexperiencehost.exe",
+    "searchhost.exe",
+    "startmenuexperiencehost.exe",
+    "applicationframehost.exe",
+    "taskmgr.exe",
+    "explorer.exe",
+}
 
 
 async def classify_with_intent(
@@ -310,24 +317,29 @@ async def classify_with_intent(
     # 1. Host Self-Awareness (Strict Process Name Check)
     app_lower = app_name.lower().strip()
     if app_lower in ["prodify.exe", "prodify", "app.exe"]:
-        # Only align if the app itself is the host, protecting against folders named "prodify" in other apps
         return "focused", "Prodify session controller is intrinsically aligned", "Prodify app"
+
+    # 2. Whitelist OS System Utilities (Neutral system transitions)
+    if app_lower in OS_SYSTEM_UTILITIES:
+        state = _workspace_states.get(workspace_id or 0)
+        if state and state.get("status") == "DISTRACTED":
+            # Keep distracted but never overwrite active_distraction_reason or trigger new strikes
+            return "distracted", state.get("active_distraction_reason") or "Session paused", "System Utility"
+        return "focused", "System utility transition", "System Utility"
 
     is_focused = True
     reason = ""
     summary = ""
+    is_cache_hit = False
 
-    # 2. Semantic Cache
+    # 3. Semantic Cache
     cached = _semantic_cache.get(app_name, window_title, intent)
     if cached is _PENDING:
-        # Another tick already started an AI evaluation for this exact window.
-        # Default to focused while waiting — don't fire a redundant Groq call.
         logger.info(f"[INTENT] Cache PENDING - skipping duplicate eval for title='{window_title[:60]}'")
-        # Don't feed the state machine while an eval is in-flight for this window;
-        # return current state without advancing strikes.
         return "focused", "Evaluating…", "Evaluating"
     elif cached is not None:
         is_focused, reason, summary = cached
+        is_cache_hit = True
         logger.info(f"[INTENT] Cache HIT - {'focused' if is_focused else 'distracted'} (title='{window_title[:60]}')")
     else:
         _semantic_cache.set(app_name, window_title, intent, None)
@@ -337,7 +349,6 @@ async def classify_with_intent(
             is_focused, reason, summary = result
             _semantic_cache.set(app_name, window_title, intent, result)
         else:
-            # evaluate_semantics returned None — should not happen, but fail open
             is_focused, reason, summary = True, "Evaluating…", "Evaluating"
 
     status, reason = update_focus_state(
@@ -346,6 +357,7 @@ async def classify_with_intent(
         app_name=app_name,
         window_title=window_title,
         is_focused=is_focused,
-        reason=reason
+        reason=reason,
+        is_cache_hit=is_cache_hit,
     )
     return status, reason, summary

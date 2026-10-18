@@ -33,6 +33,15 @@ def create_db_and_tables():
     for attempt in range(max_retries):
         try:
             Base.metadata.create_all(engine)
+            # Safe schema upgrades for new columns on ActivityLog
+            with engine.connect() as conn:
+                for col in ["clean_app_name", "platform_name", "content_title", "ai_summary", "ai_reason"]:
+                    try:
+                        conn.execute(text(f"ALTER TABLE activity_logs ADD COLUMN {col} VARCHAR;"))
+                        conn.commit()
+                        logger.info(f"Added column {col} to activity_logs table.")
+                    except Exception:
+                        pass  # Column already exists
             logger.info("Database tables verified/created via metadata.")
             return
         except Exception as e:

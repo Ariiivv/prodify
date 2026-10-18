@@ -77,15 +77,27 @@ async def chat_endpoint(
 ):
     try:
         ctx = {**(request.context or {}), "user_id": current_user.id}
-        ws_name = ctx.get("workspaceName", request.workspace_name)
+        ws_id = ctx.get("workspaceId")
         
-        # 1. Find Workspace ID to load history
-        ws = db.query(models.Workspace).filter(
-            models.Workspace.user_id == current_user.id,
-            models.Workspace.name == ws_name
-        ).order_by(models.Workspace.created_at.desc()).first()
-        
-        ws_id = ws.id if ws else None
+        # 1. Find Workspace to load history and properties
+        if ws_id:
+            ws = db.query(models.Workspace).filter(
+                models.Workspace.id == ws_id,
+                models.Workspace.user_id == current_user.id
+            ).first()
+        else:
+            ws = db.query(models.Workspace).filter(
+                models.Workspace.user_id == current_user.id,
+                models.Workspace.name == ws_name
+            ).order_by(models.Workspace.created_at.desc()).first()
+
+        if ws:
+            ws_id = ws.id
+            ctx["workspaceId"] = ws.id
+            ctx["workspaceName"] = ws.name
+            ctx["workspaceCategory"] = ws.category
+            if not ctx.get("sessionIntent"):
+                ctx["sessionIntent"] = ws.current_goal or ws.focus_keywords or ""
         
         # 2. Load History
         history = []
@@ -116,15 +128,16 @@ async def chat_endpoint(
             distracted_secs = ctx.get("distractedSeconds", 0)
             if distracted_secs > 300:
                 mins = int(distracted_secs // 60)
-                prompt = f"The user just finished a {work_dur}-minute session, but they paused or were absent for {mins} minutes during it. Scold them constructively for taking such a long un-planned break, as it ruins their metrics, and ask what took so long."
+                prompt = f"The user just finished a {work_dur}-minute session in workspace '{ws_name}', but paused or stepped away for {mins} minutes. Provide constructive, encouraging advice on regaining flow in at most 2-3 short bullet points."
             else:
-                prompt = f"The user just successfully finished a {work_dur}-minute focus session with only {distractions} minor distractions. Acknowledge this enthusiastically in one sentence, and ask them what they accomplished to journal it."
+                prompt = f"The user just finished a {work_dur}-minute focus session in workspace '{ws_name}' with only {distractions} minor distractions. Celebrate their effort warmly in 1-2 bullet points and ask what they accomplished."
             reply = await engine.generate_coaching_response(
                 message=prompt,
                 context=ctx,
                 db=db,
                 history=history,
-                user_name=user_name
+                user_name=user_name,
+                user_id=current_user.id,
             )
         else:
             reply = await engine.generate_coaching_response(
@@ -132,7 +145,8 @@ async def chat_endpoint(
                 context=ctx,
                 db=db,
                 history=history,
-                user_name=user_name
+                user_name=user_name,
+                user_id=current_user.id,
             )
         
         # 3. Save to DB
