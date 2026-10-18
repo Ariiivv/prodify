@@ -298,6 +298,18 @@ def _compute_workspace_streaks(
 # ──────────────────────────────────────────────────────────────────────
 # C.5 — Deep Work Ratio (rolling 7-day)
 # ──────────────────────────────────────────────────────────────────────
+def compute_deep_work_ratio(focus_minutes: float, distracted_minutes: float) -> float:
+    """
+    Computes Deep Work Ratio = (focus_minutes - distracted_minutes) / focus_minutes * 100.
+    If focus_minutes <= 0, returns 0.0.
+    Distracted minutes are clamped to not exceed focus_minutes.
+    """
+    if focus_minutes <= 0:
+        return 0.0
+    distracted_minutes = max(0.0, min(distracted_minutes, focus_minutes))
+    return round((focus_minutes - distracted_minutes) / focus_minutes * 100.0, 1)
+
+
 def _deep_work_ratio(
     db: DBSession,
     workspace_ids: List[int],
@@ -307,17 +319,17 @@ def _deep_work_ratio(
     """
     Deep Work Ratio = (focus_seconds - distracted_seconds) / focus_seconds
     Over a trailing window ending today (inclusive).
-    Returns None if no focus data in the window.
+    Returns 0.0 if no focus data in the window.
     """
     since = today - timedelta(days=window_days - 1)
     focus_secs, distracted_secs = _get_distraction_data(db, workspace_ids, since, today)
 
     if focus_secs <= 0:
-        return None
+        return 0.0
 
     # Distracted seconds can't exceed focus seconds
-    distracted_secs = min(distracted_secs, focus_secs)
-    return round((focus_secs - distracted_secs) / focus_secs * 100, 1)
+    distracted_secs = max(0.0, min(distracted_secs, focus_secs))
+    return round((focus_secs - distracted_secs) / focus_secs * 100.0, 1)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -613,4 +625,379 @@ def compute_workspace_metrics(db: DBSession, user: models.User, workspace_id: in
         "workspace_streak_longest": persisted_longest,
         "today_target_minutes": today_target,
         "today_actual_minutes": round(today_actual, 1),
+    }
+
+
+def compute_report_analytics(
+    db: DBSession,
+    user: models.User,
+    workspace_id: Optional[int] = None,
+    days: int = 30,
+) -> dict:
+    """
+    Compute unified Report & Analytics data for either Global scope or a specific Workspace.
+    Returns summary KPIs, 30-day daily series with targets, workspace leaderboard, and
+    granular distraction intelligence.
+    """
+    from app.services.activity_parser import parse_activity
+
+    today = date.today()
+    since_date = today - timedelta(days=days - 1)
+
+    all_workspaces = (
+        db.query(models.Workspace)
+        .filter(models.Workspace.user_id == user.id)
+        .all()
+    )
+
+    if not all_workspaces:
+        return {
+            "summary": {
+                "momentum_or_pace_score": 0.0,
+                "tier_label": "Calibrating",
+                "deep_work_ratio_7d": 0.0,
+                "current_streak": 0,
+                "longest_streak": 0,
+                "peak_focus_window": "Not enough data yet",
+                "total_focus_hours": 0.0,
+                "avg_burnout_pct": 0.0,
+            },
+            "daily_series": [],
+            "workspaces_table": [],
+            "distractions_breakdown": {
+                "top_platforms": [],
+                "recent_distraction_items": [],
+                "hourly_distraction_distribution": [
+                    {"hour": h, "label": f"{h % 12 or 12} {'AM' if h < 12 else 'PM'}", "count": 0}
+                    for h in range(24)
+                ],
+            },
+        }
+
+    target_workspace = None
+    if workspace_id is not None:
+        target_workspace = next((w for w in all_workspaces if w.id == workspace_id), None)
+        if not target_workspace:
+            raise ValueError(f"Workspace #{workspace_id} not found or not owned by user")
+        scoped_workspaces = [target_workspace]
+    else:
+        scoped_workspaces = all_workspaces
+
+    scoped_ws_ids = [w.id for w in scoped_workspaces]
+    all_ws_ids = [w.id for w in all_workspaces]
+
+    # Total completed focus sessions in scope
+    total_scoped_sessions = (
+        db.query(
+            func.coalesce(func.sum(models.Session.duration), 0),
+            func.coalesce(func.sum(models.Session.distracted_seconds), 0),
+            func.coalesce(func.avg(models.Session.burnout_score), 0),
+            func.count(models.Session.id),
+        )
+        .filter(
+            models.Session.workspace_id.in_(scoped_ws_ids),
+            models.Session.session_type == "FOCUS",
+            models.Session.status == "COMPLETED",
+        )
+        .first()
+    )
+
+    total_focus_secs = float(total_scoped_sessions[0]) if total_scoped_sessions else 0.0
+    total_focus_hours = round(total_focus_secs / 3600.0, 1)
+    avg_burnout_pct = round(float(total_scoped_sessions[2]) * 100.0, 1) if total_scoped_sessions and total_scoped_sessions[3] > 0 else 0.0
+    sess_count = int(total_scoped_sessions[3]) if total_scoped_sessions else 0
+
+    # 1. Summary: Momentum / Pace
+    if workspace_id is not None:
+        pace_res = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=workspace_id)
+        if sess_count == 0:
+            momentum_or_pace_score = 0.0
+            tier_label = "Calibrating"
+        else:
+            momentum_or_pace_score = pace_res["score"]
+            tier_label = pace_res["label"]
+        ws_curr_s, ws_long_s = _compute_workspace_streaks(db, target_workspace, today - timedelta(days=89), today, today)
+        current_streak = ws_curr_s
+        longest_streak = max(target_workspace.longest_streak or 0, ws_long_s)
+    else:
+        momentum_res = _compute_momentum_pace(db, all_workspaces, today)
+        if sess_count == 0:
+            momentum_or_pace_score = 0.0
+            tier_label = "Calibrating"
+        else:
+            momentum_or_pace_score = momentum_res["score"]
+            tier_label = momentum_res["label"]
+        calendar_90 = _compute_calendar(db, all_workspaces, today - timedelta(days=89), today)
+        current_streak, l_streak = _compute_streaks(calendar_90, today)
+        user_stats = db.query(models.UserStats).filter(models.UserStats.user_id == user.id).first()
+        persisted_longest = user_stats.longest_global_streak if user_stats and user_stats.longest_global_streak else 0
+        longest_streak = max(persisted_longest, l_streak)
+
+    # 7-day Deep Work Ratio
+    dwr_7d = _deep_work_ratio(db, scoped_ws_ids, today, window_days=7)
+    deep_work_ratio_7d = dwr_7d if dwr_7d is not None else 0.0
+
+    # Peak Focus Window
+    peak = _peak_focus_window(db, scoped_ws_ids)
+    peak_focus_window = "Not enough data yet" if peak.get("insufficient_data") else peak.get("peak_range", "Not enough data yet")
+
+    summary = {
+        "momentum_or_pace_score": momentum_or_pace_score,
+        "tier_label": tier_label,
+        "deep_work_ratio_7d": deep_work_ratio_7d,
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "peak_focus_window": peak_focus_window,
+        "total_focus_hours": total_focus_hours,
+        "avg_burnout_pct": avg_burnout_pct,
+    }
+
+    # 2. 30-Day Daily Series
+    buffer_start = since_date - timedelta(days=7)
+    daily_logged_map = _get_workspace_daily_minutes(db, scoped_ws_ids, buffer_start, today)
+    
+    session_daily_rows = (
+        db.query(
+            cast(models.Session.start_time, Date).label("d"),
+            func.coalesce(func.sum(models.Session.duration), 0).label("focus_secs"),
+            func.coalesce(func.sum(models.Session.distracted_seconds), 0).label("dist_secs"),
+        )
+        .filter(
+            models.Session.workspace_id.in_(scoped_ws_ids),
+            models.Session.session_type == "FOCUS",
+            models.Session.status == "COMPLETED",
+            cast(models.Session.start_time, Date) >= buffer_start,
+            cast(models.Session.start_time, Date) <= today,
+        )
+        .group_by(cast(models.Session.start_time, Date))
+        .all()
+    )
+    session_daily_map = {row.d: (float(row.focus_secs), float(row.dist_secs)) for row in session_daily_rows}
+
+    ws_targets = {ws.id: ws.daily_target_minutes or 0 for ws in scoped_workspaces}
+    ws_created = {ws.id: ws.created_at.date() for ws in scoped_workspaces}
+
+    daily_series = []
+    curr = since_date
+    while curr <= today:
+        date_str = curr.isoformat()
+        label_str = curr.strftime("%b %d")
+
+        day_logged = sum(daily_logged_map.get(wid, {}).get(curr, 0.0) for wid in scoped_ws_ids)
+        day_target = sum(
+            ws_targets[wid]
+            for wid in scoped_ws_ids
+            if ws_created.get(wid, curr) <= curr
+        )
+
+        if day_logged <= 0:
+            day_status = "untracked"
+        else:
+            if day_target <= 0:
+                day_status = "green"
+            else:
+                ratio = day_logged / day_target
+                if ratio >= 1.5:
+                    day_status = "golden"
+                elif ratio >= 1.0:
+                    day_status = "green"
+                elif ratio >= 0.5:
+                    day_status = "yellow"
+                else:
+                    day_status = "red"
+
+        day_f_secs, day_d_secs = session_daily_map.get(curr, (0.0, 0.0))
+        if day_f_secs > 0:
+            day_d_clamped = max(0.0, min(day_d_secs, day_f_secs))
+            day_dwr = round((day_f_secs - day_d_clamped) / day_f_secs * 100.0, 1)
+        else:
+            day_dwr = 0.0
+
+        rolling_res = _compute_momentum_pace(
+            db, all_workspaces, curr, window_days=7, scope_workspace_id=workspace_id
+        )
+        rolling_score = rolling_res["score"]
+
+        daily_series.append({
+            "date": date_str,
+            "label": label_str,
+            "minutes_logged": round(day_logged, 1),
+            "target_minutes": day_target,
+            "day_status": day_status,
+            "deep_work_ratio": day_dwr,
+            "rolling_score": rolling_score,
+        })
+        curr += timedelta(days=1)
+
+    # 3. Workspaces Leaderboard Table
+    all_ws_daily_map = _get_workspace_daily_minutes(db, all_ws_ids, today, today)
+    all_time_totals = (
+        db.query(
+            models.Session.workspace_id,
+            func.coalesce(func.sum(models.Session.duration), 0).label("dur"),
+            func.count(models.Session.id).label("cnt"),
+        )
+        .filter(
+            models.Session.workspace_id.in_(all_ws_ids),
+            models.Session.session_type == "FOCUS",
+            models.Session.status == "COMPLETED",
+        )
+        .group_by(models.Session.workspace_id)
+        .all()
+    )
+    all_time_ws_hours = {wid: round(dur / 3600.0, 1) for wid, dur, _ in all_time_totals}
+    all_time_ws_cnt = {wid: cnt for wid, _, cnt in all_time_totals}
+
+    workspaces_table = []
+    for ws in all_workspaces:
+        w_pace = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=ws.id)
+        has_sessions = all_time_ws_cnt.get(ws.id, 0) > 0
+        p_label = w_pace["label"] if has_sessions else "Calibrating"
+        p_score = w_pace["score"] if has_sessions else 0.0
+
+        w_dwr = _deep_work_ratio(db, [ws.id], today, window_days=7)
+        dwr_val = w_dwr if w_dwr is not None else 0.0
+
+        w_c_streak, w_l_streak = _compute_workspace_streaks(db, ws, today - timedelta(days=89), today, today)
+        w_longest = max(ws.longest_streak or 0, w_l_streak)
+
+        workspaces_table.append({
+            "id": ws.id,
+            "name": ws.name,
+            "category": ws.category or "mastery",
+            "total_hours": all_time_ws_hours.get(ws.id, 0.0),
+            "today_minutes": round(all_ws_daily_map.get(ws.id, {}).get(today, 0.0), 1),
+            "daily_target_minutes": ws.daily_target_minutes or 0,
+            "pace_score": p_score,
+            "pace_label": p_label,
+            "deep_work_ratio": dwr_val,
+            "current_streak": w_c_streak,
+            "longest_streak": w_longest,
+        })
+
+    workspaces_table.sort(key=lambda x: x["total_hours"], reverse=True)
+
+    # 4. Rich Distraction Breakdown
+    OS_SYSTEM_UTILITIES = {
+        "snippingtool.exe",
+        "screenclippinghost.exe",
+        "shellexperiencehost.exe",
+        "searchhost.exe",
+        "startmenuexperiencehost.exe",
+        "applicationframehost.exe",
+        "taskmgr.exe",
+        "explorer.exe",
+    }
+
+    act_query = (
+        db.query(models.ActivityLog)
+        .join(models.Workspace)
+        .filter(
+            models.Workspace.user_id == user.id,
+            models.ActivityLog.is_focused == 0,
+            models.ActivityLog.timestamp >= datetime.utcnow() - timedelta(days=days),
+        )
+    )
+    if workspace_id is not None:
+        act_query = act_query.filter(models.ActivityLog.workspace_id == workspace_id)
+
+    raw_distractions = act_query.order_by(models.ActivityLog.timestamp.desc()).all()
+
+    platform_counts: Dict[str, dict] = {}
+    content_items_map: Dict[Tuple[str, str], dict] = {}
+    hour_distribution = [0] * 24
+
+    for log in raw_distractions:
+        raw_app = (log.app_name or "").lower().strip()
+        if raw_app in OS_SYSTEM_UTILITIES:
+            continue
+
+        clean_app = getattr(log, "clean_app_name", None)
+        platform = getattr(log, "platform_name", None)
+        title = getattr(log, "content_title", None)
+
+        if not clean_app or not platform or not title:
+            p_clean, p_plat, p_title = parse_activity(log.window_title or "", log.app_name or "")
+            clean_app = clean_app or p_clean
+            platform = platform or p_plat
+            title = title or p_title or log.window_title or "Untitled Activity"
+
+        display_platform = platform or clean_app or log.app_name or "Unknown"
+
+        if display_platform not in platform_counts:
+            platform_counts[display_platform] = {
+                "name": display_platform,
+                "clean_app": clean_app or log.app_name or "Application",
+                "count": 0,
+            }
+        platform_counts[display_platform]["count"] += 1
+
+        if log.timestamp:
+            h = log.timestamp.hour
+            hour_distribution[h] += 1
+
+        item_key = (display_platform, (title or "Untitled").strip())
+        if item_key not in content_items_map:
+            content_items_map[item_key] = {
+                "platform_name": display_platform,
+                "clean_app_name": clean_app or log.app_name or "Application",
+                "content_title": (title or "Untitled").strip(),
+                "ai_summary": log.ai_summary or (log.reason if log.reason and len(log.reason) < 60 else "Off-task activity"),
+                "ai_reason": log.ai_reason or log.reason or "",
+                "count": 0,
+                "hour_counts": defaultdict(int),
+                "last_seen": log.timestamp.isoformat() if log.timestamp else "",
+            }
+        content_items_map[item_key]["count"] += 1
+        if log.timestamp:
+            content_items_map[item_key]["hour_counts"][log.timestamp.hour] += 1
+
+    total_distraction_events = sum(p["count"] for p in platform_counts.values())
+
+    top_platforms = []
+    for p in sorted(platform_counts.values(), key=lambda x: x["count"], reverse=True)[:6]:
+        pct = round((p["count"] / total_distraction_events * 100.0), 1) if total_distraction_events > 0 else 0.0
+        top_platforms.append({
+            "name": p["name"],
+            "clean_app": p["clean_app"],
+            "count": p["count"],
+            "estimated_minutes": round(p["count"] * 0.5, 1),
+            "pct_of_distractions": pct,
+        })
+
+    recent_distraction_items = []
+    for item in sorted(content_items_map.values(), key=lambda x: x["count"], reverse=True)[:8]:
+        peak_h = max(item["hour_counts"].keys(), key=lambda h: item["hour_counts"][h]) if item["hour_counts"] else None
+        peak_h_label = f"{peak_h:02d}:00" if peak_h is not None else "N/A"
+        recent_distraction_items.append({
+            "platform_name": item["platform_name"],
+            "clean_app_name": item["clean_app_name"],
+            "content_title": item["content_title"],
+            "ai_summary": item["ai_summary"],
+            "ai_reason": item["ai_reason"],
+            "count": item["count"],
+            "peak_hour": peak_h_label,
+            "last_seen": item["last_seen"],
+        })
+
+    hourly_dist_formatted = [
+        {
+            "hour": h,
+            "label": f"{h % 12 or 12} {'AM' if h < 12 else 'PM'}",
+            "count": hour_distribution[h],
+        }
+        for h in range(24)
+    ]
+
+    distractions_breakdown = {
+        "top_platforms": top_platforms,
+        "recent_distraction_items": recent_distraction_items,
+        "hourly_distraction_distribution": hourly_dist_formatted,
+    }
+
+    return {
+        "summary": summary,
+        "daily_series": daily_series,
+        "workspaces_table": workspaces_table,
+        "distractions_breakdown": distractions_breakdown,
     }
