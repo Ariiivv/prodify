@@ -197,7 +197,9 @@ export const useTimerStore = create<TimerStore>()(
     resumeFocus: () => {
       const id = setInterval(() => get().tick(), 1000);
       const ws = getWorkspaceState();
-      const additionalDistractedSeconds = ws.lastPausedAt ? (Date.now() - ws.lastPausedAt) / 1000 : 0;
+      const nonDistractionReasons = ['Manual', 'manual_pause', 'Navigated away', 'Navigated Away', 'IDLE_DETECTED', 'idle'];
+      const isAiDistraction = !!(ws.pauseReason && !nonDistractionReasons.includes(ws.pauseReason));
+      const additionalDistractedSeconds = (ws.lastPausedAt && isAiDistraction) ? (Date.now() - ws.lastPausedAt) / 1000 : 0;
       setWorkspaceState({
         currentState: 'FOCUS_RUNNING',
         intervalId: id,
