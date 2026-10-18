@@ -101,11 +101,31 @@ def tool_get_top_distractions(db: Session) -> dict:
     if not logs:
         return {"distractions": [], "peak_distraction_hour": None, "data_available": False}
 
+    from app.services.activity_parser import parse_activity
+
+    OS_SYSTEM_UTILITIES = {
+        "snippingtool.exe",
+        "screenclippinghost.exe",
+        "shellexperiencehost.exe",
+        "searchhost.exe",
+        "startmenuexperiencehost.exe",
+        "applicationframehost.exe",
+        "taskmgr.exe",
+        "explorer.exe",
+    }
+
     app_counts: Dict[str, int] = {}
     hour_counts: Dict[int, int] = {}
     for l in logs:
-        app = l.app_name or "Unknown"
-        app_counts[app] = app_counts.get(app, 0) + 1
+        raw_app = (l.app_name or "").lower().strip()
+        if raw_app in OS_SYSTEM_UTILITIES:
+            continue
+        display_name = getattr(l, "platform_name", None) or getattr(l, "clean_app_name", None)
+        if not display_name:
+            clean, plat, _ = parse_activity(l.window_title or "", l.app_name or "")
+            display_name = plat or clean or l.app_name or "Unknown"
+
+        app_counts[display_name] = app_counts.get(display_name, 0) + 1
         if l.timestamp:
             h = l.timestamp.hour
             hour_counts[h] = hour_counts.get(h, 0) + 1
@@ -190,14 +210,49 @@ def tool_optimize_workspace_goal(db: Session) -> dict:
 
 
 def analyze_user_patterns(db: Session) -> dict:
-    from datetime import date
+    from datetime import date, timedelta
     metrics = db.query(models.WorkspaceMetrics).all()
+
+    # Query actual distracting background applications from ActivityLog (not workspaces!)
+    cutoff_act = datetime.utcnow() - timedelta(days=7)
+    act_logs = (
+        db.query(models.ActivityLog)
+        .filter(models.ActivityLog.timestamp >= cutoff_act, models.ActivityLog.is_focused == 0)
+        .all()
+    )
+    from app.services.activity_parser import parse_activity
+
+    OS_SYSTEM_UTILITIES = {
+        "snippingtool.exe",
+        "screenclippinghost.exe",
+        "shellexperiencehost.exe",
+        "searchhost.exe",
+        "startmenuexperiencehost.exe",
+        "applicationframehost.exe",
+        "taskmgr.exe",
+        "explorer.exe",
+    }
+    app_counts: Dict[str, int] = {}
+    for l in act_logs:
+        raw_app = (l.app_name or "").lower().strip()
+        if raw_app in OS_SYSTEM_UTILITIES:
+            continue
+        display_name = getattr(l, "platform_name", None) or getattr(l, "clean_app_name", None)
+        if not display_name:
+            clean, plat, _ = parse_activity(l.window_title or "", l.app_name or "")
+            display_name = plat or clean or l.app_name or "Unknown"
+        if display_name and display_name.strip():
+            app_counts[display_name] = app_counts.get(display_name, 0) + 1
+    top_distraction_apps = [app for app, _ in sorted(app_counts.items(), key=lambda x: x[1], reverse=True)[:3]]
+
     if not metrics:
         return {
             "peak_hour": "N/A",
             "peak_workspace": "N/A",
             "avg_session_length": 0,
-            "distraction_triggers": [],
+            "distraction_triggers": top_distraction_apps,
+            "top_distracting_apps": top_distraction_apps,
+            "workspaces_with_most_distractions": [],
             "burnout_pattern": "low",
             "consistency_score": 0,
             "best_day_of_week": "N/A"
@@ -235,8 +290,6 @@ def analyze_user_patterns(db: Session) -> dict:
 
     avg_session_length = sum(workspace_focus.values()) / sum(workspace_sessions.values()) if workspace_sessions else 0
     
-    distraction_triggers = [k for k, v in sorted(workspace_distractions.items(), key=lambda item: item[1], reverse=True)[:3]]
-    
     avg_burnout = sum(m.burnout_score for m in metrics) / len(metrics)
     if avg_burnout > 60:
         burnout_pattern = "high risk"
@@ -252,7 +305,9 @@ def analyze_user_patterns(db: Session) -> dict:
         "peak_hour": peak_hour,
         "peak_workspace": peak_workspace,
         "avg_session_length": round(avg_session_length, 1),
-        "distraction_triggers": distraction_triggers,
+        "distraction_triggers": top_distraction_apps,
+        "top_distracting_apps": top_distraction_apps,
+        "workspaces_with_most_distractions": [k for k, v in sorted(workspace_distractions.items(), key=lambda item: item[1], reverse=True)[:3]],
         "burnout_pattern": burnout_pattern,
         "consistency_score": consistency_score,
         "best_day_of_week": best_day_of_week
@@ -353,6 +408,7 @@ class StarMLEngine:
         db: Session,
         history: list = None,
         user_name: str = "there",
+        user_id: Optional[str] = None,
     ) -> str:
         """Runs the multi-round agentic tool-calling loop."""
         history = history or []
@@ -382,36 +438,131 @@ class StarMLEngine:
         user_name = context.get('user_name', user_name)
         user_age = context.get('user_age', None)
 
-        system_prompt = f"""You are Prodify Intelligence — a sharp, data-driven productivity coach.
-You have full memory of this conversation and the user's long-term patterns.
-Never introduce yourself if previous messages exist.
-The user's name is {user_name}. Greet them or refer to them by this name when appropriate.
+        category = context.get("workspaceCategory")
+        ws_id = context.get("workspaceId")
+        if not category and db:
+            ws_query = db.query(models.Workspace)
+            if ws_id:
+                ws_rec = ws_query.filter(models.Workspace.id == ws_id).first()
+            else:
+                ws_rec = ws_query.filter(models.Workspace.name == ws_name).order_by(models.Workspace.created_at.desc()).first()
+            if ws_rec:
+                category = ws_rec.category
+                if not current_intent:
+                    current_intent = ws_rec.current_goal or ws_rec.focus_keywords or ""
 
-USER PROFILE (from ML analysis):
-- Name: {user_name}
+        cat_clean = (category or "mastery").lower()
+        is_sprint = cat_clean == "sprint"
+        def _format_distractions_to_str(dist_list) -> str:
+            if not dist_list:
+                return "None recorded"
+            formatted = []
+            for item in dist_list:
+                if isinstance(item, dict):
+                    name = item.get("app") or item.get("platform") or item.get("clean_app") or "Unknown"
+                    cnt = item.get("count")
+                    formatted.append(f"{name} ({cnt}x)" if cnt else str(name))
+                elif isinstance(item, str):
+                    formatted.append(item)
+                else:
+                    formatted.append(str(item))
+            return ", ".join(formatted) if formatted else "None recorded"
+
+        def _format_workspaces_matrix(ws_matrix) -> str:
+            if not ws_matrix:
+                return "  - None active"
+            bullets = []
+            for ws in ws_matrix:
+                if isinstance(ws, dict):
+                    bullets.append(
+                        f"  - {ws.get('name', 'Workspace')}: {ws.get('today_logged_minutes', 0)}m / {ws.get('daily_target_minutes', 0)}m target "
+                        f"({ws.get('card_status_label', 'Ready')}, Streak: {ws.get('current_streak', 0)}d)"
+                    )
+                else:
+                    bullets.append(f"  - {str(ws)}")
+            return "\n".join(bullets)
+
+        distracting_apps_list = patterns.get("top_distracting_apps", [])
+        distracting_apps_str = _format_distractions_to_str(distracting_apps_list)
+
+        # Build live performance matrix ground truth
+        user_id = user_id or context.get("user_id")
+        perf_matrix = None
+        if user_id and db:
+            try:
+                perf_matrix = crud.build_user_performance_matrix(db, str(user_id))
+            except Exception as mex:
+                logger.warning(f"[STAR ML] Failed to build user performance matrix: {mex}")
+
+        global_summary = perf_matrix.get("global_summary", {}) if perf_matrix else {}
+        ws_matrix_list = perf_matrix.get("workspaces_matrix", []) if perf_matrix else []
+        active_ws_matrix = next((w for w in ws_matrix_list if str(w.get("id")) == str(ws_id) or w.get("name") == ws_name), None)
+
+        if active_ws_matrix:
+            if not current_intent and active_ws_matrix.get("allowed_intent_whitelist"):
+                current_intent = active_ws_matrix.get("allowed_intent_whitelist")
+            if active_ws_matrix.get("top_distracting_os_apps"):
+                distracting_apps_str = _format_distractions_to_str(active_ws_matrix.get("top_distracting_os_apps"))
+
+        workspaces_breakdown_str = _format_workspaces_matrix(ws_matrix_list)
+
+        today_cleared_summary = f"{global_summary.get('workspaces_cleared_today', 0)} / {global_summary.get('total_active_workspaces', 0)} targets cleared"
+        ten_day_form_str = f"{global_summary.get('ten_day_form_pct', 0)}% ({global_summary.get('form_tier', 'Calibrating')})"
+        focus_purity_str = f"{global_summary.get('focus_purity_pct', 0)}% ({global_summary.get('today_distractions_count', 0)} slips today)"
+        daily_verdict_str = global_summary.get('daily_verdict', 'Not Started Today')
+        streak_str = f"{global_summary.get('current_global_streak', 0)} days (best: {global_summary.get('longest_global_streak', 0)}d)"
+        form_tier = global_summary.get("form_tier", "Calibrating")
+
+        ws_today_progress = ""
+        if active_ws_matrix:
+            ws_today_progress = f"- Today's Target Progress: {active_ws_matrix.get('today_logged_minutes', 0)}m / {active_ws_matrix.get('daily_target_minutes', 0)}m ({active_ws_matrix.get('card_status_label', 'Ready to Start')})\n"
+
+        system_prompt = f"""You are Prodify Intelligence — a supportive, sharp, data-driven personal productivity coach.
+You are chatting with {user_name} inside a narrow 350px side panel.
+Never introduce yourself if previous conversation history exists.
+
+USER PERFORMANCE MATRIX (Ground Truth):
+- Today's Sweep: {today_cleared_summary} (Verdict: {daily_verdict_str})
+- 10-Day Form: {ten_day_form_str}
+- Focus Purity: {focus_purity_str}
+- Global Streak: {streak_str}
+- Workspaces Breakdown:
+{workspaces_breakdown_str}
+
+USER PROFILE (Long-Term ML Insights):
+- User Name: {user_name}
 {f'- Age: {user_age}' if user_age else ''}
-- Peak focus hour: {patterns['peak_hour']}
-- Best workspace: {patterns['peak_workspace']}
-- Average session length: {patterns['avg_session_length']} minutes
-- Burnout pattern: {patterns['burnout_pattern']}
-- Consistency score: {patterns['consistency_score']}/7 days
-- Distraction hotspots: {', '.join(patterns['distraction_triggers']) if patterns['distraction_triggers'] else 'None'}
+- Peak Focus Window: {patterns['peak_hour']}
+- Best Performing Workspace: {patterns['peak_workspace']}
+- Average Focus Session: {patterns['avg_session_length']} minutes
+- Burnout Risk Level: {patterns['burnout_pattern']}
+- Weekly Consistency: {patterns['consistency_score']}/7 days
+- Common Distracting Applications: {distracting_apps_str}
 
-CURRENT SESSION:
-- Workspace: {ws_name}
-- Intent: {current_intent or 'General productivity'}
-- Mode: {context.get('workspaceMode', 'General')}
-- Focus minutes so far: {focus_minutes}
-- Burnout score: {burnout_probability:.2f}%
-- Distractions this session: {distraction_count}
+ACTIVE WORKSPACE CONTEXT:
+- Workspace Name: "{ws_name}" (NOTE: This is the user's project/workspace name, NOT a distraction or external app!)
+- Workspace Category: {category_display} ({cat_clean})
+{ws_today_progress}- Declared Intent & Allowed Tools: "{current_intent or 'General focus'}"
+- Elapsed Focus Minutes: {focus_minutes}m
+- Burnout Score: {burnout_probability:.1f}%
+- Distraction Count: {distraction_count}
 
-GLOBAL STATS:
-- Total focus hours logged: {total_focus_hours:.1f}
-- Total sessions completed: {total_sessions}
+GLOBAL METRICS:
+- Total Focus Hours Logged: {total_focus_hours:.1f}h
+- Total Sessions Completed: {total_sessions}
 
-Be direct, specific, and reference the user's actual data. Never give generic advice.
-If burnout score is above 70%, always recommend a break first before anything else.
-If consistency score is below 3, address the habit gap directly."""
+STRICT COACHING GUIDELINES:
+1. WORKSPACE NAME VS DISTRACTING APPS:
+   The workspace name "{ws_name}" is the user's focus project. It is NEVER a distracting app or site. Never call "{ws_name}" or any workspace a distraction. Actual distractions refer exclusively to background programs ({distracting_apps_str}).
+2. RESPECT WORKSPACE CATEGORY & INTENT:
+   {"- This is a Sprint workspace with target hours/deadline." if is_sprint else f"- This is a {category_display} workspace (mastery / quick work). NEVER tell the user to 'set a deadline' or 'set target hours'. Mastery and Quick Work workspaces are continuous habit tracks and do not require deadlines."}
+   - The user's declared intent is: "{current_intent or 'General focus'}". This is their valid allowed ruleset (e.g. IDEs, browsers, docs, AI tools). NEVER scold, lecture, or question the user for using tools they declared as allowed.
+3. PERFORMANCE MATRIX & FORM TIER:
+   - If Form Tier is "Calibrating", the user is building their baseline on day 1 or has 0 sessions today. NEVER tell them they are "slumping", "slipping", or failing. Encourage them to launch their first session.
+4. CHAT FORMATTING (MANDATORY FOR 350PX CHAT PANEL):
+   - Keep your response concise, punchy, and supportive.
+   - Output at most 3 short bullet points (under 120 words total unless the user explicitly asks for deep analysis).
+   - NEVER output raw Markdown tables (NEVER use '|---|---|' or pipe-delimited tables) because tables break in narrow chat bubbles. Always format lists or comparisons using clean bullet points."""
 
         messages = [{"role": "system", "content": system_prompt}]
         for msg in history:
