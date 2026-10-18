@@ -35,14 +35,42 @@ interface WorkspaceMetrics {
   workspace_streak_longest: number;
 }
 
+export interface WorkspaceMatrixItem {
+  id: number;
+  name: string;
+  category: string;
+  created_at: string;
+  allowed_intent_whitelist: string;
+  today_logged_minutes: number;
+  daily_target_minutes: number;
+  today_cleared: boolean;
+  card_status_label: string;
+  card_status_tone: 'success' | 'progress' | 'neutral' | 'danger';
+  seven_day_chain: {
+    date: string;
+    day_name?: string;
+    status: 'cleared' | 'partial' | 'missed' | 'untracked';
+    minutes_logged: number;
+    target_minutes: number;
+  }[];
+  top_distracting_os_apps: string[];
+}
+
 interface WorkspaceCardProps {
   workspace: Workspace;
   index?: number;
   onDeleted?: (workspaceId: number) => void;
   totalMinutesLogged?: number;
+  matrixItem?: WorkspaceMatrixItem;
 }
 
-const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, onDeleted, totalMinutesLogged = 0 }: WorkspaceCardProps) {
+const WorkspaceCard = React.memo(function WorkspaceCard({ 
+  workspace, 
+  index = 0, 
+  onDeleted, 
+  totalMinutesLogged = 0,
+  matrixItem
+}: WorkspaceCardProps) {
   const navigate = useNavigate();
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -77,6 +105,44 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
   const last7Days = Array.from({length: 7}).map((_, i) => format(subDays(today, 6 - i), 'yyyy-MM-dd'));
 
   const renderConsistencyChain = () => {
+    if (matrixItem?.seven_day_chain) {
+      return (
+        <div className="flex items-center gap-1.5">
+          {matrixItem.seven_day_chain.map((day) => {
+            let className = "w-2.5 h-2.5 rounded-[3px] transition-all duration-300 ";
+            if (day.status === 'untracked') {
+              className += "border border-zinc-800 bg-transparent opacity-40";
+            } else if (day.status === 'cleared') {
+              className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]";
+            } else if (day.status === 'partial') {
+              className += "bg-amber-400/80";
+            } else if (day.status === 'missed') {
+              className += "bg-rose-500/80";
+            }
+
+            const statusDisplay = day.status === 'cleared' ? 'Cleared' :
+              day.status === 'partial' ? 'In Progress' :
+              day.status === 'missed' ? 'Missed Quota' : 'Untracked';
+            
+            const tooltipText = `${day.day_name || day.date}: ${statusDisplay} (${day.minutes_logged}m / ${day.target_minutes}m)`;
+
+            return (
+              <TooltipProvider key={day.date} delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className={className} />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs bg-zinc-950 border-zinc-800 text-white">
+                    {tooltipText}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })}
+        </div>
+      );
+    }
+
     if (isLoadingMetrics || !metrics) {
       return (
         <div className="flex items-center gap-1">
@@ -90,17 +156,17 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
     return (
       <div className="flex items-center gap-1">
         {last7Days.map(dateStr => {
-          const dayLog = metrics.calendar.find((c) => c.date === dateStr);
+          const dayLog = metrics.calendar?.find((c) => c.date === dateStr);
           let className = "w-2.5 h-2.5 rounded-[3px] transition-all duration-300 ";
           
           if (!dayLog || !dayLog.status) {
-            className += "border border-[#333333] bg-transparent";
+            className += "border border-zinc-800 bg-transparent opacity-40";
           } else if (dayLog.status === 'golden' || dayLog.status === 'green') {
-            className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]";
+            className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]";
           } else if (dayLog.status === 'yellow') {
             className += "bg-amber-400/80";
           } else if (dayLog.status === 'red') {
-            className += "bg-red-500/80";
+            className += "bg-rose-500/80";
           }
 
           const statusDisplay = dayLog?.status ? dayLog.status.charAt(0).toUpperCase() + dayLog.status.slice(1) : 'No activity';
@@ -154,6 +220,12 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
   const isSprint = workspace.category === 'sprint';
   const totalHoursLogged = (totalMinutesLogged / 60).toFixed(1);
   const currentStreak = metrics ? metrics.workspace_streak_current : (workspace.current_streak || 0);
+
+  const todayLogged = matrixItem ? matrixItem.today_logged_minutes : 0;
+  const dailyTarget = matrixItem ? matrixItem.daily_target_minutes : (workspace.daily_target_minutes || (isSprint ? 60 : 60));
+  const todayCleared = matrixItem ? matrixItem.today_cleared : false;
+  const statusLabel = matrixItem?.card_status_label || (todayLogged > 0 ? `${todayLogged}m left today` : 'Ready to Start');
+  const statusTone = matrixItem?.card_status_tone || 'neutral';
 
   return (
     <>
@@ -220,24 +292,44 @@ const WorkspaceCard = React.memo(function WorkspaceCard({ workspace, index = 0, 
               {renderConsistencyChain()}
               <div className="mt-2" />
               
-              <div className="space-y-4">
+              <div className="space-y-3">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-[#888888] uppercase tracking-wider text-[10px] font-bold">Total Logged</span>
                 <span className="text-white font-mono font-bold">{totalHoursLogged}h</span>
               </div>
               
-              <div className="bg-[#0a0a0a] border border-[#222] rounded-sm p-2 flex justify-between items-center">
-                <span className="text-[10px] text-[#888888] uppercase tracking-wider font-bold">Pace</span>
-                {isLoadingMetrics || !metrics ? (
-                   <span className="text-xs text-[#888888] font-mono animate-pulse">loading...</span>
-                ) : (
-                  <span className={`text-xs font-mono font-bold ${
-                    metrics.pace.label === 'Strong' ? 'text-white' : 
-                    metrics.pace.label === 'Solid' ? 'text-green-400' :
-                    metrics.pace.label === 'Shaky' ? 'text-amber-400' : 'text-red-400'
+              {/* Today's Quota Progress */}
+              <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2.5 space-y-1.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Today's Quota</span>
+                  <span className={`text-[11px] font-mono font-bold ${
+                    statusTone === 'success' || statusTone === 'green' ? 'text-emerald-400' :
+                    statusTone === 'progress' || statusTone === 'amber' || statusTone === 'blue' ? 'text-blue-400' :
+                    statusTone === 'danger' || statusTone === 'red' ? 'text-rose-400' : 'text-zinc-400'
                   }`}>
-                    {metrics.pace.label} <span className="text-[#888888] ml-1">{metrics.pace.score.toFixed(0)}</span>
+                    {statusLabel}
                   </span>
+                </div>
+                {dailyTarget > 0 ? (
+                  <>
+                    <div className="w-full bg-zinc-800/80 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          todayCleared ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' :
+                          todayLogged > 0 ? 'bg-blue-500' : 'bg-transparent'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.round((todayLogged / dailyTarget) * 100))}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-zinc-500 font-mono">
+                      <span>{todayLogged}m / {dailyTarget}m Today</span>
+                      <span>{Math.round((todayLogged / dailyTarget) * 100)}%</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[10px] text-zinc-500 font-mono">
+                    <span>{todayLogged > 0 ? `${todayLogged}m logged today` : 'Flexible flow'}</span>
+                  </div>
                 )}
               </div>
               

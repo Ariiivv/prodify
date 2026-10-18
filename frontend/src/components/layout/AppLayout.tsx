@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, User, Settings } from 'lucide-react';
+import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 
@@ -59,17 +59,6 @@ export default function AppLayout() {
 
         {/* User section — pinned to bottom via mt-auto */}
         <div className="mt-auto flex flex-col items-center gap-6 w-full pt-4">
-          {/* Avatar (Clickable to open profile settings) */}
-          <Link
-            to="/settings"
-            className="relative group flex flex-col items-center gap-1.5 w-full"
-          >
-            <div className="w-10 h-10 bg-zinc-900 flex items-center justify-center text-muted-foreground hover:text-blue-500 hover:border hover:border-blue-500 transition-all rounded">
-              <User className="w-5 h-5" />
-            </div>
-            <span className="text-xs text-[#666666] font-medium">Profile</span>
-          </Link>
-
           {/* Sign Out */}
           <button
             onClick={handleSignOut}

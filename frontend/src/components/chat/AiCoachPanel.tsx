@@ -32,6 +32,8 @@ interface AiCoachPanelProps {
   currentTabTitle?: string;
   focusKeywords?: string[];
   isTabDistracted?: boolean;
+  workspaceCategory?: string;
+  sessionIntent?: string;
 }
 
 function getTimeOfDayGreeting(): string {
@@ -61,6 +63,8 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
   currentTabTitle = '',
   focusKeywords = [],
   isTabDistracted = false,
+  workspaceCategory,
+  sessionIntent,
 }: AiCoachPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
@@ -117,6 +121,10 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
         message: `SYSTEM_DEBRIEF`,
         workspace_name: workspaceName,
         context: {
+          workspaceId,
+          workspaceName,
+          workspaceCategory,
+          sessionIntent,
           distractionCount: localDistractionCount + distractionCount,
           distractedSeconds,
           focusMinutes,
@@ -180,9 +188,12 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
         workspace_name: workspaceName || 'Default',
         workspace_mode: currentState?.includes('BREAK') ? 'Break' : 'Structured',
         context: {
+          workspaceId,
+          workspaceName: workspaceName || 'Default',
+          workspaceCategory,
+          sessionIntent,
           distractionCount: localDistractionCount + distractionCount,
           timeLeft: timeRemainingString,
-          workspaceName: workspaceName || 'Default',
           workspaceMode: currentState?.includes('BREAK') ? 'Break' : 'Structured',
           focusMinutes,
           burnoutProbability,

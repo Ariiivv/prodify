@@ -139,6 +139,7 @@ function App() {
                 <Route path="/" element={<Suspense fallback={<PageLoader />}><HomePage /></Suspense>} />
                 <Route path="/workspace/:id" element={<Suspense fallback={<PageLoader />}><WorkspacePage /></Suspense>} />
                 <Route path="/report" element={<Suspense fallback={<PageLoader />}><Report /></Suspense>} />
+                <Route path="/analytics" element={<Suspense fallback={<PageLoader />}><Report /></Suspense>} />
                 <Route path="/settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
               </Route>
             </Route>

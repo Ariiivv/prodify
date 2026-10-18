@@ -29,8 +29,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [deadline, setDeadline] = useState<Date | undefined>(undefined);
   const [dailyHours, setDailyHours] = useState('1');
   const [dailyMinutes, setDailyMinutes] = useState('0');
-  const [focusKeywords, setFocusKeywords] = useState('');
-  const [goalDescription, setGoalDescription] = useState('');
+  const [sessionIntent, setSessionIntent] = useState('');
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [themeColor, setThemeColor] = useState<string>('#3b82f6');
   const THEME_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -95,8 +94,8 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
         target_hours: category === 'sprint' && targetHours.trim() ? parseFloat(targetHours) : null,
         deadline: category === 'sprint' && deadline ? format(deadline, 'yyyy-MM-dd') : null,
         daily_target_minutes: category === 'mastery' ? dailyMin : 60,
-        focus_keywords: focusKeywords.trim() || null,
-        current_goal: goalDescription.trim() || null,
+        focus_keywords: sessionIntent.trim() || null,
+        current_goal: sessionIntent.trim() || null,
         theme_color: themeColor,
         camera_enabled: cameraEnabled,
       };
@@ -135,8 +134,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       setDeadline(undefined);
       setDailyHours('1');
       setDailyMinutes('0');
-      setFocusKeywords('');
-      setGoalDescription('');
+      setSessionIntent('');
       setCameraEnabled(false);
 
       onCreated?.();
@@ -178,7 +176,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
               exit={{ scale: 0.95, opacity: 0 }}
               className="bg-zinc-950 border border-zinc-800 rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] overflow-hidden relative"
             >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-800 shrink-0 bg-zinc-950 z-10">
+              <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800 shrink-0 bg-zinc-950 z-10">
                 <div>
                   <h2 className="text-xl font-bold text-white">Create Workspace</h2>
                 </div>
@@ -187,7 +185,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                 </button>
               </div>
 
-              <div className="overflow-y-auto p-6 custom-scrollbar">
+              <div className="overflow-y-auto px-6 pt-6 pb-8 custom-scrollbar">
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Category Select (Pills) */}
                 <div className="flex bg-transparent border border-zinc-800 p-1 rounded-full">
@@ -232,14 +230,17 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                   />
                 </div>
 
-                {/* Declared Goal / Intent Statement */}
+                {/* Session Intent & Allowed Tools */}
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Declared Goal / Intent Statement</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Session Intent & Allowed Tools</label>
+                  <p className="text-[11px] text-muted-foreground/80 mb-2">
+                    Describe your goal and the apps/sites you'll use (e.g., 'Building FastAPI backend in VS Code, using Chrome for docs and AI').
+                  </p>
                   <textarea
-                    value={goalDescription}
-                    onChange={(e) => setGoalDescription(e.target.value)}
-                    placeholder="What are you focusing on in this workspace?"
-                    rows={2}
+                    value={sessionIntent}
+                    onChange={(e) => setSessionIntent(e.target.value)}
+                    placeholder="e.g., Building FastAPI backend in VS Code, using Chrome for docs and AI..."
+                    rows={3}
                     className="flex w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 resize-none"
                   />
                 </div>
@@ -447,22 +448,6 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                   </div>
                 </div>
 
-
-                {/* Focus Keywords */}
-                <div className="pt-2">
-                  <label className="text-sm font-bold text-white block">Allowed Apps & Tasks</label>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Describe your session in plain English. The AI uses this to judge distractions.
-                  </p>
-                  <textarea
-                    required
-                    value={focusKeywords}
-                    onChange={(e) => setFocusKeywords(e.target.value)}
-                    placeholder="e.g., I am writing code in VS Code and reading React documentation on Chrome..."
-                    rows={3}
-                    className="flex w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 resize-none"
-                  />
-                </div>
 
                 {/* Actions */}
                 <div className="pt-4">

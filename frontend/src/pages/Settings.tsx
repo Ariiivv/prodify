@@ -105,7 +105,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto py-8">
+    <div className="max-w-3xl mx-auto pt-10 md:pt-12 pb-16 px-6">
       <div className="flex items-center gap-3 mb-8">
         <div className="w-10 h-10 rounded-xl bg-card border border-border/40 flex items-center justify-center">
           <SettingsIcon className="w-5 h-5 text-foreground" />
