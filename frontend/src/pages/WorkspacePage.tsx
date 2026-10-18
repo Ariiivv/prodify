@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock, Settings } from 'lucide-react';
+import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock, Settings, BarChart3 } from 'lucide-react';
 import { useTimerStore, initTimer, useTimer, switchMode } from '@/lib/timerStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { useIdleDetection } from '@/hooks/useIdleDetection';
-import { useAdaptiveFocus } from '@/hooks/useAdaptiveFocus';
+import { useAdaptiveFocus, type DistractionMetadata } from '@/hooks/useAdaptiveFocus';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
@@ -18,6 +18,7 @@ import AiCoachPanel from '@/components/chat/AiCoachPanel';
 import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCalendar';
 import { TimerSettingsModal } from '@/components/timer/TimerSettingsModal';
+import { WorkspaceReportModal } from '@/components/workspace/WorkspaceReportModal';
 
 type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
 
@@ -132,6 +133,15 @@ export default function WorkspacePage() {
     };
   }, [wsId]);
 
+interface ActiveDistractionInfo {
+  reason: string;
+  cleanAppName?: string;
+  platformName?: string;
+  contentTitle?: string;
+  rawAppName?: string;
+  rawWindowTitle?: string;
+}
+
   // Component State
   const [burnoutProb, setBurnoutProb] = useState(0);
   const [workspace, setWorkspace] = useState<any>(null);
@@ -143,6 +153,8 @@ export default function WorkspacePage() {
   const [engagementState, setEngagementState] = useState<string>('ACTIVE_WORK');
   const [lastFocusedWindow, setLastFocusedWindow] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [activeDistraction, setActiveDistraction] = useState<ActiveDistractionInfo | null>(null);
   const loggedCompletionRef = useRef<number | null>(null);
   const lastBurnoutMinuteRef = useRef<number | null>(null);
 
@@ -180,7 +192,7 @@ export default function WorkspacePage() {
     enabled: isDetectionEnabled,
     sessionIntent,
     workspaceId: wsId,
-    onDistracted: (reason?: string, appName?: string, summary?: string) => {
+    onDistracted: (reason?: string, appName?: string, summary?: string, meta?: DistractionMetadata) => {
       const store = useTimerStore.getState();
       const currentWsId = store.activeWorkspaceId;
       const timerWs = currentWsId !== null ? store.workspaces[currentWsId] : undefined;
@@ -197,10 +209,19 @@ export default function WorkspacePage() {
           trimmedReason.toLowerCase().includes("evaluation failed") ||
           trimmedReason.toLowerCase().includes("rate limit");
 
-        const appLabel = appName ? appName.replace(/\.(exe|app)$/i, '') : "an application";
+        const appLabel = meta?.platformName || meta?.cleanAppName || (appName ? appName.replace(/\.(exe|app)$/i, '') : "an application");
         const displayReason = isErrorOrEmpty
           ? `You switched to ${appLabel} which does not match your session intent.`
           : (trimmedSummary || trimmedReason);
+
+        setActiveDistraction({
+          reason: displayReason,
+          cleanAppName: meta?.cleanAppName,
+          platformName: meta?.platformName,
+          contentTitle: meta?.contentTitle || meta?.windowTitle,
+          rawAppName: appName || meta?.appName,
+          rawWindowTitle: meta?.windowTitle,
+        });
 
         // 🚀 Active Enforcement: Instantly pop Prodify back to the front!
         if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
@@ -279,6 +300,41 @@ export default function WorkspacePage() {
     onFocused: () => {
     },
   });
+
+  const handleReturnToFocus = useCallback(async () => {
+    try {
+      if (wsId) {
+        await fetch(`${API_BASE}/api/telemetry/reset-focus`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ workspace_id: wsId }),
+        });
+      }
+    } catch (e) {
+      console.error('Failed to reset focus state:', e);
+    }
+    setActiveDistraction(null);
+    useTimerStore.getState().resumeFocus();
+  }, [wsId]);
+
+  const handleAllowForSession = useCallback(async () => {
+    toast.success("Allowed for this session", { description: "Resuming focus now." });
+    markAsRelevant();
+    try {
+      if (wsId) {
+        await fetch(`${API_BASE}/api/telemetry/reset-focus`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ workspace_id: wsId }),
+        });
+      }
+    } catch (e) {
+      console.error('Failed to reset focus state:', e);
+    }
+    setActiveDistraction(null);
+    useTimerStore.getState().decrementDistraction();
+    useTimerStore.getState().resumeFocus();
+  }, [markAsRelevant, wsId]);
 
   const isTabDistracted = !isTabFocused;
 
@@ -640,8 +696,26 @@ export default function WorkspacePage() {
             </Tooltip>
           </TooltipProvider>
 
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button 
+                  onClick={() => setIsReportOpen(true)}
+                  aria-label="Workspace Analytics"
+                  className="w-10 h-10 rounded-lg flex items-center justify-center bg-secondary text-secondary-foreground hover:bg-secondary/80 hover:text-blue-400 transition-colors"
+                >
+                  <BarChart3 className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Workspace Analytics & Distraction Insights
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           <button 
             onClick={() => setIsSettingsOpen(true)}
+            aria-label="Workspace Settings"
             className="w-10 h-10 rounded-lg flex items-center justify-center bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
           >
             <Settings className="w-5 h-5" />
@@ -650,6 +724,14 @@ export default function WorkspacePage() {
       </motion.div>
       
       <TimerSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <WorkspaceReportModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        workspaceId={wsId || 0}
+        workspaceName={workspace.name}
+        category={workspace.category}
+        dailyTargetMinutes={workspace.daily_target_minutes}
+      />
 
       <motion.div
         className="grid grid-cols-1 lg:grid-cols-3 gap-8"
@@ -785,58 +867,76 @@ export default function WorkspacePage() {
           )}
 
           {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason && !['IDLE_DETECTED', 'Manual', 'manual_pause'].includes(timerState.pauseReason) && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
               <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="w-full max-w-lg bg-zinc-950 border border-red-500/50 rounded-xl p-6 shadow-2xl relative overflow-hidden"
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="w-full max-w-lg bg-zinc-950/95 border border-rose-500/30 rounded-2xl p-6 md:p-8 shadow-[0_0_50px_rgba(244,63,94,0.15)] relative overflow-hidden backdrop-blur-xl"
               >
-                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                {/* Glowing top crimson bar */}
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-600 shadow-[0_0_15px_rgba(244,63,94,0.5)]"></div>
                 
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 mt-1 w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500">
-                    <AlertTriangle className="w-5 h-5" />
-                  </div>
-                  
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-red-500 mb-1">Focus Interrupted</h3>
-                  <p className="text-sm text-foreground mb-2 leading-relaxed">
-                    {timerState.pauseReason}
-                  </p>
-                  
-                  {sessionIntent && (
-                    <div className="bg-background/50 rounded-lg p-3 border border-border/50 mb-4">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-1">Declared Goal</p>
-                      <p className="text-sm font-medium text-foreground">"{sessionIntent}"</p>
+                {/* Header: Glowing badge + Title + Detected Pill */}
+                <div className="flex items-center justify-between gap-3 mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.25)] shrink-0">
+                      <AlertTriangle className="w-4 h-4" />
                     </div>
-                  )}
-
-                  <p className="text-sm font-semibold text-red-400 mb-5">
-                    You shouldn't be here. Return to your session.
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button 
-                      onClick={() => useTimerStore.getState().resumeFocus()}
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-xl transition-colors shadow-sm"
-                    >
-                      Back to Focus
-                    </button>
-                    <button 
-                      onClick={() => {
-                        toast.success("Noted as relevant", { description: "We'll try to learn from this." });
-                        markAsRelevant();
-                        useTimerStore.getState().decrementDistraction();
-                        useTimerStore.getState().resumeFocus();
-                      }}
-                      className="flex-1 border border-[#444] text-[#ccc] hover:bg-zinc-800 hover:text-white font-medium py-2 px-4 rounded-xl transition-colors"
-                    >
-                      This is relevant
-                    </button>
+                    <h3 className="text-lg font-bold text-white tracking-tight">Focus Interrupted</h3>
                   </div>
+
+                  {(activeDistraction?.platformName || activeDistraction?.cleanAppName) && (
+                    <span className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 shrink-0">
+                      {activeDistraction.platformName
+                        ? `${activeDistraction.platformName}${activeDistraction.cleanAppName && activeDistraction.cleanAppName !== activeDistraction.platformName ? ` • ${activeDistraction.cleanAppName}` : ''}`
+                        : activeDistraction.cleanAppName}
+                    </span>
+                  )}
                 </div>
-              </div>
-            </motion.div>
+                
+                {/* Detected Activity Title */}
+                <div className="mb-4">
+                  <p className="text-[11px] text-zinc-400 uppercase tracking-wider font-semibold mb-1">Detected Activity</p>
+                  <p className="text-base font-semibold text-zinc-100 line-clamp-2">
+                    {activeDistraction?.contentTitle || activeDistraction?.rawWindowTitle || currentTabTitle || 'External application'}
+                  </p>
+                </div>
+                
+                {/* AI Coach Callout Box: Full semantic reason */}
+                <div className="mb-4 bg-zinc-900/80 border border-zinc-800 rounded-xl p-3.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Brain className="w-4 h-4 text-rose-400" />
+                    <p className="text-xs font-semibold text-rose-300 uppercase tracking-wider">Why Prodify Paused Your Session</p>
+                  </div>
+                  <p className="text-sm text-zinc-300 leading-relaxed">
+                    {activeDistraction?.reason || timerState.pauseReason}
+                  </p>
+                </div>
+
+                {/* Comparison Box: Declared Goal */}
+                {sessionIntent && (
+                  <div className="mb-6 bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-3.5">
+                    <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">Your Stated Goal</p>
+                    <p className="text-sm font-medium text-zinc-200 italic">"{sessionIntent}"</p>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <button 
+                    onClick={handleReturnToFocus}
+                    className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-medium py-2.5 px-4 rounded-xl transition-all shadow-[0_0_20px_rgba(244,63,94,0.3)] hover:shadow-[0_0_25px_rgba(244,63,94,0.5)] flex items-center justify-center gap-2 text-sm"
+                  >
+                    Return to Focus
+                  </button>
+                  <button 
+                    onClick={handleAllowForSession}
+                    className="flex-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 hover:text-white font-medium py-2.5 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-2"
+                  >
+                    Allow for This Session
+                  </button>
+                </div>
+              </motion.div>
             </div>
           )}
         </motion.div>
@@ -1048,6 +1148,8 @@ export default function WorkspacePage() {
             currentTabTitle={currentTabTitle}
             focusKeywords={workspaceKeywords}
             isTabDistracted={isTabDistracted}
+            workspaceCategory={workspace.category}
+            sessionIntent={workspace.current_goal || (typeof workspace.focus_keywords === 'string' ? workspace.focus_keywords : '') || ''}
           />
         );
       })()}

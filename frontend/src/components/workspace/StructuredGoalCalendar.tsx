@@ -31,44 +31,71 @@ interface StructuredGoalCalendarProps {
   mode?: string;
   sessionCount?: number;
   calendar?: CalendarDay[];
+  selectedDate?: string;
+  onSelectDate?: (date: string, dayData?: CalendarDay) => void;
+  showLegend?: boolean;
 }
 
-const STATUS_STYLES: Record<string, { cell: string; label: string }> = {
-  golden: {
-    cell: 'bg-blue-500 text-black shadow-[0_0_12px_rgba(59,130,246,0.5)]',
-    label: 'Exceeded goal',
-  },
-  green: {
-    cell: 'bg-green-400 text-black',
-    label: 'Met goal',
-  },
-  yellow: {
-    cell: 'bg-amber-400 text-black',
-    label: 'Under goal',
-  },
-  red: {
-    cell: 'bg-red-500 text-white',
-    label: 'Missed goal',
-  },
-};
-
-function statusClass(status: CalendarDay['status'] | undefined, inMonth: boolean, isFuture: boolean, isPast: boolean) {
+export function getDayStatusVisual(
+  dayData: CalendarDay | undefined,
+  inMonth: boolean,
+  isFuture: boolean,
+  isPast: boolean
+) {
   if (!inMonth) {
-    // Out-of-month padding: invisible, keep grid alignment.
-    return 'text-transparent bg-transparent border border-transparent pointer-events-none';
+    return {
+      cell: 'text-transparent bg-transparent border border-transparent pointer-events-none',
+      label: '',
+    };
   }
-  if (status && STATUS_STYLES[status]) {
-    return STATUS_STYLES[status].cell;
-  }
-  // In-month day with no outcome yet — past (no data) or future (upcoming):
-  // plain dim number, NO box/border.
+
   if (isFuture) {
-    return 'text-[#444] bg-transparent';
+    return {
+      cell: 'text-zinc-600 bg-transparent border border-transparent hover:border-zinc-800',
+      label: 'Upcoming',
+    };
   }
-  if (isPast) {
-    return 'text-[#555] bg-transparent';
+
+  const actual = dayData?.actual_minutes ?? 0;
+  const target = dayData?.target_minutes ?? 0;
+
+  // 1. Golden (>= 1.5x target)
+  if (dayData?.status === 'golden' || (target > 0 && actual >= 1.5 * target)) {
+    return {
+      cell: 'bg-amber-400/30 text-amber-200 border border-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.35)]',
+      label: 'Exceeded Goal (>=1.5x)',
+    };
   }
-  return 'text-[#888] bg-transparent';
+
+  // 2. Green (1.0x to < 1.5x target)
+  if (dayData?.status === 'green' || (target > 0 && actual >= target) || (target <= 0 && actual > 0)) {
+    return {
+      cell: 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]',
+      label: 'Goal Met',
+    };
+  }
+
+  // 3. Yellow (0.5x to < 1.0x target)
+  if (dayData?.status === 'yellow' || (target > 0 && actual >= 0.5 * target)) {
+    return {
+      cell: 'bg-amber-500/20 text-amber-300 border border-amber-500/40',
+      label: 'Partial (0.5x–1.0x)',
+    };
+  }
+
+  // 4. Red (< 0.5x target with actual > 0)
+  if (dayData?.status === 'red' || (actual > 0 && target > 0 && actual < 0.5 * target)) {
+    return {
+      cell: 'bg-rose-500/20 text-rose-300 border border-rose-500/40',
+      label: 'Under Target (<0.5x)',
+    };
+  }
+
+  // 5. Inactive / 0 minutes logged: Neutral dark
+  return {
+    cell: 'bg-[#181818] text-zinc-500 border border-[#262626]',
+    label: 'Inactive (0m logged)',
+  };
 }
 
 function formatMinutes(totalMinutes: number): string {
@@ -85,6 +112,9 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
   workspaceId,
   sessionCount,
   calendar: calendarProp,
+  selectedDate,
+  onSelectDate,
+  showLegend = false,
 }) => {
   const [fetchedCalendar, setFetchedCalendar] = useState<CalendarDay[]>([]);
   const [loading, setLoading] = useState(!calendarProp);
@@ -165,15 +195,14 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
                   <Info className="w-3.5 h-3.5" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top" className="bg-zinc-900 border-zinc-700 text-xs max-w-[230px]">
+              <TooltipContent side="top" className="bg-zinc-900 border-zinc-700 text-xs max-w-[240px]">
                 <p className="font-bold text-white mb-1.5">Daily goal progress</p>
-                <div className="space-y-1 text-[#bbb]">
-                  <p><span className="inline-block w-2.5 h-2.5 bg-red-500 mr-1.5 align-middle" />Missed — under half the daily target</p>
-                  <p><span className="inline-block w-2.5 h-2.5 bg-amber-400 mr-1.5 align-middle" />Under — at least half, target not met</p>
-                  <p><span className="inline-block w-2.5 h-2.5 bg-green-400 mr-1.5 align-middle" />Met — daily target reached</p>
-                  <p><span className="inline-block w-2.5 h-2.5 bg-blue-500 mr-1.5 align-middle" />Exceeded — 150%+ of target</p>
+                <div className="space-y-1.5 text-[#bbb]">
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#181818] border border-[#262626]" /> Inactive — 0m logged</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500/40 border border-amber-500" /> Partial effort — under target</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500/40 border border-emerald-500" /> Goal Met — reached daily target</p>
                 </div>
-                <p className="text-[#888] mt-1.5">Hover any finished day for its logged time.</p>
+                <p className="text-[#888] mt-1.5 text-[11px]">Click any date to inspect breakdown.</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -187,7 +216,7 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
-      <div className="w-full bg-zinc-950 border border-zinc-800 p-4 shadow-xl">
+      <div className="w-full bg-zinc-950 border border-zinc-800 p-4 shadow-xl rounded-xl">
         <div className="grid grid-cols-7 gap-1 mb-2">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
             <div key={label} className="text-center text-[10px] font-bold uppercase tracking-wider text-[#888]">
@@ -202,18 +231,11 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
             const isFuture = isAfter(day, today);
             const isPast = isBefore(day, today);
             const dayData = dayByDate.get(dateStr);
-            const status = dayData?.status ?? null;
-            const style = status ? STATUS_STYLES[status] : null;
+            const visual = getDayStatusVisual(dayData, inMonth, isFuture, isPast);
             const actual = dayData?.actual_minutes ?? 0;
             const target = dayData?.target_minutes ?? 0;
-            const label = isFuture
-              ? 'Upcoming'
-              : style?.label || (inMonth ? (isPast ? 'No data' : 'No activity yet') : '');
             const isTodayCell = isSameDay(day, today);
-            // Only real outcome days (past/today, in-month, with a status)
-            // get borders, colors and hover stats. Everything else is a
-            // plain number (past, no data) or invisible (padding/future).
-            const interactive = inMonth && !isFuture && !!style;
+            const isSelected = selectedDate === dateStr;
             const detail = target > 0
               ? `${formatMinutes(actual)} of ${formatMinutes(target)}`
               : `${formatMinutes(actual)} logged`;
@@ -222,15 +244,18 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
               <TooltipProvider key={dateStr} delayDuration={0}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div
-                      className={`aspect-square flex items-center justify-center text-[11px] font-mono font-bold rounded-[3px] ${statusClass(status, inMonth, isFuture, isPast)} ${isTodayCell && inMonth ? 'ring-1 ring-white/40' : ''} ${interactive ? 'cursor-default' : ''}`}
+                    <button
+                      type="button"
+                      disabled={!inMonth}
+                      onClick={() => inMonth && onSelectDate?.(dateStr, dayData)}
+                      className={`aspect-square flex items-center justify-center text-[11px] font-mono font-bold rounded-[3px] transition-all ${visual.cell} ${isTodayCell && inMonth ? 'ring-1 ring-white/50' : ''} ${isSelected && inMonth ? 'ring-2 ring-blue-500 ring-offset-1 ring-offset-zinc-950 font-extrabold scale-105 z-10' : ''} ${inMonth ? 'cursor-pointer hover:border-zinc-500' : 'cursor-default'}`}
                     >
                       {inMonth ? format(day, 'd') : ''}
-                    </div>
+                    </button>
                   </TooltipTrigger>
-                  {interactive && (
+                  {inMonth && (
                     <TooltipContent side="top" className="bg-zinc-900 border-zinc-700 text-xs">
-                      <p className="font-bold text-white">{label}</p>
+                      <p className="font-bold text-white">{visual.label}</p>
                       <p className="text-[#bbb]">{detail}</p>
                       <p className="text-[#888]">{format(parseISO(dateStr), 'MMM d, yyyy')}</p>
                     </TooltipContent>
@@ -241,6 +266,30 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
           })}
         </div>
       </div>
+      {showLegend && (
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-3 text-[11px] text-zinc-400">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#181818] border border-[#262626]" />
+            Inactive
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-rose-500/40 border border-rose-500" />
+            &lt;0.5x (Red)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-500/40 border border-amber-500" />
+            0.5–1x (Yellow)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500/40 border border-emerald-500" />
+            1–1.5x (Green)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)] border border-amber-400" />
+            1.5x+ (Golden)
+          </span>
+        </div>
+      )}
     </div>
   );
 };
