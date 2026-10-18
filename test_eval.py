@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import os
 import sys
 from dotenv import load_dotenv
@@ -27,7 +27,7 @@ async def main():
     print("Running Tests...\n")
     for intent, title, app in test_cases:
         print(f"Testing Intent: '{intent}' / Window: '{title}'")
-        is_focused, reason = await evaluate_semantics(app, title, intent)
+        is_focused, reason, summary = await evaluate_semantics(app, title, intent)
         status = "NOT paused (Focused)" if is_focused else "PAUSED (Distracted)"
         print(f"Result: {status}")
         print(f"Reason: {reason}")

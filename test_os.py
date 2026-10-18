@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import os
 import sys
 from dotenv import load_dotenv
@@ -21,24 +21,12 @@ async def main():
     for name, title, app, intent, force_ai in test_cases:
         print(f"Testing Scenario: {name}")
         
-        # Simulate before fix by temporarily removing from whitelist
-        from app.services.intent_classifier import OS_WHITELIST
-        original_whitelist = OS_WHITELIST.copy()
-        
-        if force_ai:
-            if "task view" in OS_WHITELIST:
-                OS_WHITELIST.remove("task view")
-                
-        is_focused, reason = await classify_with_intent(title, app, intent)
+        is_focused, reason, _ = await classify_with_intent(title, app, intent)
         status_text = "NOT paused (Focused/Ignored)" if is_focused == "focused" else "PAUSED (Distracted)"
         
         print(f"Result: {status_text}")
         print(f"Reason: {reason}")
         print("-" * 50)
         
-        # Restore whitelist
-        OS_WHITELIST.clear()
-        OS_WHITELIST.extend(original_whitelist)
-
 if __name__ == '__main__':
     asyncio.run(main())
