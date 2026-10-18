@@ -12,7 +12,8 @@ from app.models.connection import get_db
 from app.models import crud
 from app.models import schemas as models
 from app.api.auth import get_current_user
-from app.services.intent_classifier import classify_with_intent
+from app.services.intent_classifier import classify_with_intent, reset_workspace_focus_state
+from app.services.activity_parser import parse_activity
 
 client = AsyncOpenAI(
     api_key=os.getenv("GROQ_API_KEY", "missing_key"),
@@ -45,6 +46,9 @@ class ActivityClassification(BaseModel):
     summary: Optional[str] = None
     window_title: str
     app_name: str
+    clean_app_name: Optional[str] = None
+    platform_name: Optional[str] = None
+    content_title: Optional[str] = None
 
 
 class SessionResponse(BaseModel):
@@ -342,6 +346,10 @@ async def log_activity(
         workspace_id=payload.workspace_id,
     )
 
+    clean_app_name, platform_name, content_title = parse_activity(
+        payload.window_title, payload.app_name
+    )
+
     if _tracker:
         _tracker.update_window_activity(
             window_title=payload.window_title,
@@ -358,6 +366,11 @@ async def log_activity(
         is_focused=int(status == "focused"),
         reason=reason,
         workspace_id=payload.workspace_id,
+        clean_app_name=clean_app_name,
+        platform_name=platform_name,
+        content_title=content_title,
+        ai_summary=summary,
+        ai_reason=reason,
     )
 
     return ActivityClassification(
@@ -366,7 +379,30 @@ async def log_activity(
         summary=summary,
         window_title=payload.window_title,
         app_name=payload.app_name,
+        clean_app_name=clean_app_name,
+        platform_name=platform_name,
+        content_title=content_title,
     )
+
+
+class ResetFocusPayload(BaseModel):
+    workspace_id: Optional[int] = None
+
+
+@router.post("/telemetry/reset-focus")
+def reset_focus(
+    payload: ResetFocusPayload,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Reset the latch/focus state for a workspace so returning to focus clears
+    the active distraction and immediate re-triggering is possible if distracted again.
+    """
+    if payload.workspace_id is not None:
+        require_owned_workspace(payload.workspace_id, current_user.id, db)
+        reset_workspace_focus_state(payload.workspace_id)
+    return {"success": True}
 
 
 class CoachInsightsResponse(BaseModel):

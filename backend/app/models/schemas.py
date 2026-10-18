@@ -47,7 +47,7 @@ class Workspace(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="workspaces")
-    sessions = relationship("Session", back_populates="workspace")
+    sessions = relationship("Session", back_populates="workspace", cascade="all, delete-orphan")
     chat_history = relationship("WorkspaceChatHistory", back_populates="workspace", cascade="all, delete-orphan")
 
 class WorkspaceChatHistory(Base):
@@ -122,6 +122,11 @@ class ActivityLog(Base):
     intent = Column(String, nullable=True)
     is_focused = Column(Integer, nullable=False)  # 1 for focused, 0 for distracted
     reason = Column(String, nullable=True)
+    clean_app_name = Column(String, nullable=True)
+    platform_name = Column(String, nullable=True)
+    content_title = Column(String, nullable=True)
+    ai_summary = Column(String, nullable=True)
+    ai_reason = Column(String, nullable=True)
 
     workspace = relationship("Workspace")
 
