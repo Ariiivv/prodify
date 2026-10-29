@@ -275,148 +275,184 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
         )}
       </AnimatePresence>
 
-      {/* Chat Panel */}
+      {/* Chat Panel - Full-height glassmorphic slide-over drawer */}
       <AnimatePresence>
         {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 w-[calc(100%-2rem)] md:w-[28rem] h-[36rem] max-h-[85vh] bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl shadow-black/60 flex flex-col overflow-hidden"
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-blue-500" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-white">Prodify Intelligence</h3>
+          <>
+            {/* Backdrop overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setIsOpen(false)}
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            />
+
+            {/* Slide-over Drawer */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+              className="fixed top-0 bottom-0 right-0 z-50 w-full sm:w-[440px] md:w-[460px] h-full backdrop-blur-xl bg-zinc-950/90 border-l border-white/10 shadow-2xl flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-zinc-950/80 backdrop-blur-md">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                    <Zap className="w-5 h-5 text-blue-400" />
                   </div>
-                  <p className="text-[10px] text-muted-foreground/70 uppercase tracking-widest mt-0.5">Workspace AI</p>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white tracking-tight">Prodify Intelligence</h3>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold uppercase">Coach</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-widest mt-0.5">{workspaceName ? `Workspace: ${workspaceName}` : 'Productivity AI'}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setIsOpen(false)} 
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setIsOpen(false)} className="text-muted-foreground hover:text-white transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
 
-            {/* Messages */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.length === 0 && !hasGreeted && (
-                <div className="text-center py-8">
-                  <Bot className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground mb-4">Ask me anything about your focus session</p>
-                  <div className="space-y-2">
-                    {quickActions.map((action) => (
-                      <button
-                        key={action}
-                        onClick={() => sendMessage(action)}
-                        className="block w-full text-left text-xs px-3 py-2 rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all"
-                      >
-                        {action}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {messages.map((msg, i) => (
-                msg.role === 'divider' ? (
-                  <div key={i} className="flex items-center justify-center py-2 opacity-50">
-                    <div className="h-px bg-border/50 flex-1" />
-                    <span className="px-3 text-[10px] text-muted-foreground uppercase tracking-widest">{msg.content}</span>
-                    <div className="h-px bg-border/50 flex-1" />
-                  </div>
-                ) : (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
-                      <Zap className="w-3.5 h-3.5 text-indigo-400" />
-                    </div>
-                  )}
-                  <div className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed border ${
-                    msg.role === 'user'
-                      ? 'bg-blue-500 text-black border-blue-500'
-                      : 'bg-zinc-900 text-white border-zinc-800'
-                  }`}>
-                    {msg.role === 'assistant' ? (
-                      <div className="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                        <ReactMarkdown>
-                          {msg.content}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <p className="text-[13px] font-medium">{msg.content}</p>
-                    )}
-                  </div>
-                  {msg.role === 'user' && (
-                    <div className="w-7 h-7 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
-                      <User className="w-3.5 h-3.5 text-black" />
-                    </div>
-                  )}
-                </motion.div>
-                )
-              ))}
-
-              {isLoading && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex gap-2 items-start"
-                >
-                  <div className="w-7 h-7 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <Zap className="w-3.5 h-3.5 text-blue-500" />
-                  </div>
-                  <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800">
-                    <div className="flex gap-1">
-                      {[0, 1, 2].map(i => (
-                        <motion.div
-                          key={i}
-                          animate={{ opacity: [0.3, 1, 0.3] }}
-                          transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                          className="w-1.5 h-1.5 rounded-full bg-blue-500"
-                        />
+              {/* Messages */}
+              <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.length === 0 && !hasGreeted && (
+                  <div className="text-center py-8">
+                    <Bot className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
+                    <p className="text-sm text-muted-foreground mb-4">Ask me anything about your focus session</p>
+                    <div className="space-y-2">
+                      {quickActions.map((action) => (
+                        <button
+                          key={action}
+                          onClick={() => sendMessage(action)}
+                          className="block w-full text-left text-xs px-3 py-2 rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all"
+                        >
+                          {action}
+                        </button>
                       ))}
                     </div>
                   </div>
-                </motion.div>
-              )}
-            </div>
+                )}
 
-            {/* Input */}
-            <div className="p-3 border-t border-zinc-800 bg-zinc-900">
-              <form
-                onSubmit={(e) => { e.preventDefault(); sendMessage(input); }}
-                className="flex gap-2"
-              >
-                <Input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask Prodify Intelligence..."
-                  className="flex-1 bg-zinc-900 border-zinc-800 text-white rounded-xl text-sm h-10 focus-visible:ring-1 focus-visible:ring-blue-500"
-                  disabled={isLoading}
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  disabled={isLoading || !input.trim()}
-                  className="bg-blue-500 hover:bg-blue-500/90 text-black rounded-xl h-10 w-10 flex-shrink-0"
+                {messages.map((msg, i) => (
+                  msg.role === 'divider' ? (
+                    <div key={i} className="flex items-center justify-center py-2 opacity-50">
+                      <div className="h-px bg-border/50 flex-1" />
+                      <span className="px-3 text-[10px] text-muted-foreground uppercase tracking-widest">{msg.content}</span>
+                      <div className="h-px bg-border/50 flex-1" />
+                    </div>
+                  ) : (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    {msg.role === 'assistant' && (
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                        <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                      </div>
+                    )}
+                    <div className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed border ${
+                      msg.role === 'user'
+                        ? 'bg-blue-500 text-black border-blue-500'
+                        : 'bg-zinc-900 text-white border-zinc-800'
+                    }`}>
+                      {msg.role === 'assistant' ? (
+                        <div className="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                          <ReactMarkdown>
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="text-[13px] font-medium">{msg.content}</p>
+                      )}
+                    </div>
+                    {msg.role === 'user' && (
+                      <div className="w-7 h-7 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                        <User className="w-3.5 h-3.5 text-black" />
+                      </div>
+                    )}
+                  </motion.div>
+                  )
+                ))}
+
+                {isLoading && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex gap-2 items-start"
+                  >
+                    <div className="w-7 h-7 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0 shadow-sm">
+                      <Zap className="w-3.5 h-3.5 text-blue-500" />
+                    </div>
+                    <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800">
+                      <div className="flex gap-1">
+                        {[0, 1, 2].map(i => (
+                          <motion.div
+                            key={i}
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                            className="w-1.5 h-1.5 rounded-full bg-blue-500"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Quick Prompt Chips */}
+              <div className="px-4 py-2.5 border-t border-white/10 bg-zinc-950/70 backdrop-blur-md flex items-center gap-2 overflow-x-auto">
+                {[
+                  { label: "⚡ Audit my focus today", prompt: "Audit my focus today" },
+                  { label: "🎯 Break down my current goal", prompt: "Break down my current goal" },
+                  { label: "🛑 What's distracting me most?", prompt: "What's distracting me most?" }
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => sendMessage(chip.prompt)}
+                    className="whitespace-nowrap px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-xs text-zinc-300 hover:text-white font-medium transition-all shrink-0 cursor-pointer disabled:opacity-50"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input */}
+              <div className="p-3 border-t border-white/5 bg-zinc-950/90">
+                <form
+                  onSubmit={(e) => { e.preventDefault(); sendMessage(input); }}
+                  className="flex gap-2"
                 >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Send className="w-4 h-4" />}
-                </Button>
-              </form>
-            </div>
-          </motion.div>
+                  <Input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask Prodify Intelligence..."
+                    className="flex-1 bg-zinc-900/90 border-white/10 text-white rounded-xl text-sm h-10 focus-visible:ring-1 focus-visible:ring-blue-500 placeholder:text-zinc-500"
+                    disabled={isLoading}
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    disabled={isLoading || !input.trim()}
+                    className="bg-blue-500 hover:bg-blue-400 text-black rounded-xl h-10 w-10 flex-shrink-0 cursor-pointer shadow-md shadow-blue-500/20"
+                  >
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Send className="w-4 h-4" />}
+                  </Button>
+                </form>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </>

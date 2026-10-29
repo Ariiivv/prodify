@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock, Settings, BarChart3 } from 'lucide-react';
+import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock, Settings, BarChart3, Target, Pencil, Check, X, ShieldCheck } from 'lucide-react';
 import { useTimerStore, initTimer, useTimer, switchMode } from '@/lib/timerStore';
-import { useTabVisibility } from '@/hooks/useTabVisibility';
-import { useIdleDetection } from '@/hooks/useIdleDetection';
 import { useAdaptiveFocus, type DistractionMetadata } from '@/hooks/useAdaptiveFocus';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
+import { useCacheStore } from '@/store/cacheStore';
 import { toast } from 'sonner';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 
@@ -142,11 +141,15 @@ interface ActiveDistractionInfo {
   rawWindowTitle?: string;
 }
 
+  // Cache-first initialization (stale-while-revalidate for instant transitions)
+  const cachedWs = wsId ? (useCacheStore.getState().workspaceDetails[wsId]?.data || useCacheStore.getState().dashboard.workspaces.find(w => w.id === wsId)) : null;
+  const cachedMet = wsId ? useCacheStore.getState().workspaceMetrics[wsId]?.data : null;
+
   // Component State
   const [burnoutProb, setBurnoutProb] = useState(0);
-  const [workspace, setWorkspace] = useState<any>(null);
-  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [workspace, setWorkspace] = useState<any>(cachedWs || null);
+  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(cachedMet || null);
+  const [isLoading, setIsLoading] = useState(!cachedWs);
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('disabled');
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
@@ -158,15 +161,59 @@ interface ActiveDistractionInfo {
   const loggedCompletionRef = useRef<number | null>(null);
   const lastBurnoutMinuteRef = useRef<number | null>(null);
 
+  // Editable Intent / Declared Goal state
+  const [isEditingIntent, setIsEditingIntent] = useState(false);
+  const [intentInput, setIntentInput] = useState('');
+  const [isSavingIntent, setIsSavingIntent] = useState(false);
+
+  const handleSaveIntent = async () => {
+    if (!wsId) return;
+    const trimmedGoal = intentInput.trim();
+    setIsSavingIntent(true);
+    try {
+      const res = await fetch(`${API_BASE}/workspaces/${wsId}/goal`, {
+        method: 'PATCH',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ current_goal: trimmedGoal }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setWorkspace((prev: any) => ({ ...prev, current_goal: updated.current_goal }));
+        useCacheStore.getState().updateWorkspaceGoal(wsId, updated.current_goal);
+        toast.success("Focus Intent Updated", { description: trimmedGoal ? `Active intent: "${trimmedGoal}"` : "Session intent cleared." });
+        setIsEditingIntent(false);
+      } else {
+        const putRes = await fetch(`${API_BASE}/workspaces/${wsId}`, {
+          method: 'PUT',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            ...workspace,
+            current_goal: trimmedGoal,
+          }),
+        });
+        if (putRes.ok) {
+          const updated = await putRes.json();
+          setWorkspace((prev: any) => ({ ...prev, current_goal: updated.current_goal }));
+          useCacheStore.getState().updateWorkspaceGoal(wsId, updated.current_goal);
+          toast.success("Focus Intent Updated");
+          setIsEditingIntent(false);
+        } else {
+          toast.error("Failed to update focus intent");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to update focus intent:", err);
+      toast.error("Failed to update focus intent");
+    } finally {
+      setIsSavingIntent(false);
+    }
+  };
+
   // Compute workspace keywords for frontend-side matching
   const workspaceKeywords = useMemo(() => parseKeywords(workspace?.focus_keywords), [workspace?.focus_keywords]);
   // Extract the raw intent string for the AI backend
   const sessionIntent = workspace?.current_goal || getIntentString(workspace?.focus_keywords);
 
-  // If keywords are defined, disable tab-visibility enforcement (trust camera/gaze)
-  useTabVisibility({
-    disabled: workspaceKeywords.length > 0,
-  });
 
   // Compute if detection should run
   const isDetectionEnabled = !isManualOverride && timerState.sessionMode === 'FOCUS';
@@ -187,7 +234,7 @@ interface ActiveDistractionInfo {
   }, []);
 
   // --- Adaptive Focus Tracking ---
-  const { currentTabTitle, isFocused: isTabFocused, markAsRelevant } = useAdaptiveFocus({
+  const { currentTabTitle, isFocused: isTabFocused, markAsRelevant, activeTelemetry } = useAdaptiveFocus({
     keywords: workspaceKeywords,
     enabled: isDetectionEnabled,
     sessionIntent,
@@ -200,7 +247,7 @@ interface ActiveDistractionInfo {
       const pauseReason = timerWs?.pauseReason;
 
       const isActivelyDistracted = currentState === 'FOCUS_RUNNING' || 
-        (currentState === 'FOCUS_PAUSED' && pauseReason && !['IDLE_DETECTED', 'Manual', 'manual_pause'].includes(pauseReason));
+        (currentState === 'FOCUS_PAUSED' && pauseReason && !['Manual', 'manual_pause'].includes(pauseReason));
 
       if (isDetectionEnabled && isActivelyDistracted) {
         const trimmedReason = reason?.trim();
@@ -338,35 +385,6 @@ interface ActiveDistractionInfo {
 
   const isTabDistracted = !isTabFocused;
 
-  // --- Idle Detection ---
-  const handleIdle = useCallback(() => {
-    const store = useTimerStore.getState();
-    const ws = store.workspaces[store.activeWorkspaceId ?? -1];
-    if (ws && ws.currentState === 'FOCUS_RUNNING') {
-      store.incrementDistraction();
-      store.pauseFocus('IDLE_DETECTED');
-      toast.error("You walked away!", {
-        description: "No activity detected for 60 seconds. Timer paused.",
-        duration: 4000,
-      });
-    }
-  }, []);
-
-  const handleActive = useCallback(() => {
-    toast.success("Welcome back!", {
-      description: "Resume your focus session whenever ready.",
-      duration: 2000,
-    });
-  }, []);
-
-  const dynamicIdleTimeout = isTabFocused ? 0 : 60000; // 0 (Suppressed) for aligned (passive study), 1 min for unaligned
-
-  const { isIdle, idleTime } = useIdleDetection({
-    idleTimeout: dynamicIdleTimeout,
-    enabled: isDetectionEnabled && timerState.currentState === 'FOCUS_RUNNING',
-    onIdle: handleIdle,
-    onActive: handleActive,
-  });
 
   // --- Camera Status Handler ---
   const handleCameraStatus = useCallback((status: CameraStatus, error?: { type: string; message: string }) => {
@@ -390,47 +408,33 @@ interface ActiveDistractionInfo {
     }
   }, []);
 
-  // Fetch workspace
+  // Fetch workspace (stale-while-revalidate for instantaneous render)
   useEffect(() => {
     if (!wsId) {
       setIsLoading(false);
       return;
     }
-    fetch(`${API_BASE}/workspaces/${wsId}`, { 
-      headers: getAuthHeaders(),
-      cache: 'no-store'
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Not found');
-        return res.json();
-      })
-      .then((ws: any) => {
-        setWorkspace(ws || null);
+    let isMounted = true;
+    useCacheStore.getState().fetchWorkspaceDetail(wsId).then((ws: any) => {
+      if (isMounted) {
+        if (ws) setWorkspace(ws);
         setIsLoading(false);
-      })
-      .catch(() => setIsLoading(false));
+      }
+    }).catch(() => {
+      if (isMounted) setIsLoading(false);
+    });
+    return () => { isMounted = false; };
   }, [wsId]);
 
-  // Workspace metrics — same fetch pattern as WorkspaceCard
+  // Workspace metrics (stale-while-revalidate & deduplicated)
   useEffect(() => {
     if (!wsId) return;
     let isMounted = true;
-    const fetchMetrics = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/metrics/workspace/${wsId}`, {
-          headers: getAuthHeaders(),
-          cache: 'no-store'
-        });
-        if (res.ok && isMounted) {
-          setMetrics(await res.json());
-        } else if (!res.ok) {
-          console.error(`Failed to fetch workspace metrics: HTTP ${res.status}`);
-        }
-      } catch (err) {
-        console.error('Failed to fetch workspace metrics', err);
+    useCacheStore.getState().fetchWorkspaceMetrics(wsId).then((met: any) => {
+      if (isMounted && met) {
+        setMetrics(met);
       }
-    };
-    fetchMetrics();
+    });
     return () => { isMounted = false; };
   }, [wsId, timerState.sessionCount]);
 
@@ -740,6 +744,64 @@ interface ActiveDistractionInfo {
         animate="visible"
       >
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center w-full">
+            {/* 🎯 Interactive Declared Goal / Intent Pill */}
+            <div className="mb-6 flex justify-center w-full">
+              {!isEditingIntent ? (
+                <button
+                  onClick={() => {
+                    setIntentInput(workspace?.current_goal || (typeof workspace?.focus_keywords === 'string' ? workspace.focus_keywords : '') || '');
+                    setIsEditingIntent(true);
+                  }}
+                  className="group flex items-center gap-2.5 px-4 py-2 rounded-full bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/80 transition-all cursor-pointer shadow-sm max-w-xl text-left"
+                >
+                  <div className="w-5 h-5 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                    <Target className="w-3.5 h-3.5 text-blue-400" />
+                  </div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 shrink-0 font-semibold">Intent Guard:</span>
+                    <span className="text-xs text-zinc-200 font-medium truncate max-w-[260px] sm:max-w-[340px]">
+                      {workspace?.current_goal || workspace?.focus_keywords || 'Click to declare session goal & allowed tools...'}
+                    </span>
+                  </div>
+                  <Pencil className="w-3 h-3 text-zinc-500 opacity-60 group-hover:opacity-100 group-hover:text-blue-400 transition-all shrink-0 ml-1" />
+                </button>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSaveIntent();
+                  }}
+                  className="flex items-center gap-2 max-w-xl w-full px-3 py-1.5 bg-zinc-950/95 border border-blue-500/60 rounded-full shadow-lg backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+                >
+                  <Target className="w-4 h-4 text-blue-400 shrink-0 ml-1" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={intentInput}
+                    onChange={(e) => setIntentInput(e.target.value)}
+                    placeholder="e.g. VS Code React frontend, documentation, Linear tasks..."
+                    className="flex-1 bg-transparent border-none text-xs text-zinc-100 focus:outline-none focus:ring-0 px-2 py-0.5 placeholder:text-zinc-600"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSavingIntent}
+                    className="w-7 h-7 rounded-full bg-blue-500 hover:bg-blue-400 text-black flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                    title="Save Intent"
+                  >
+                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingIntent(false)}
+                    className="w-7 h-7 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                    title="Cancel"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              )}
+            </div>
+
             <div className="mb-8 flex flex-col items-center w-full">
               {/* Pomofocus Mode Pills */}
                 <div className="flex items-center gap-2 mb-6 bg-secondary/30 p-1.5 rounded-full border border-border/40">
@@ -798,6 +860,93 @@ interface ActiveDistractionInfo {
               )}
 
               <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} themeColor={workspace?.theme_color} sessionMode={timerState.sessionMode} />
+
+              {/* 📡 Live Telemetry Status Pill (Under the Timer) */}
+              <div className="mt-6 flex flex-col items-center">
+                {timerState.currentState === 'FOCUS_RUNNING' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full border text-xs shadow-sm backdrop-blur-md transition-all ${
+                      isTabFocused
+                        ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                        : 'bg-rose-500/10 border-rose-500/25 text-rose-300'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="relative flex h-2 w-2">
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isTabFocused ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
+                        <span className={`relative inline-flex rounded-full h-2 w-2 ${isTabFocused ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                      </span>
+                      {isTabFocused ? (
+                        <>
+                          <span>Aligned •</span>
+                          <span className="font-semibold text-emerald-200">
+                            {activeTelemetry?.platformName || activeTelemetry?.cleanAppName || activeTelemetry?.rawAppName?.replace(/\.exe$/i, '') || currentTabTitle || 'Flow State'}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Attention Shift •</span>
+                          <span className="font-semibold text-rose-200">
+                            {activeTelemetry?.platformName || activeTelemetry?.cleanAppName || 'External App'}
+                          </span>
+                        </>
+                      )}
+                    </span>
+
+                    {activeTelemetry?.summary && (
+                      <span className="text-[11px] font-medium text-emerald-300/80 bg-emerald-500/15 border border-emerald-500/20 px-2.5 py-0.5 rounded-full truncate max-w-[240px]" title={activeTelemetry.summary}>
+                        {activeTelemetry.summary}
+                      </span>
+                    )}
+                  </motion.div>
+                )}
+
+                {timerState.currentState === 'IDLE' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-zinc-900/80 border border-zinc-800 text-xs shadow-sm backdrop-blur-md"
+                  >
+                    <span className="flex items-center gap-2 font-medium text-zinc-300">
+                      <span className="inline-flex rounded-full h-2 w-2 bg-zinc-500"></span>
+                      Ready • Intent Guard Armed
+                    </span>
+                    {sessionIntent && (
+                      <span className="text-[11px] font-medium text-zinc-400 bg-zinc-800/80 px-2.5 py-0.5 rounded-full truncate max-w-[260px] italic border border-zinc-700/40" title={sessionIntent}>
+                        "{sessionIntent}"
+                      </span>
+                    )}
+                  </motion.div>
+                )}
+
+                {timerState.currentState === 'FOCUS_PAUSED' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/25 text-xs shadow-sm backdrop-blur-md text-amber-300"
+                  >
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse"></span>
+                      Paused • {timerState.pauseReason || 'Attention Shift Detected'}
+                    </span>
+                  </motion.div>
+                )}
+
+                {(timerState.currentState === 'BREAK_RUNNING' || timerState.currentState === 'BREAK_PAUSED') && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/25 text-xs shadow-sm backdrop-blur-md text-blue-300"
+                  >
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="inline-flex rounded-full h-2 w-2 bg-blue-400 animate-pulse"></span>
+                      Recharge Break • Stretch & Hydrate
+                    </span>
+                  </motion.div>
+                )}
+              </div>
             </div>
 
             {isDetectionEnabled && timerState.currentState === 'IDLE' && cameraStatus === 'streaming' && engagementState === 'FACE_ABSENT' && (
@@ -834,39 +983,8 @@ interface ActiveDistractionInfo {
             }}
           />
 
-          {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason === 'IDLE_DETECTED' && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-8 w-full max-w-lg bg-amber-500/10 border border-amber-500/20 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
-            >
-              <div className="absolute top-0 left-0 w-1 h-full bg-amber-500 rounded-l-2xl"></div>
-              
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 mt-1 w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-500">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-amber-500 mb-1">Session Paused Due to Inactivity</h3>
-                  <p className="text-sm text-foreground mb-5 leading-relaxed">
-                    No input was detected for an extended period. Click Resume when you are back.
-                  </p>
-                  
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button 
-                      onClick={() => useTimerStore.getState().resumeFocus()}
-                      className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium py-2 px-4 rounded-xl transition-colors shadow-sm"
-                    >
-                      Resume Session
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
 
-          {timerState.currentState === 'FOCUS_PAUSED' && timerState.pauseReason && !['IDLE_DETECTED', 'Manual', 'manual_pause'].includes(timerState.pauseReason) && (
+          {timerState.currentState === 'FOCUS_PAUSED' && activeDistraction && !['Manual', 'manual_pause'].includes(timerState.pauseReason || '') && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -1139,7 +1257,7 @@ interface ActiveDistractionInfo {
             currentState={timerState.currentState}
             sessionCount={timerState.sessionCount}
             workspaceName={workspace.name}
-            idleSeconds={Math.floor(idleTime / 1000)}
+            idleSeconds={0}
             timeRemainingString={timerString}
             workDuration={workspace.work_duration || 45}
             breakDuration={workspace.break_duration || 5}

@@ -46,7 +46,27 @@ export default function TimerRing({ timeRemaining, totalDuration, state, themeCo
 
   return (
     <div className="relative flex items-center justify-center">
-      <svg width="280" height="280" viewBox="0 0 280 280" className="transform -rotate-90">
+      {/* Tactile Ambient Breathing Glow when in Focus */}
+      {state === 'FOCUS_RUNNING' && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{
+            scale: [1, 1.14, 1],
+            opacity: [0.2, 0.45, 0.2],
+          }}
+          transition={{
+            duration: 4,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+          className="absolute -inset-10 rounded-full pointer-events-none blur-3xl z-0"
+          style={{
+            background: `radial-gradient(circle, ${activeColor}45 0%, ${activeColor}15 45%, transparent 75%)`,
+          }}
+        />
+      )}
+
+      <svg width="280" height="280" viewBox="0 0 280 280" className="transform -rotate-90 relative z-10">
         <defs>
           <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="4" result="coloredBlur" />

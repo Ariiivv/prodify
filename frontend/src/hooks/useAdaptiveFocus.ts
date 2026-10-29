@@ -30,6 +30,15 @@ interface UseAdaptiveFocusOptions {
   onFocused?: () => void;
 }
 
+export interface TelemetryStatusInfo {
+  cleanAppName?: string;
+  platformName?: string;
+  summary?: string;
+  status?: 'focused' | 'distracted' | 'idle';
+  contentTitle?: string;
+  rawAppName?: string;
+}
+
 interface UseAdaptiveFocusResult {
   /** Current OS window title (or document.title as fallback) */
   currentTabTitle: string;
@@ -37,6 +46,8 @@ interface UseAdaptiveFocusResult {
   isFocused: boolean;
   /** The list of keywords being checked */
   keywords: string[];
+  markAsRelevant: () => void;
+  activeTelemetry: TelemetryStatusInfo | null;
 }
 
 export function useAdaptiveFocus({
@@ -49,6 +60,7 @@ export function useAdaptiveFocus({
 }: UseAdaptiveFocusOptions): UseAdaptiveFocusResult {
   const [currentTabTitle, setCurrentTabTitle] = useState('');
   const [focusedState, setFocusedState] = useState(true);
+  const [activeTelemetry, setActiveTelemetry] = useState<TelemetryStatusInfo | null>(null);
   const prevFocusedRef = useRef(true);
   const onDistractedRef = useRef(onDistracted);
   const onFocusedRef = useRef(onFocused);
@@ -206,6 +218,14 @@ export function useAdaptiveFocus({
              (activeWindowRef.current.title === currentTitle && activeWindowRef.current.processName === currentProcessName);
              
           if (isStillActive) {
+            setActiveTelemetry({
+              cleanAppName: data.clean_app_name,
+              platformName: data.platform_name,
+              summary: data.summary,
+              status: data.status as any,
+              contentTitle: data.content_title || data.window_title,
+              rawAppName: data.app_name,
+            });
             checkFocus(currentTitle, data.status === 'focused', data.reason, data.app_name, data.summary, {
               clean_app_name: data.clean_app_name,
               platform_name: data.platform_name,
@@ -327,5 +347,6 @@ export function useAdaptiveFocus({
     isFocused: focusedState,
     keywords,
     markAsRelevant,
+    activeTelemetry,
   };
 }
