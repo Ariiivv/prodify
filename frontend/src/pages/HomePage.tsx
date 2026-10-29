@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Layers, BarChart3, Activity, Brain, Clock, Target, Flame, Zap, TrendingUp } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useAuthStore } from '@/store/authStore';
+import { useCacheStore } from '@/store/cacheStore';
 
 import AnimatedBackground from '@/components/dashboard/AnimatedBackground';
 import RecentActivity from '@/components/dashboard/RecentActivity';
@@ -89,85 +90,37 @@ interface HomeMetrics {
 }
 
 const HomePage: React.FC = () => {
+  const cachedDash = useCacheStore(state => state.dashboard);
+  const hasCached = cachedDash.lastFetched > 0 || cachedDash.workspaces.length > 0;
+
   const [activeTab, setActiveTab] = useState<'all' | 'sprint' | 'mastery'>('all');
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
-  const [workspaces, setWorkspaces] = useState<(Workspace & { category?: string })[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [workspaces, setWorkspaces] = useState<(Workspace & { category?: string })[]>(cachedDash.workspaces);
+  const [sessions, setSessions] = useState<Session[]>(cachedDash.sessions);
+  const [isLoading, setIsLoading] = useState(!hasCached);
   const [goalPlans, setGoalPlans] = useState<Record<number, GoalPlan>>({});
   const [recentLogs, setRecentLogs] = useState<Record<number, any[]>>({});
-  const [homeMetrics, setHomeMetrics] = useState<HomeMetrics | null>(null);
-  const [performanceMatrix, setPerformanceMatrix] = useState<PerformanceMatrix | null>(null);
+  const [homeMetrics, setHomeMetrics] = useState<HomeMetrics | null>(cachedDash.homeMetrics);
+  const [performanceMatrix, setPerformanceMatrix] = useState<PerformanceMatrix | null>(cachedDash.performanceMatrix);
 
-  const fetchData = useCallback(async () => {
+  // Sync state seamlessly whenever cache updates
+  useEffect(() => {
+    if (cachedDash.lastFetched > 0) {
+      setWorkspaces(cachedDash.workspaces);
+      setSessions(cachedDash.sessions);
+      setHomeMetrics(cachedDash.homeMetrics);
+      setPerformanceMatrix(cachedDash.performanceMatrix);
+      setIsLoading(false);
+    }
+  }, [cachedDash]);
+
+  const fetchData = useCallback(async (force = false) => {
     try {
-      let headers = getAuthHeaders();
-      // If token isn't ready for some reason, wait a beat
-      if (!headers.Authorization) {
-        await new Promise(r => setTimeout(r, 500));
-        headers = getAuthHeaders();
-      }
-
-      const warnings: string[] = [];
-
-      // 1. Workspaces (Fault-tolerant independent fetch)
-      try {
-        const res = await fetch(`${API_BASE}/workspaces`, { headers, cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          setWorkspaces(data);
-        } else {
-          warnings.push("Workspaces");
-        }
-      } catch (e) {
-        console.error("Failed to fetch workspaces:", e);
-        warnings.push("Workspaces");
-      }
-
-      // 2. Metrics (Fault-tolerant independent fetch)
-      try {
-        const res = await fetch(`${API_BASE}/api/metrics/home`, { headers, cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          setHomeMetrics(data);
-        } else {
-          warnings.push("Metrics");
-        }
-      } catch (e) {
-        console.error("Failed to fetch metrics:", e);
-      }
-
-      // 3. Sessions (Fault-tolerant independent fetch)
-      try {
-        const res = await fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers, cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          setSessions(data);
-        } else {
-          warnings.push("Sessions");
-        }
-      } catch (e) {
-        console.error("Failed to fetch sessions:", e);
-      }
-
-      // 4. Performance Matrix (Fault-tolerant independent fetch)
-      try {
-        const res = await fetch(`${API_BASE}/api/analytics/performance-matrix`, { headers, cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          setPerformanceMatrix(data);
-        } else {
-          warnings.push("Performance Matrix");
-        }
-      } catch (e) {
-        console.error("Failed to fetch performance matrix:", e);
-      }
-
-      if (warnings.length > 0) {
-        setDataWarnings(warnings);
-      } else {
-        setDataWarnings([]);
-      }
+      const data = await useCacheStore.getState().fetchDashboard(force);
+      setWorkspaces(data.workspaces);
+      setSessions(data.sessions);
+      setHomeMetrics(data.homeMetrics);
+      setPerformanceMatrix(data.performanceMatrix);
       setIsLoading(false);
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
@@ -179,11 +132,13 @@ const HomePage: React.FC = () => {
 
   useEffect(() => {
     if (token) {
+      // Stale-while-revalidate: renders immediately from cache if available, refreshes in background
       fetchData();
     }
   }, [fetchData, token]);
 
   const handleDeleted = useCallback((workspaceId: number) => {
+    useCacheStore.getState().removeWorkspaceFromCache(workspaceId);
     setWorkspaces(prev => prev.filter(ws => ws.id !== workspaceId));
   }, []);
 
@@ -285,7 +240,7 @@ const HomePage: React.FC = () => {
               <BarChart3 className="w-3.5 h-3.5" />
               Analytics
             </Link>
-            <CreateWorkspaceDialog onCreated={fetchData} variant={workspaces.length === 0 ? "outline" : "primary"} />
+            <CreateWorkspaceDialog onCreated={() => fetchData(true)} variant={workspaces.length === 0 ? "outline" : "primary"} />
           </div>
         </motion.div>
 

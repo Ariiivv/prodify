@@ -6,6 +6,7 @@ import { format, subDays, parseISO } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { useCacheStore } from '@/store/cacheStore';
 
 interface Workspace {
   id: number;
@@ -74,32 +75,25 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
   const navigate = useNavigate();
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
-  const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
+  const cachedMetrics = useCacheStore(state => state.workspaceMetrics[workspace.id]?.data);
+  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(cachedMetrics || null);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(!cachedMetrics && !matrixItem);
 
   useEffect(() => {
+    // If matrixItem is provided, we already have full 7-day chain and streak from unified performance matrix
+    if (matrixItem) {
+      setIsLoadingMetrics(false);
+      return;
+    }
     let isMounted = true;
-    const fetchMetrics = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/metrics/workspace/${workspace.id}`, {
-          headers: getAuthHeaders(),
-          cache: 'no-store'
-        });
-        if (res.ok && isMounted) {
-          const data = await res.json();
-          setMetrics(data);
-        } else if (!res.ok) {
-          console.error(`Failed to fetch workspace metrics: HTTP ${res.status}`);
-        }
-      } catch (err) {
-        console.error('Failed to fetch workspace metrics', err);
-      } finally {
-        if (isMounted) setIsLoadingMetrics(false);
+    useCacheStore.getState().fetchWorkspaceMetrics(workspace.id).then(data => {
+      if (isMounted) {
+        if (data) setMetrics(data);
+        setIsLoadingMetrics(false);
       }
-    };
-    fetchMetrics();
+    });
     return () => { isMounted = false; };
-  }, [workspace.id]);
+  }, [workspace.id, matrixItem]);
 
   const today = new Date();
   const last7Days = Array.from({length: 7}).map((_, i) => format(subDays(today, 6 - i), 'yyyy-MM-dd'));
@@ -219,7 +213,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
 
   const isSprint = workspace.category === 'sprint';
   const totalHoursLogged = (totalMinutesLogged / 60).toFixed(1);
-  const currentStreak = metrics ? metrics.workspace_streak_current : (workspace.current_streak || 0);
+  const currentStreak = matrixItem ? ((matrixItem as any).current_streak ?? workspace.current_streak ?? 0) : (metrics ? metrics.workspace_streak_current : (workspace.current_streak || 0));
 
   const todayLogged = matrixItem ? matrixItem.today_logged_minutes : 0;
   const dailyTarget = matrixItem ? matrixItem.daily_target_minutes : (workspace.daily_target_minutes || (isSprint ? 60 : 60));

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
+import { useCacheStore } from '@/store/cacheStore';
 import {
   format,
   parseISO,
@@ -127,24 +128,15 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
     }
 
     let isMounted = true;
-    const fetchCalendar = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/api/metrics/workspace/${workspaceId}`, {
-          headers: getAuthHeaders(),
-          cache: 'no-store',
-        });
-        if (response.ok && isMounted) {
-          const data = await response.json();
-          setFetchedCalendar(data.calendar || []);
-        }
-      } catch (error) {
-        console.error('Failed to fetch calendar:', error);
-      } finally {
-        if (isMounted) setLoading(false);
+    useCacheStore.getState().fetchWorkspaceMetrics(workspaceId).then(data => {
+      if (isMounted) {
+        if (data?.calendar) setFetchedCalendar(data.calendar);
+        setLoading(false);
       }
-    };
+    }).catch(() => {
+      if (isMounted) setLoading(false);
+    });
 
-    fetchCalendar();
     return () => { isMounted = false; };
   }, [workspaceId, sessionCount, calendarProp]);
 

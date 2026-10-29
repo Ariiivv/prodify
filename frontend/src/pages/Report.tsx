@@ -15,6 +15,7 @@ import {
   Target,
 } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
+import { useCacheStore } from '@/store/cacheStore';
 import {
   BarChart,
   Bar,
@@ -182,31 +183,27 @@ const CustomTrendTooltip = ({ active, payload }: any) => {
 
 export default function Report() {
   const navigate = useNavigate();
+  const cachedDash = useCacheStore(state => state.dashboard);
   const [timeWindowDays, setTimeWindowDays] = useState<number>(30);
-  const [workspaces, setWorkspaces] = useState<any[]>([]);
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [homeMetrics, setHomeMetrics] = useState<any>(null);
+  const [workspaces, setWorkspaces] = useState<any[]>(cachedDash.workspaces);
+  const [sessions, setSessions] = useState<any[]>(cachedDash.sessions);
+  const [homeMetrics, setHomeMetrics] = useState<any>(cachedDash.homeMetrics);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
 
-  // Initial fetch for workspaces list and home metrics
+  // Sync state whenever cached dashboard refreshes
   useEffect(() => {
-    const fetchBase = async () => {
-      try {
-        const [wsRes, sessRes, homeRes] = await Promise.all([
-          fetch(`${API_BASE}/workspaces`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
-          fetch(`${API_BASE}/api/telemetry/sessions?limit=200`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
-          fetch(`${API_BASE}/api/metrics/home`, { headers: getAuthHeaders(), cache: 'no-store' }).catch(() => null),
-        ]);
-        if (wsRes && wsRes.ok) setWorkspaces(await wsRes.json());
-        if (sessRes && sessRes.ok) setSessions(await sessRes.json());
-        if (homeRes && homeRes.ok) setHomeMetrics(await homeRes.json());
-      } catch (err) {
-        console.error('Error fetching base report data:', err);
-      }
-    };
-    fetchBase();
+    if (cachedDash.lastFetched > 0) {
+      setWorkspaces(cachedDash.workspaces);
+      setSessions(cachedDash.sessions);
+      setHomeMetrics(cachedDash.homeMetrics);
+    }
+  }, [cachedDash]);
+
+  // Initial fetch for workspaces list and home metrics via unified cache
+  useEffect(() => {
+    useCacheStore.getState().fetchDashboard();
   }, []);
 
   // Fetch global report data when window changes
