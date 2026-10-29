@@ -12,7 +12,11 @@ from app.models.connection import get_db
 from app.models import crud
 from app.models import schemas as models
 from app.api.auth import get_current_user
-from app.services.intent_classifier import classify_with_intent, reset_workspace_focus_state
+from app.services.intent_classifier import (
+    classify_with_intent,
+    reset_workspace_focus_state,
+    clear_intent_cache,
+)
 from app.services.activity_parser import parse_activity
 
 client = AsyncOpenAI(
@@ -401,7 +405,9 @@ def reset_focus(
     """
     if payload.workspace_id is not None:
         require_owned_workspace(payload.workspace_id, current_user.id, db)
-        reset_workspace_focus_state(payload.workspace_id)
+        clear_intent_cache(payload.workspace_id)
+    else:
+        clear_intent_cache()
     return {"success": True}
 
 

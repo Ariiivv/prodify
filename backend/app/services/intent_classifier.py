@@ -4,8 +4,13 @@ import time
 import hashlib
 import threading
 import asyncio
+from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
+
+# Ensure environment variables are loaded from backend/.env
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 logger = logging.getLogger("prodify_telemetry")
 
@@ -67,11 +72,31 @@ class SemanticCache:
             self._data.clear()
 
 
+# Cache & State Machine singletons (start clean on module reload)
 _semantic_cache = SemanticCache()
-_workspace_states = {}
+_intent_cache = _semantic_cache
+_workspace_states: dict[int, dict] = {}
+_workspace_focus_state = _workspace_states
+
 
 def clear_semantic_cache():
+    """Alias for clear_intent_cache()."""
+    clear_intent_cache()
+
+
+def clear_intent_cache(workspace_id: Optional[int] = None):
+    """
+    Clears the semantic evaluation cache and resets the workspace focus state machine.
+    If workspace_id is provided, resets focus state for that workspace.
+    If workspace_id is None, clears all workspace states.
+    Always flushes cached LLM verdicts so stale classifications never persist across intent changes.
+    """
     _semantic_cache.clear()
+    if workspace_id is not None:
+        reset_workspace_focus_state(workspace_id)
+    else:
+        _workspace_states.clear()
+    logger.info(f"[CACHE] Intent cache and focus states cleared (workspace_id={workspace_id}).")
 
 
 _last_eval_time = 0.0
@@ -98,44 +123,58 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
         _last_eval_time = time.time()
         _last_eval_target = current_target_key
 
-    prompt = (
-        f"You are an intelligent, objective focus alignment evaluator.\n"
-        f"Your sole responsibility is to evaluate what the user is actively doing on screen against their declared focus goal, determining whether they should stay focused or be interrupted.\n\n"
+    system_prompt = (
+        "You are a strict, objective focus alignment evaluator enforcing a Strict Intent & Tool Whitelist Contract.\n"
+        "Your sole responsibility is to evaluate whether the user's active application and window title strictly match their declared focus goal and permitted tools.\n\n"
+        "### STRICT INTENT & TOOL WHITELIST CONTRACT:\n\n"
+        "1. RULE 1 — EXPLICIT TOOL WHITELIST ENFORCEMENT:\n"
+        "   - If the user's stated goal specifies which tools/apps they will use (e.g., 'use google docs and ai', 'reading pdf', 'research on browser'), ONLY those tools (e.g. Google Docs, AI assistants like Claude/ChatGPT/Gemini, PDF reader) are aligned (VERDICT: TRUE).\n"
+        "   - If the user opens an application NOT mentioned in their intent—even if it looks 'productive' like Visual Studio Code (Code.exe), Antigravity.exe, any code editor, terminal, or localhost web dev server—you MUST return VERDICT: FALSE.\n"
+        "   - Do NOT assume coding or IDEs are allowed unless the user's goal explicitly mentions coding, programming, software development, or VS Code.\n\n"
+        "2. RULE 2 — ZERO ACRONYM / TOPIC HALLUCINATION:\n"
+        "   - Never invent or imagine connections between different project names or acronyms.\n"
+        "   - If the user's goal is 'CIS' and the window title says 'CEP' (e.g. 'localhost:4173 - CEP - Visual Studio Code'), 'CEP' is a completely different project. Do NOT claim 'CEP' is a 'CIS project'.\n"
+        "   - Return VERDICT: FALSE when the active window refers to a different project or acronym.\n\n"
+        "3. RULE 3 — BROWSER TAB SPECIFICITY:\n"
+        "   - Inside a web browser (brave.exe, chrome.exe, msedge.exe, firefox.exe), evaluate the specific tab/page title against the topic and allowed tools:\n"
+        "     * 'CIS samples from instructor - Claude' -> VERDICT: TRUE (Matches AI + CIS topic).\n"
+        "     * 'Untitled document - Google Docs' -> VERDICT: TRUE (Matches Google Docs tool).\n"
+        "     * 'fc barcelona vs paris saint-germain' -> VERDICT: FALSE (Unrelated sports search).\n"
+        "   - Neutral blank/new tabs ('New Tab') receive temporary navigation grace (VERDICT: TRUE).\n"
+        "   - Any specific web search query, video, article, or site that does NOT directly match the declared topic or allowed tools must return VERDICT: FALSE.\n\n"
+        "4. ZERO SPECULATIVE RATIONALIZATION:\n"
+        "   - Base your decision strictly on the literal text of the declared goal, application name, and window title.\n"
+        "   - Never invent hypothetical excuses or secondary connections.\n\n"
+        "### OUTPUT FORMAT:\n"
+        "Respond with exactly one line in this format:\n"
+        "VERDICT: [TRUE|FALSE] | SUMMARY: [Short 3-6 word summary] | REASON: [One clear sentence explaining why it is aligned or why it is a distraction]\n\n"
+        "### EXAMPLES:\n"
+        "- Goal: \"CIS learning and would use google docs and ai\"\n"
+        "  App: \"Code.exe\", Title: \"localhost:4173 - CEP - Visual Studio Code\"\n"
+        "  -> VERDICT: FALSE | SUMMARY: Unrelated project in VS Code | REASON: You are in Visual Studio Code working on project 'CEP', which is outside your stated goal of learning CIS using Google Docs and AI.\n"
+        "- Goal: \"CIS learning and would use google docs and ai\"\n"
+        "  App: \"brave.exe\", Title: \"CIS samples from instructor - Claude - Brave\"\n"
+        "  -> VERDICT: TRUE | SUMMARY: Claude AI for CIS | REASON: Using Claude AI to study CIS aligns with your declared goal.\n"
+        "- Goal: \"CIS learning and would use google docs and ai\"\n"
+        "  App: \"brave.exe\", Title: \"fc barcelona vs paris saint-germain - Brave Search - Brave\"\n"
+        "  -> VERDICT: FALSE | SUMMARY: Sports search | REASON: Searching for soccer matches is unrelated to your goal of learning CIS."
+    )
+
+    user_prompt = (
         f"USER'S DECLARED GOAL (ACTIVE WORKSPACE):\n"
         f"\"{intent}\"\n\n"
         f"ACTIVE SCREEN CONTEXT:\n"
         f"Application Name: \"{app_name}\"\n"
-        f"Active Window Title: \"{window_title}\"\n\n"
-        f"### EVALUATION PRINCIPLES:\n\n"
-        f"1. Declared Goal as the Sole Reference & Abbreviation Resolution:\n"
-        f"   - Read the user's declared goal carefully: \"{intent}\". Goals are often messy, run-on, or casually typed (e.g. 'im doing assignments so ill just use gemini...'). Parse the underlying intent robustly; do not demand clean grammar.\n"
-        f"   - Base your decision strictly on the domain, subject, or task specified by the user.\n"
-        f"   - Do NOT assume, demand, or evaluate against outside frameworks, languages, or tools not specified in \"{intent}\".\n"
-        f"   - INTELLIGENT ABBREVIATION RESOLUTION: Users often use shorthand or acronyms. You MUST actively resolve and match these abbreviations against the full window title content before judging relevance.\n"
-        f"   - EXPLICITLY NAMED TOOLS: Give explicit priority weight to tools/platforms the user has directly NAMED in their declared goal. If the window's Application Name or Title contains a tool/platform the user explicitly listed (e.g., 'gemini', 'claude', 'antigravity', 'vs code'), that should very strongly bias toward FOCUSED (VERDICT: TRUE), unless the specific content open is clearly unrelated entertainment.\n\n"
-        f"2. Content-Level Decision:\n"
-        f"   - Does the substance of \"{window_title}\" directly teach, reference, implement, or facilitate the domain of \"{intent}\"?\n"
-        f"     * If YES -> Output VERDICT: TRUE.\n"
-        f"     * If NO (e.g., entertainment, celebrity media, sports commentary, casual phone/tech reviews, gaming gameplay, memes, drama, or unrelated social feeds) -> Output VERDICT: FALSE.\n\n"
-        f"3. Navigation Grace & Relevant Search Queries:\n"
-        f"   - Multipurpose applications (browsers, search engines, file managers, desktop shells) can host both work and distractions.\n"
-        f"   - If the user is on a browser homepage, blank/new tab, or directory root looking for resources -> Output VERDICT: TRUE (navigation grace).\n"
-        f"   - MID-SEARCH GRACE: If the user is actively typing a search query that plausibly relates to the goal (even an incomplete query or an abbreviation), evaluate it as navigation/research and output VERDICT: TRUE. Do NOT flag relevant searches as generic distraction. (However, searching for a genuinely unrelated topic MUST still be flagged as FALSE).\n"
-        f"   - Once a specific video, article, stream, or post is open and playing/reading, evaluate its SPECIFIC topic. If that content is off-topic entertainment -> Output VERDICT: FALSE.\n\n"
-        f"4. Supporting Tools & Auxiliary Workflows:\n"
-        f"   - Standard tools used to perform digital work (IDEs, code editors, terminal windows, official documentation, file directories) that support \"{intent}\" -> Output VERDICT: TRUE.\n\n"
-        f"5. Zero Speculative Rationalization:\n"
-        f"   - Base your evaluation strictly on the literal content of \"{window_title}\".\n"
-        f"   - You are STRICTLY FORBIDDEN from inventing hypothetical excuses (e.g., \"watching this sports match or movie clip might inspire ideas\", \"they might build a tool for this game\").\n\n"
-        f"### OUTPUT FORMAT:\n"
-        f"Respond with exactly one line in this format:\n"
-        f"VERDICT: [TRUE|FALSE] | SUMMARY: [A short 3-6 word summary of what the content is] | REASON: [One clear sentence explaining whether the content directly serves the declared goal]"
+        f"Active Window Title: \"{window_title}\""
     )
 
     try:
         completion = await client.chat.completions.create(
             model="qwen/qwen3.8-27b",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
             temperature=0.0,
             max_tokens=150,
             timeout=10.0,
@@ -187,7 +226,8 @@ def update_focus_state(
     app_name: str,
     window_title: str,
     is_focused: bool,
-    reason: str
+    reason: str,
+    is_cache_hit: bool = False,
 ) -> tuple[str, str]:
     """
     Deterministically manages workspace state machine transitions.
@@ -216,7 +256,8 @@ def update_focus_state(
         state["last_goal"] = current_goal
         state["active_distraction_target"] = ""
         state["active_distraction_reason"] = ""
-        logger.info(f"[STATE] Goal updated for workspace {workspace_id}. State reset.")
+        clear_intent_cache(workspace_id)
+        logger.info(f"[STATE] Goal updated for workspace {workspace_id}. State reset and cache cleared.")
 
     app_lower = app_name.lower().strip()
     title_lower = window_title.lower().strip()
@@ -259,20 +300,12 @@ def update_focus_state(
         state["active_distraction_target"] = current_target
         state["active_distraction_reason"] = reason
 
-        # Instant re-trigger: If this window is a Cache HIT for a distraction or already pending, latch immediately!
-        if is_cache_hit or state["status"] == "PENDING" or state["status"] == "DISTRACTED":
-            state["status"] = "DISTRACTED"
-            state["pending_count"] = 2
-            state["last_target"] = current_target
-            logger.info(f"[STATE] -> DISTRACTED (Instant Trigger{' Cache Hit' if is_cache_hit else ' Strike 2'}) on '{current_target}'")
-            return "distracted", state["active_distraction_reason"]
-
-        if state["status"] == "ALIGNED":
-            state["status"] = "PENDING"
-            state["pending_count"] = 1
-            state["last_target"] = current_target
-            logger.info(f"[STATE] ALIGNED -> PENDING (Strike 1) on '{current_target}'")
-            return "focused", reason
+        # Instant Distraction Trigger: transition immediately to DISTRACTED (no PENDING / Strike 1 delay)
+        state["status"] = "DISTRACTED"
+        state["pending_count"] = 2
+        state["last_target"] = current_target
+        logger.info(f"[STATE] -> DISTRACTED (Instant Distraction Trigger) on '{current_target}'")
+        return "distracted", state["active_distraction_reason"]
 
     return "focused", reason
 

@@ -13,6 +13,24 @@ from app.models import schemas as models
 logger = logging.getLogger("prodify_backend")
 
 # ---------------------------------------------------------------------------
+# OS System Utilities Whitelist / Blacklist Filter
+# Strict filter so AI Coach never blames Windows background processes
+# ---------------------------------------------------------------------------
+OS_SYSTEM_UTILITIES = {
+    "snippingtool.exe",
+    "screenclippinghost.exe",
+    "shellexperiencehost.exe",
+    "searchhost.exe",
+    "startmenuexperiencehost.exe",
+    "applicationframehost.exe",
+    "taskmgr.exe",
+    "explorer.exe",
+    "textinputhost.exe",
+    "systemsettings.exe",
+    "lockapp.exe",
+}
+
+# ---------------------------------------------------------------------------
 # User Profile – Persistent Long-Term Memory (JSON)
 # ---------------------------------------------------------------------------
 _PROFILE_PATH = Path("data/user_profile.json")
@@ -103,17 +121,6 @@ def tool_get_top_distractions(db: Session) -> dict:
 
     from app.services.activity_parser import parse_activity
 
-    OS_SYSTEM_UTILITIES = {
-        "snippingtool.exe",
-        "screenclippinghost.exe",
-        "shellexperiencehost.exe",
-        "searchhost.exe",
-        "startmenuexperiencehost.exe",
-        "applicationframehost.exe",
-        "taskmgr.exe",
-        "explorer.exe",
-    }
-
     app_counts: Dict[str, int] = {}
     hour_counts: Dict[int, int] = {}
     for l in logs:
@@ -124,6 +131,9 @@ def tool_get_top_distractions(db: Session) -> dict:
         if not display_name:
             clean, plat, _ = parse_activity(l.window_title or "", l.app_name or "")
             display_name = plat or clean or l.app_name or "Unknown"
+
+        if str(display_name).lower().strip() in OS_SYSTEM_UTILITIES:
+            continue
 
         app_counts[display_name] = app_counts.get(display_name, 0) + 1
         if l.timestamp:
@@ -222,16 +232,6 @@ def analyze_user_patterns(db: Session) -> dict:
     )
     from app.services.activity_parser import parse_activity
 
-    OS_SYSTEM_UTILITIES = {
-        "snippingtool.exe",
-        "screenclippinghost.exe",
-        "shellexperiencehost.exe",
-        "searchhost.exe",
-        "startmenuexperiencehost.exe",
-        "applicationframehost.exe",
-        "taskmgr.exe",
-        "explorer.exe",
-    }
     app_counts: Dict[str, int] = {}
     for l in act_logs:
         raw_app = (l.app_name or "").lower().strip()
@@ -241,7 +241,7 @@ def analyze_user_patterns(db: Session) -> dict:
         if not display_name:
             clean, plat, _ = parse_activity(l.window_title or "", l.app_name or "")
             display_name = plat or clean or l.app_name or "Unknown"
-        if display_name and display_name.strip():
+        if display_name and display_name.strip() and str(display_name).lower().strip() not in OS_SYSTEM_UTILITIES:
             app_counts[display_name] = app_counts.get(display_name, 0) + 1
     top_distraction_apps = [app for app, _ in sorted(app_counts.items(), key=lambda x: x[1], reverse=True)[:3]]
 
@@ -423,7 +423,15 @@ class StarMLEngine:
 
         intent_val = context.get("sessionIntent") or context.get("intent") or focus_keywords or ""
         if isinstance(intent_val, list):
-            current_intent = ", ".join(str(k) for k in intent_val)
+            clean_intent = []
+            for k in intent_val:
+                if isinstance(k, dict):
+                    clean_intent.append(f"{k.get('platform_name') or k.get('clean_app_name') or k.get('app') or k.get('name') or str(k)}")
+                else:
+                    clean_intent.append(str(k))
+            current_intent = ", ".join(clean_intent)
+        elif isinstance(intent_val, dict):
+            current_intent = f"{intent_val.get('platform_name') or intent_val.get('clean_app_name') or intent_val.get('name') or str(intent_val)}"
         else:
             current_intent = str(intent_val)
 
@@ -452,6 +460,7 @@ class StarMLEngine:
                     current_intent = ws_rec.current_goal or ws_rec.focus_keywords or ""
 
         cat_clean = (category or "mastery").lower()
+        category_display = cat_clean.capitalize()
         is_sprint = cat_clean == "sprint"
         def _format_distractions_to_str(dist_list) -> str:
             if not dist_list:
@@ -459,10 +468,24 @@ class StarMLEngine:
             formatted = []
             for item in dist_list:
                 if isinstance(item, dict):
-                    name = item.get("app") or item.get("platform") or item.get("clean_app") or "Unknown"
-                    cnt = item.get("count")
+                    raw_check = (item.get("raw_app_name") or item.get("app_name") or item.get("app") or "").lower().strip()
+                    if raw_check in OS_SYSTEM_UTILITIES:
+                        continue
+                    name = (
+                        item.get("platform_name")
+                        or item.get("clean_app_name")
+                        or item.get("platform")
+                        or item.get("app")
+                        or item.get("clean_app")
+                        or "Unknown"
+                    )
+                    if str(name).lower().strip() in OS_SYSTEM_UTILITIES:
+                        continue
+                    cnt = item.get("count") or item.get("cnt")
                     formatted.append(f"{name} ({cnt}x)" if cnt else str(name))
                 elif isinstance(item, str):
+                    if item.lower().strip() in OS_SYSTEM_UTILITIES:
+                        continue
                     formatted.append(item)
                 else:
                     formatted.append(str(item))
@@ -484,6 +507,10 @@ class StarMLEngine:
 
         distracting_apps_list = patterns.get("top_distracting_apps", [])
         distracting_apps_str = _format_distractions_to_str(distracting_apps_list)
+
+        raw_ctx_distractions = context.get("top_distractions") or context.get("topDistractions") or context.get("distractions")
+        if raw_ctx_distractions:
+            distracting_apps_str = _format_distractions_to_str(raw_ctx_distractions)
 
         # Build live performance matrix ground truth
         user_id = user_id or context.get("user_id")

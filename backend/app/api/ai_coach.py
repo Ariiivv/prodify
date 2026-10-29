@@ -18,6 +18,7 @@ from app.services.star_ml import (
     STAR_TOOLS,
     TOOL_DISPATCH,
     StarMLEngine,
+    OS_SYSTEM_UTILITIES,
 )
 
 # Initialize Groq client
@@ -78,7 +79,43 @@ async def chat_endpoint(
     try:
         ctx = {**(request.context or {}), "user_id": current_user.id}
         ws_id = ctx.get("workspaceId")
+        ws_name = ctx.get("workspaceName") or request.workspace_name or "Default"
         
+        # Safely normalize any top_distractions or distractions in ctx if present
+        for dist_key in ("top_distractions", "topDistractions", "distractions"):
+            if dist_key in ctx and ctx[dist_key]:
+                raw_dists = ctx[dist_key]
+                if isinstance(raw_dists, list):
+                    cleaned_items = []
+                    for d in raw_dists:
+                        if isinstance(d, dict):
+                            raw_n = (d.get("raw_app_name") or d.get("app_name") or d.get("app") or "").lower().strip()
+                            if raw_n in OS_SYSTEM_UTILITIES:
+                                continue
+                            name = d.get("platform_name") or d.get("clean_app_name") or d.get("platform") or d.get("app") or d.get("clean_app") or "Unknown"
+                            if str(name).lower().strip() not in OS_SYSTEM_UTILITIES:
+                                cnt = d.get("count") or d.get("cnt")
+                                cleaned_items.append(f"{name} ({cnt}x)" if cnt else str(name))
+                        elif isinstance(d, str):
+                            if d.lower().strip() not in OS_SYSTEM_UTILITIES:
+                                cleaned_items.append(d)
+                        else:
+                            cleaned_items.append(str(d))
+                    ctx[dist_key] = ", ".join(cleaned_items) if cleaned_items else "None recorded"
+
+        # Safely normalize intent if it is a list of dicts/strings
+        intent_val = ctx.get("sessionIntent") or ctx.get("intent")
+        if isinstance(intent_val, list):
+            cleaned_intents = []
+            for item in intent_val:
+                if isinstance(item, dict):
+                    cleaned_intents.append(f"{item.get('platform_name') or item.get('clean_app_name') or item.get('name') or str(item)}")
+                else:
+                    cleaned_intents.append(str(item))
+            ctx["sessionIntent"] = ", ".join(cleaned_intents)
+        elif isinstance(intent_val, dict):
+            ctx["sessionIntent"] = f"{intent_val.get('platform_name') or intent_val.get('clean_app_name') or intent_val.get('name') or str(intent_val)}"
+
         # 1. Find Workspace to load history and properties
         if ws_id:
             ws = db.query(models.Workspace).filter(
@@ -304,18 +341,33 @@ async def get_daily_insight(
     
     total_minutes = sum(log.minutes_logged for log in logs)
     
-    distractions = db.query(
-        models.ActivityLog.app_name, 
-        func.count(models.ActivityLog.id).label('count')
+    from app.services.activity_parser import parse_activity
+
+    act_logs = db.query(
+        models.ActivityLog.app_name,
+        models.ActivityLog.window_title,
+        models.ActivityLog.platform_name,
+        models.ActivityLog.clean_app_name
     ).join(models.Workspace).filter(
         models.Workspace.user_id == current_user.id,
         models.ActivityLog.is_focused == 0,
         func.date(models.ActivityLog.timestamp) == yesterday
-    ).group_by(models.ActivityLog.app_name).order_by(desc('count')).limit(3).all()
+    ).all()
     
-    distraction_str = 'None'
-    if distractions:
-        distraction_str = ', '.join([f'{d[0]} ({d[1]} times)' for d in distractions])
+    app_counts: Dict[str, int] = {}
+    for log in act_logs:
+        raw_app = (log.app_name or "").lower().strip()
+        if raw_app in OS_SYSTEM_UTILITIES:
+            continue
+        display_name = log.platform_name or log.clean_app_name
+        if not display_name:
+            clean, plat, _ = parse_activity(log.window_title or "", log.app_name or "")
+            display_name = plat or clean or log.app_name or "Unknown"
+        if display_name and str(display_name).lower().strip() not in OS_SYSTEM_UTILITIES:
+            app_counts[display_name] = app_counts.get(display_name, 0) + 1
+
+    top_dists = sorted(app_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+    distraction_str = ', '.join([f'{app} ({cnt} times)' for app, cnt in top_dists]) if top_dists else 'None'
         
     user_name = current_user.full_name or current_user.username or 'there'
 

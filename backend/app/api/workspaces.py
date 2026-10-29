@@ -132,8 +132,8 @@ def update_workspace(
     current_user: models.User = Depends(get_current_user),
 ):
     get_owned_workspace(workspace_id, current_user, db)
-    from app.services.intent_classifier import clear_semantic_cache
-    clear_semantic_cache()
+    from app.services.intent_classifier import clear_intent_cache
+    clear_intent_cache(workspace_id)
     return crud.update_workspace(
         db=db, workspace_id=workspace_id, user_id=current_user.id, **payload.model_dump()
     )
@@ -160,12 +160,33 @@ def delete_workspace(
     db.commit()
 
 
+class WorkspaceGoalPatch(BaseModel):
+    current_goal: str
+
+
+@router.patch("/{workspace_id}/goal", response_model=WorkspaceOut)
+def patch_workspace_goal(
+    workspace_id: int,
+    payload: WorkspaceGoalPatch,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    workspace = get_owned_workspace(workspace_id, current_user, db)
+    workspace.current_goal = payload.current_goal
+    db.commit()
+    db.refresh(workspace)
+    from app.services.intent_classifier import clear_intent_cache
+    clear_intent_cache(workspace_id)
+    return workspace
+
+
 class DistractionOut(BaseModel):
     id: int
     app_name: str
     window_title: str
     timestamp: datetime
     reason: Optional[str]
+
 
 @router.get("/{workspace_id}/distractions", response_model=list[DistractionOut])
 def get_workspace_distractions(
@@ -174,13 +195,15 @@ def get_workspace_distractions(
     current_user: models.User = Depends(get_current_user),
 ):
     get_owned_workspace(workspace_id, current_user, db)
-    return (
+    from app.services.star_ml import OS_SYSTEM_UTILITIES
+    raw_logs = (
         db.query(models.ActivityLog)
         .filter(models.ActivityLog.workspace_id == workspace_id, models.ActivityLog.is_focused == 0)
         .order_by(models.ActivityLog.timestamp.desc())
-        .limit(100)
+        .limit(200)
         .all()
     )
+    return [l for l in raw_logs if (l.app_name or '').lower().strip() not in OS_SYSTEM_UTILITIES][:100]
 
 
 @router.get("/{workspace_id}/chat-history", response_model=list[ChatMessageOut])
