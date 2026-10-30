@@ -76,12 +76,23 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
   const [isDeleting, setIsDeleting] = useState(false);
 
   const cachedMetrics = useCacheStore(state => state.workspaceMetrics[workspace.id]?.data);
+  const perfMatrixItem = useCacheStore(state =>
+    state.dashboard.performanceMatrix?.workspaces_matrix?.find((w: any) => w.id === workspace.id)
+  );
+  const resolvedMatrix = matrixItem || perfMatrixItem;
+
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(cachedMetrics || null);
-  const [isLoadingMetrics, setIsLoadingMetrics] = useState(!cachedMetrics && !matrixItem);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(!cachedMetrics && !resolvedMatrix);
 
   useEffect(() => {
-    // If matrixItem is provided, we already have full 7-day chain and streak from unified performance matrix
-    if (matrixItem) {
+    // If unified performance matrix data is available, skip separate fetch
+    if (resolvedMatrix) {
+      setIsLoadingMetrics(false);
+      return;
+    }
+    // If dashboard is fetching or already has cached workspaces, prevent redundant N-requests storm
+    const { dashboard, isDashboardFetching } = useCacheStore.getState();
+    if (isDashboardFetching || dashboard.lastFetched > 0) {
       setIsLoadingMetrics(false);
       return;
     }
@@ -93,16 +104,16 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
       }
     });
     return () => { isMounted = false; };
-  }, [workspace.id, matrixItem]);
+  }, [workspace.id, resolvedMatrix]);
 
   const today = new Date();
   const last7Days = Array.from({length: 7}).map((_, i) => format(subDays(today, 6 - i), 'yyyy-MM-dd'));
 
   const renderConsistencyChain = () => {
-    if (matrixItem?.seven_day_chain) {
+    if (resolvedMatrix?.seven_day_chain) {
       return (
         <div className="flex items-center gap-1.5">
-          {matrixItem.seven_day_chain.map((day) => {
+          {resolvedMatrix.seven_day_chain.map((day) => {
             let className = "w-2.5 h-2.5 rounded-[3px] transition-all duration-300 ";
             if (day.status === 'untracked') {
               className += "border border-zinc-800 bg-transparent opacity-40";
@@ -213,13 +224,13 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
 
   const isSprint = workspace.category === 'sprint';
   const totalHoursLogged = (totalMinutesLogged / 60).toFixed(1);
-  const currentStreak = matrixItem ? ((matrixItem as any).current_streak ?? workspace.current_streak ?? 0) : (metrics ? metrics.workspace_streak_current : (workspace.current_streak || 0));
+  const currentStreak = resolvedMatrix ? ((resolvedMatrix as any).current_streak ?? workspace.current_streak ?? 0) : (metrics ? metrics.workspace_streak_current : (workspace.current_streak || 0));
 
-  const todayLogged = matrixItem ? matrixItem.today_logged_minutes : 0;
-  const dailyTarget = matrixItem ? matrixItem.daily_target_minutes : (workspace.daily_target_minutes || (isSprint ? 60 : 60));
-  const todayCleared = matrixItem ? matrixItem.today_cleared : false;
-  const statusLabel = matrixItem?.card_status_label || (todayLogged > 0 ? `${todayLogged}m left today` : 'Ready to Start');
-  const statusTone = matrixItem?.card_status_tone || 'neutral';
+  const todayLogged = resolvedMatrix ? resolvedMatrix.today_logged_minutes : 0;
+  const dailyTarget = resolvedMatrix ? resolvedMatrix.daily_target_minutes : (workspace.daily_target_minutes || (isSprint ? 60 : 60));
+  const todayCleared = resolvedMatrix ? resolvedMatrix.today_cleared : false;
+  const statusLabel = resolvedMatrix?.card_status_label || (todayLogged > 0 ? `${todayLogged}m left today` : 'Ready to Start');
+  const statusTone = resolvedMatrix?.card_status_tone || 'neutral';
 
   return (
     <>

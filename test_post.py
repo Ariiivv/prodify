@@ -1,1 +1,0 @@
-﻿import requests, json; r = requests.post('http://127.0.0.1:8000/workspaces', headers={'Authorization': 'Bearer dev-token'}, json={'name': 'coding project', 'mode': 'structured', 'category': 'mastery', 'work_duration': 25, 'break_duration': 5, 'daily_target_minutes': 60, 'focus_keywords': 'im doing acoding projecy', 'camera_enabled': False}); print(r.status_code, r.text)

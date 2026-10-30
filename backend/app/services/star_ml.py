@@ -28,7 +28,72 @@ OS_SYSTEM_UTILITIES = {
     "textinputhost.exe",
     "systemsettings.exe",
     "lockapp.exe",
+    "shellexperiencehost",
+    "explorer",
+    "snippingtool",
+    "searchhost",
+    "startmenuexperiencehost",
+    "applicationframehost",
+    "taskmgr",
+    "textinputhost",
+    "systemsettings",
+    "lockapp",
+    "screenclippinghost",
+    "windows explorer",
 }
+
+
+def is_os_utility(val: Any) -> bool:
+    if not val:
+        return False
+    s = str(val).lower().strip()
+    if s in OS_SYSTEM_UTILITIES:
+        return True
+    base = s.replace(".exe", "")
+    if base in OS_SYSTEM_UTILITIES:
+        return True
+    return any(u in s for u in ("shellexperiencehost", "snippingtool", "searchhost", "textinputhost"))
+
+
+def format_distraction_item(d: Any) -> Optional[str]:
+    if not d:
+        return None
+    if isinstance(d, dict):
+        raw_check = (
+            d.get("raw_app_name")
+            or d.get("app_name")
+            or d.get("app")
+            or d.get("clean_app_name")
+            or d.get("platform_name")
+            or ""
+        ).lower().strip()
+        if is_os_utility(raw_check):
+            return None
+        platform = d.get("platform_name") or d.get("platform")
+        clean_app = d.get("clean_app_name") or d.get("clean_app") or d.get("app") or d.get("name")
+        name = platform or clean_app or "Unknown"
+        if is_os_utility(name):
+            return None
+        cnt = d.get("count") or d.get("cnt")
+        return f"{name} ({cnt}x)" if cnt else str(name)
+    elif isinstance(d, str):
+        if is_os_utility(d):
+            return None
+        return d
+    return str(d)
+
+
+def format_workspace_item(w: Any) -> str:
+    if not w:
+        return "Workspace"
+    if isinstance(w, dict):
+        name = w.get("name") or w.get("workspace_name") or w.get("platform_name") or w.get("clean_app_name") or "Workspace"
+        logged = w.get("today_logged_minutes", 0)
+        target = w.get("daily_target_minutes", 0)
+        status = w.get("card_status_label", "Ready")
+        streak = w.get("current_streak", 0)
+        return f"{name}: {logged}m / {target}m target ({status}, Streak: {streak}d)"
+    return str(w)
 
 # ---------------------------------------------------------------------------
 # User Profile – Persistent Long-Term Memory (JSON)
@@ -465,44 +530,27 @@ class StarMLEngine:
         def _format_distractions_to_str(dist_list) -> str:
             if not dist_list:
                 return "None recorded"
+            if isinstance(dist_list, str):
+                return dist_list
+            if isinstance(dist_list, dict):
+                dist_list = [dist_list]
             formatted = []
             for item in dist_list:
-                if isinstance(item, dict):
-                    raw_check = (item.get("raw_app_name") or item.get("app_name") or item.get("app") or "").lower().strip()
-                    if raw_check in OS_SYSTEM_UTILITIES:
-                        continue
-                    name = (
-                        item.get("platform_name")
-                        or item.get("clean_app_name")
-                        or item.get("platform")
-                        or item.get("app")
-                        or item.get("clean_app")
-                        or "Unknown"
-                    )
-                    if str(name).lower().strip() in OS_SYSTEM_UTILITIES:
-                        continue
-                    cnt = item.get("count") or item.get("cnt")
-                    formatted.append(f"{name} ({cnt}x)" if cnt else str(name))
-                elif isinstance(item, str):
-                    if item.lower().strip() in OS_SYSTEM_UTILITIES:
-                        continue
-                    formatted.append(item)
-                else:
-                    formatted.append(str(item))
+                res = format_distraction_item(item)
+                if res and not is_os_utility(res):
+                    formatted.append(res)
             return ", ".join(formatted) if formatted else "None recorded"
 
         def _format_workspaces_matrix(ws_matrix) -> str:
             if not ws_matrix:
                 return "  - None active"
+            if isinstance(ws_matrix, str):
+                return ws_matrix
+            if isinstance(ws_matrix, dict):
+                ws_matrix = [ws_matrix]
             bullets = []
             for ws in ws_matrix:
-                if isinstance(ws, dict):
-                    bullets.append(
-                        f"  - {ws.get('name', 'Workspace')}: {ws.get('today_logged_minutes', 0)}m / {ws.get('daily_target_minutes', 0)}m target "
-                        f"({ws.get('card_status_label', 'Ready')}, Streak: {ws.get('current_streak', 0)}d)"
-                    )
-                else:
-                    bullets.append(f"  - {str(ws)}")
+                bullets.append(f"  - {format_workspace_item(ws)}")
             return "\n".join(bullets)
 
         distracting_apps_list = patterns.get("top_distracting_apps", [])

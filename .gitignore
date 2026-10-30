@@ -55,5 +55,13 @@ Thumbs.db
 # ========================
 # Scratch / Debug Files
 # ========================
-test_*.py
+test*.py
+patch*.py
+fix_*.py
+update_*.py
+replace.py
+undo.py
+*.log
 jwt_debug.txt
+all_files.txt
+imports.txt

@@ -19,6 +19,9 @@ from app.services.star_ml import (
     TOOL_DISPATCH,
     StarMLEngine,
     OS_SYSTEM_UTILITIES,
+    is_os_utility,
+    format_distraction_item,
+    format_workspace_item,
 )
 
 # Initialize Groq client
@@ -82,39 +85,46 @@ async def chat_endpoint(
         ws_name = ctx.get("workspaceName") or request.workspace_name or "Default"
         
         # Safely normalize any top_distractions or distractions in ctx if present
-        for dist_key in ("top_distractions", "topDistractions", "distractions"):
+        for dist_key in ("top_distractions", "topDistractions", "distractions", "distraction_triggers", "top_distracting_apps"):
             if dist_key in ctx and ctx[dist_key]:
                 raw_dists = ctx[dist_key]
                 if isinstance(raw_dists, list):
                     cleaned_items = []
                     for d in raw_dists:
-                        if isinstance(d, dict):
-                            raw_n = (d.get("raw_app_name") or d.get("app_name") or d.get("app") or "").lower().strip()
-                            if raw_n in OS_SYSTEM_UTILITIES:
-                                continue
-                            name = d.get("platform_name") or d.get("clean_app_name") or d.get("platform") or d.get("app") or d.get("clean_app") or "Unknown"
-                            if str(name).lower().strip() not in OS_SYSTEM_UTILITIES:
-                                cnt = d.get("count") or d.get("cnt")
-                                cleaned_items.append(f"{name} ({cnt}x)" if cnt else str(name))
-                        elif isinstance(d, str):
-                            if d.lower().strip() not in OS_SYSTEM_UTILITIES:
-                                cleaned_items.append(d)
-                        else:
-                            cleaned_items.append(str(d))
+                        res = format_distraction_item(d)
+                        if res and not is_os_utility(res):
+                            cleaned_items.append(res)
                     ctx[dist_key] = ", ".join(cleaned_items) if cleaned_items else "None recorded"
+                elif isinstance(raw_dists, dict):
+                    res = format_distraction_item(raw_dists)
+                    ctx[dist_key] = res if res and not is_os_utility(res) else "None recorded"
+                elif isinstance(raw_dists, str):
+                    ctx[dist_key] = raw_dists
+
+        # Safely normalize any workspace lists in ctx
+        for ws_key in ("workspaces", "workspaceList", "workspaces_list", "workspaces_matrix"):
+            if ws_key in ctx and ctx[ws_key]:
+                raw_ws = ctx[ws_key]
+                if isinstance(raw_ws, list):
+                    cleaned_ws = []
+                    for w in raw_ws:
+                        cleaned_ws.append(format_workspace_item(w))
+                    ctx[ws_key] = ", ".join(cleaned_ws)
+                elif isinstance(raw_ws, dict):
+                    ctx[ws_key] = format_workspace_item(raw_ws)
 
         # Safely normalize intent if it is a list of dicts/strings
-        intent_val = ctx.get("sessionIntent") or ctx.get("intent")
+        intent_val = ctx.get("sessionIntent") or ctx.get("intent") or ctx.get("focusKeywords")
         if isinstance(intent_val, list):
             cleaned_intents = []
             for item in intent_val:
                 if isinstance(item, dict):
-                    cleaned_intents.append(f"{item.get('platform_name') or item.get('clean_app_name') or item.get('name') or str(item)}")
+                    cleaned_intents.append(f"{item.get('platform_name') or item.get('clean_app_name') or item.get('name') or item.get('app') or str(item)}")
                 else:
                     cleaned_intents.append(str(item))
             ctx["sessionIntent"] = ", ".join(cleaned_intents)
         elif isinstance(intent_val, dict):
-            ctx["sessionIntent"] = f"{intent_val.get('platform_name') or intent_val.get('clean_app_name') or intent_val.get('name') or str(intent_val)}"
+            ctx["sessionIntent"] = f"{intent_val.get('platform_name') or intent_val.get('clean_app_name') or intent_val.get('name') or intent_val.get('app') or str(intent_val)}"
 
         # 1. Find Workspace to load history and properties
         if ws_id:
@@ -357,13 +367,13 @@ async def get_daily_insight(
     app_counts: Dict[str, int] = {}
     for log in act_logs:
         raw_app = (log.app_name or "").lower().strip()
-        if raw_app in OS_SYSTEM_UTILITIES:
+        if is_os_utility(raw_app):
             continue
         display_name = log.platform_name or log.clean_app_name
         if not display_name:
             clean, plat, _ = parse_activity(log.window_title or "", log.app_name or "")
             display_name = plat or clean or log.app_name or "Unknown"
-        if display_name and str(display_name).lower().strip() not in OS_SYSTEM_UTILITIES:
+        if display_name and not is_os_utility(display_name):
             app_counts[display_name] = app_counts.get(display_name, 0) + 1
 
     top_dists = sorted(app_counts.items(), key=lambda x: x[1], reverse=True)[:3]
