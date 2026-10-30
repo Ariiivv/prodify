@@ -13,6 +13,7 @@ import WebcamStream from '@/components/workspace/WebcamStream';
 import TimerRing from '@/components/timer/TimerRing';
 import TimerControls from '@/components/timer/TimerControls';
 import SessionStats from '@/components/timer/SessionStats';
+import BurnoutGauge from '@/components/timer/BurnoutGauge';
 import AiCoachPanel from '@/components/chat/AiCoachPanel';
 import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCalendar';
@@ -141,15 +142,29 @@ interface ActiveDistractionInfo {
   rawWindowTitle?: string;
 }
 
-  // Cache-first initialization (stale-while-revalidate for instant transitions)
-  const cachedWs = wsId ? (useCacheStore.getState().workspaceDetails[wsId]?.data || useCacheStore.getState().dashboard.workspaces.find(w => w.id === wsId)) : null;
-  const cachedMet = wsId ? useCacheStore.getState().workspaceMetrics[wsId]?.data : null;
+  // Cache-first initialization (reactive stale-while-revalidate for instant transitions)
+  const cachedWs = useCacheStore(useCallback(state => wsId ? (state.workspaceDetails[wsId]?.data || state.dashboard.workspaces.find(w => w.id === wsId)) : null, [wsId]));
+  const cachedMet = useCacheStore(useCallback(state => wsId ? state.workspaceMetrics[wsId]?.data : null, [wsId]));
 
   // Component State
   const [burnoutProb, setBurnoutProb] = useState(0);
   const [workspace, setWorkspace] = useState<any>(cachedWs || null);
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(cachedMet || null);
   const [isLoading, setIsLoading] = useState(!cachedWs);
+
+  // Sync state seamlessly whenever cache updates
+  useEffect(() => {
+    if (cachedWs) {
+      setWorkspace(cachedWs);
+      setIsLoading(false);
+    }
+  }, [cachedWs]);
+
+  useEffect(() => {
+    if (cachedMet) {
+      setMetrics(cachedMet);
+    }
+  }, [cachedMet]);
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('disabled');
   const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
@@ -587,7 +602,8 @@ interface ActiveDistractionInfo {
         }),
       }).catch(console.error);
 
-      // 2. Legacy telemetry call
+      // 2. Telemetry sessions call (Completed or Partial)
+      const elapsedMinutes = maxElapsedRef.current;
       if (completed && loggedCompletionRef.current !== timerState.sessionCount) {
         loggedCompletionRef.current = timerState.sessionCount;
         fetch(`${API_BASE}/api/telemetry/sessions`, {
@@ -600,10 +616,27 @@ interface ActiveDistractionInfo {
             distracted_seconds: timerState.distractedSeconds || 0,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             burnout_score: burnoutProb,
+            status: "COMPLETED",
           }),
         }).catch(error => {
           loggedCompletionRef.current = null;
           console.error('Unable to save completed focus session:', error);
+        });
+      } else if (!completed && elapsedMinutes >= 1) {
+        fetch(`${API_BASE}/api/telemetry/sessions`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            workspace_id: wsId,
+            duration_minutes: elapsedMinutes,
+            distraction_count: timerState.distractionCount,
+            distracted_seconds: timerState.distractedSeconds || 0,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            burnout_score: burnoutProb,
+            status: "PARTIAL",
+          }),
+        }).catch(error => {
+          console.error('Unable to save partial focus session:', error);
         });
       }
 
@@ -1134,7 +1167,7 @@ interface ActiveDistractionInfo {
 
 
 
-          {timerState.currentState === 'FOCUS_RUNNING' && engagementState === 'FACE_ABSENT' && (
+          {timerState.currentState === 'FOCUS_RUNNING' && (
             <CoachInsightPanel
               engagementState={engagementState}
               isSessionActive={true}
@@ -1236,6 +1269,10 @@ interface ActiveDistractionInfo {
                 calendar={metrics?.calendar}
               />
             )}
+          <BurnoutGauge
+            burnoutProbability={burnoutProb}
+            currentState={timerState.currentState}
+          />
           {(timerState.currentState === 'SESSION_COMPLETED' || timerState.sessionCount > 0) && (
             <SessionStats sessionCount={timerState.sessionCount} distractionCount={timerState.distractionCount} focusMinutes={focusMinutes} workDuration={workspace.work_duration || 45} />
           )}

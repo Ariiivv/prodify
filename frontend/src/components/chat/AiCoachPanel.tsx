@@ -174,14 +174,6 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
     setInput('');
     setIsLoading(true);
 
-    if (workspaceId) {
-      fetch(`${API_BASE}/workspaces/${workspaceId}/chat-history`, {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ role: 'user', content: text })
-      }).catch(console.error);
-    }
-
     try {
       const payload = {
         message: text,
@@ -239,14 +231,6 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
       }
 
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-      
-      if (workspaceId) {
-        fetch(`${API_BASE}/workspaces/${workspaceId}/chat-history`, {
-          method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ role: 'assistant', content: reply })
-        }).catch(console.error);
-      }
     } catch (error) {
       console.error('Failed to communicate with Prodify backend:', error);
       setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ **Connection Error**: Unable to reach the Prodify Intelligence backend. Please ensure the FastAPI server is running.` }]);
