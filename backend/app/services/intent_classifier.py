@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+from app.services.activity_parser import parse_activity
 
 # Ensure environment variables are loaded from backend/.env
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
@@ -123,49 +124,57 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
         _last_eval_time = time.time()
         _last_eval_target = current_target_key
 
+    clean_app, platform, content_title = parse_activity(window_title, app_name)
+
     system_prompt = (
-        "You are a strict, objective focus alignment evaluator enforcing a Strict Intent & Tool Whitelist Contract.\n"
-        "Your sole responsibility is to evaluate whether the user's active application and window title strictly match their declared focus goal and permitted tools.\n\n"
-        "### STRICT INTENT & TOOL WHITELIST CONTRACT:\n\n"
-        "1. RULE 1 — EXPLICIT TOOL WHITELIST ENFORCEMENT:\n"
-        "   - If the user's stated goal specifies which tools/apps they will use (e.g., 'use google docs and ai', 'reading pdf', 'research on browser'), ONLY those tools (e.g. Google Docs, AI assistants like Claude/ChatGPT/Gemini, PDF reader) are aligned (VERDICT: TRUE).\n"
-        "   - If the user opens an application NOT mentioned in their intent—even if it looks 'productive' like Visual Studio Code (Code.exe), Antigravity.exe, any code editor, terminal, or localhost web dev server—you MUST return VERDICT: FALSE.\n"
-        "   - Do NOT assume coding or IDEs are allowed unless the user's goal explicitly mentions coding, programming, software development, or VS Code.\n\n"
-        "2. RULE 2 — ZERO ACRONYM / TOPIC HALLUCINATION:\n"
-        "   - Never invent or imagine connections between different project names or acronyms.\n"
-        "   - If the user's goal is 'CIS' and the window title says 'CEP' (e.g. 'localhost:4173 - CEP - Visual Studio Code'), 'CEP' is a completely different project. Do NOT claim 'CEP' is a 'CIS project'.\n"
-        "   - Return VERDICT: FALSE when the active window refers to a different project or acronym.\n\n"
-        "3. RULE 3 — BROWSER TAB SPECIFICITY:\n"
-        "   - Inside a web browser (brave.exe, chrome.exe, msedge.exe, firefox.exe), evaluate the specific tab/page title against the topic and allowed tools:\n"
-        "     * 'CIS samples from instructor - Claude' -> VERDICT: TRUE (Matches AI + CIS topic).\n"
-        "     * 'Untitled document - Google Docs' -> VERDICT: TRUE (Matches Google Docs tool).\n"
-        "     * 'fc barcelona vs paris saint-germain' -> VERDICT: FALSE (Unrelated sports search).\n"
-        "   - Neutral blank/new tabs ('New Tab') receive temporary navigation grace (VERDICT: TRUE).\n"
-        "   - Any specific web search query, video, article, or site that does NOT directly match the declared topic or allowed tools must return VERDICT: FALSE.\n\n"
-        "4. ZERO SPECULATIVE RATIONALIZATION:\n"
-        "   - Base your decision strictly on the literal text of the declared goal, application name, and window title.\n"
-        "   - Never invent hypothetical excuses or secondary connections.\n\n"
+        "You are an intelligent, contextual focus mentor evaluating screen activity against a user's declared goal.\n"
+        "Your role is to understand the real-world workflow ecosystem required to achieve the user's focus goal:\n\n"
+        "### CONTEXTUAL WORKFLOW INTELLIGENCE CONTRACT:\n\n"
+        "1. WORKFLOW ECOSYSTEM RECOGNITION (VERDICT: TRUE):\n"
+        "   - Auxiliary Productivity & Study Tools: If the user is studying, researching, writing, or building a project (e.g. CIS, computer science, networking, math, writing essays, software development), auxiliary productivity tools are intrinsically ALIGNED:\n"
+        "     * Terminals and command prompts (Terminal, PowerShell, CMD, Git Bash)\n"
+        "     * Technical documentation, developer references, MDN, Stack Overflow, GitHub, arXiv, Wikipedia\n"
+        "     * AI research assistants (Claude, ChatGPT, Gemini, Perplexity)\n"
+        "     * Writing & note-taking software (Google Docs, Google Sheets, Notion, Obsidian, Word)\n"
+        "     * Calculators, PDF readers, IDEs, code editors, and file managers assisting the subject\n"
+        "     * Educational YouTube lectures or tutorials whose topic or subject matches the user's declared field of study\n"
+        "   - These tools are ALIGNED even if the user did not explicitly list them word-for-word in their goal.\n\n"
+        "2. STRICT PROJECT & TOPIC BOUNDARIES (VERDICT: FALSE):\n"
+        "   - Never hallucinate or invent associations between distinct projects or acronyms.\n"
+        "   - If the user's declared goal is for project \"CIS\", working on code or windows for a different project (e.g. \"CEP\" or unrelated repos) is strictly DISALIGNED (VERDICT: FALSE).\n"
+        "   - If the user drifts into off-topic web searches, articles, or shopping that have no relationship to their declared goal, return VERDICT: FALSE.\n\n"
+        "3. ENTERTAINMENT & DISTRACTION REJECTION (VERDICT: FALSE):\n"
+        "   - Entertainment platforms (Netflix, Twitch, Disney+, Spotify playback, Steam, video games) are DISALIGNED.\n"
+        "   - Social media feeds (Reddit, Twitter/X, Instagram, Facebook, TikTok) are DISALIGNED.\n"
+        "   - YouTube entertainment videos (gaming, sports highlights, celebrity gossip, movie trailers, comedy) are DISALIGNED.\n\n"
+        "4. TEMPORARY NAVIGATION & SEARCH GRACE (VERDICT: TRUE):\n"
+        "   - Neutral blank tabs (\"New Tab\", \"about:blank\"), search engine homepages, or brief queries seeking resources related to the topic receive navigation grace (VERDICT: TRUE).\n\n"
         "### OUTPUT FORMAT:\n"
         "Respond with exactly one line in this format:\n"
         "VERDICT: [TRUE|FALSE] | SUMMARY: [Short 3-6 word summary] | REASON: [One clear sentence explaining why it is aligned or why it is a distraction]\n\n"
         "### EXAMPLES:\n"
+        "- Goal: \"CIS learning and study\"\n"
+        "  App: \"Terminal\" | Platform: \"Terminal\" | Content: \"Windows PowerShell - ping 192.168.1.1\"\n"
+        "  -> VERDICT: TRUE | SUMMARY: Network diagnostics terminal | REASON: Using the terminal for networking diagnostics directly supports CIS learning.\n"
         "- Goal: \"CIS learning and would use google docs and ai\"\n"
-        "  App: \"Code.exe\", Title: \"localhost:4173 - CEP - Visual Studio Code\"\n"
-        "  -> VERDICT: FALSE | SUMMARY: Unrelated project in VS Code | REASON: You are in Visual Studio Code working on project 'CEP', which is outside your stated goal of learning CIS using Google Docs and AI.\n"
-        "- Goal: \"CIS learning and would use google docs and ai\"\n"
-        "  App: \"brave.exe\", Title: \"CIS samples from instructor - Claude - Brave\"\n"
-        "  -> VERDICT: TRUE | SUMMARY: Claude AI for CIS | REASON: Using Claude AI to study CIS aligns with your declared goal.\n"
-        "- Goal: \"CIS learning and would use google docs and ai\"\n"
-        "  App: \"brave.exe\", Title: \"fc barcelona vs paris saint-germain - Brave Search - Brave\"\n"
-        "  -> VERDICT: FALSE | SUMMARY: Sports search | REASON: Searching for soccer matches is unrelated to your goal of learning CIS."
+        "  App: \"VS Code\" | Platform: \"VS Code\" | Content: \"localhost:4173 - CEP - Visual Studio Code\"\n"
+        "  -> VERDICT: FALSE | SUMMARY: Unrelated project CEP | REASON: You are working on project 'CEP' in VS Code, which is outside your goal of studying CIS.\n"
+        "- Goal: \"Linear algebra exam prep\"\n"
+        "  App: \"Brave Browser\" | Platform: \"YouTube\" | Content: \"3Blue1Brown - Essence of linear algebra\"\n"
+        "  -> VERDICT: TRUE | SUMMARY: Linear algebra video lecture | REASON: 3Blue1Brown's linear algebra lecture directly aligns with your exam prep.\n"
+        "- Goal: \"Linear algebra exam prep\"\n"
+        "  App: \"Google Chrome\" | Platform: \"Twitter / X\" | Content: \"Trending Posts / X\"\n"
+        "  -> VERDICT: FALSE | SUMMARY: Social media feed | REASON: Browsing Twitter/X is a social media distraction from your math prep."
     )
 
     user_prompt = (
         f"USER'S DECLARED GOAL (ACTIVE WORKSPACE):\n"
         f"\"{intent}\"\n\n"
         f"ACTIVE SCREEN CONTEXT:\n"
-        f"Application Name: \"{app_name}\"\n"
-        f"Active Window Title: \"{window_title}\""
+        f"Application: \"{clean_app}\" ({app_name})\n"
+        f"Platform / Ecosystem: \"{platform}\"\n"
+        f"Active Content / Title: \"{content_title}\"\n"
+        f"Raw Window Title: \"{window_title}\""
     )
 
     try:
@@ -297,15 +306,40 @@ def update_focus_state(
             active_reason = state.get("active_distraction_reason") or reason
             return ("distracted" if state["status"] == "DISTRACTED" else "focused"), active_reason
 
-        state["active_distraction_target"] = current_target
-        state["active_distraction_reason"] = reason
+        # If already distracted, keep distracted and update active reason
+        if state["status"] == "DISTRACTED":
+            state["active_distraction_target"] = current_target
+            state["active_distraction_reason"] = reason
+            state["last_target"] = current_target
+            return "distracted", reason
 
-        # Instant Distraction Trigger: transition immediately to DISTRACTED (no PENDING / Strike 1 delay)
-        state["status"] = "DISTRACTED"
-        state["pending_count"] = 2
-        state["last_target"] = current_target
-        logger.info(f"[STATE] -> DISTRACTED (Instant Distraction Trigger) on '{current_target}'")
-        return "distracted", state["active_distraction_reason"]
+        # Known cached distraction -> Instant trigger (skips grace debounce)
+        if is_cache_hit:
+            state["status"] = "DISTRACTED"
+            state["pending_count"] = 2
+            state["last_target"] = current_target
+            state["active_distraction_target"] = current_target
+            state["active_distraction_reason"] = reason
+            logger.info(f"[STATE] -> DISTRACTED (Instant Cached Trigger) on '{current_target}'")
+            return "distracted", reason
+
+        # Fresh evaluation: Strike 1 grace period (1-poll debounce for navigation/browser switches)
+        if state.get("pending_count", 0) == 0:
+            state["status"] = "PENDING"
+            state["pending_count"] = 1
+            state["last_target"] = current_target
+            state["active_distraction_target"] = current_target
+            state["active_distraction_reason"] = reason
+            logger.info(f"[STATE] -> PENDING (Strike 1 grace debounce) on '{current_target}'")
+            return "focused", f"Notice: '{window_title[:40]}' may be off-task"
+        else:
+            state["status"] = "DISTRACTED"
+            state["pending_count"] = 2
+            state["last_target"] = current_target
+            state["active_distraction_target"] = current_target
+            state["active_distraction_reason"] = reason
+            logger.info(f"[STATE] -> DISTRACTED (Strike 2 confirmed) on '{current_target}'")
+            return "distracted", state["active_distraction_reason"]
 
     return "focused", reason
 

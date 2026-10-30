@@ -78,6 +78,7 @@ class SessionCreate(BaseModel):
     distracted_seconds: float = 0.0
     burnout_score: float = 0.0
     timezone: Optional[str] = None  # IANA timezone string, e.g. "America/New_York"
+    status: Optional[str] = "COMPLETED"
 
 
 def require_owned_workspace(workspace_id: int, user_id: str, db: Session) -> models.Workspace:
@@ -144,7 +145,7 @@ def create_completed_session(
         end_time=end_time,
         duration=duration_secs,
         session_type="FOCUS",
-        status="COMPLETED",
+        status=payload.status or "COMPLETED",
         burnout_score=max(0.0, min(1.0, payload.burnout_score)),
         distraction_count=max(0, payload.distraction_count),
         distracted_seconds=max(0.0, payload.distracted_seconds),
