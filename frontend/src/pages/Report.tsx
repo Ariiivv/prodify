@@ -144,7 +144,7 @@ const CustomBarTooltip = ({ active, payload }: any) => {
           {data.target_minutes > 0 && <span className="text-zinc-400"> / {data.target_minutes}m target</span>}
         </p>
         <p className="text-zinc-300">
-          <span className="text-zinc-500">Deep Work Ratio:</span> <span className="text-emerald-400 font-bold">{data.deep_work_ratio}%</span>
+          <span className="text-zinc-500">Deep Work Ratio:</span> <span className="text-emerald-400 font-bold">{data.minutes_logged > 0 ? `${data.deep_work_ratio}%` : '—'}</span>
         </p>
         <p className="text-zinc-300 capitalize">
           <span className="text-zinc-500">Status:</span>{' '}
@@ -296,6 +296,51 @@ export default function Report() {
     return sum > 0 ? sum : 60;
   }, [workspaces]);
 
+  const executiveVerdict = useMemo(() => {
+    if (!reportData) return null;
+    const { total_focus_hours, deep_work_ratio_7d, momentum_or_pace_score, peak_focus_window, current_streak, avg_burnout_pct } = reportData.summary;
+    const topDistraction = reportData.distractions_breakdown?.top_platforms?.[0];
+    const driftStr = topDistraction ? `, with ${topDistraction.name || topDistraction.clean_app} (${topDistraction.count} slips) as primary drift trigger` : '';
+
+    if (total_focus_hours <= 0.05) {
+      return {
+        badge: 'Calibrating',
+        badgeClass: 'bg-zinc-800 text-zinc-300 border-zinc-700',
+        title: 'Telemetry Initializing',
+        description: 'No focus sessions recorded yet in this window. Launch a 25-minute sprint in your active workspace to establish your baseline Deep Work and Momentum scores.',
+        icon: '⚡',
+      };
+    }
+
+    if (momentum_or_pace_score >= 80) {
+      return {
+        badge: 'Elite Tier',
+        badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        title: 'Strong Lock-In Cadence',
+        description: `Outstanding focus purity at ${deep_work_ratio_7d}% across ${total_focus_hours}h logged. Your peak flow window is ${peak_focus_window}${driftStr}. Maintaining this pace ensures milestone completion.`,
+        icon: '🔥',
+      };
+    }
+
+    if (momentum_or_pace_score >= 50) {
+      return {
+        badge: 'On Track',
+        badgeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+        title: 'Steady Focus Cadence',
+        description: `Solid performance with ${total_focus_hours}h completed and a ${current_streak}d streak. Cognitive load is balanced at ${avg_burnout_pct}%${driftStr}. Protect your ${peak_focus_window} window from drift.`,
+        icon: '⚡',
+      };
+    }
+
+    return {
+      badge: 'Attention Needed',
+      badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      title: 'Focus Calibration Needed',
+      description: `Momentum is currently at ${momentum_or_pace_score}% with ${total_focus_hours}h logged against targets${driftStr}. Complete one structured 25m sprint today to reverse drift and protect your streak.`,
+      icon: '⚠️',
+    };
+  }, [reportData]);
+
   return (
     <div className="p-6 md:p-10 max-w-6xl mx-auto space-y-8">
       {/* ── 1. Global Report Header ── */}
@@ -347,6 +392,39 @@ export default function Report() {
         </div>
       ) : reportData ? (
         <>
+          {/* ── Executive Performance Verdict Banner ── */}
+          {executiveVerdict && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="relative overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-950/30 via-zinc-950/80 to-purple-950/30 p-5 backdrop-blur-xl shadow-lg"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-lg shrink-0 shadow-inner">
+                    {executiveVerdict.icon}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold tracking-wider text-blue-400 uppercase">
+                        AI Performance Verdict
+                      </span>
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${executiveVerdict.badgeClass}`}>
+                        {executiveVerdict.badge}
+                      </span>
+                    </div>
+                    <h3 className="text-sm md:text-base font-bold text-white tracking-tight mt-0.5">
+                      {executiveVerdict.title}
+                    </h3>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs sm:text-sm text-zinc-300 mt-3 leading-relaxed font-body">
+                {executiveVerdict.description}
+              </p>
+            </motion.div>
+          )}
+
           {/* ── 2. Top KPI Command Row (5 Cards) ── */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -370,7 +448,13 @@ export default function Report() {
                   {reportData.summary.tier_label}
                 </span>
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono">7-day rolling performance</span>
+              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+                <div 
+                  className="bg-blue-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, Math.max(0, reportData.summary.momentum_or_pace_score))}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">7-day rolling performance</span>
             </div>
 
             {/* Card 2: Deep Work Ratio */}
@@ -382,11 +466,28 @@ export default function Report() {
                 <Brain className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-emerald-400">
-                  {reportData.summary.deep_work_ratio_7d}%
-                </span>
+                {reportData.summary.total_focus_hours > 0.05 ? (
+                  <>
+                    <span className="text-2xl font-bold font-mono text-emerald-400">
+                      {reportData.summary.deep_work_ratio_7d}%
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {reportData.summary.deep_work_ratio_7d >= 80 ? 'Elite' : reportData.summary.deep_work_ratio_7d >= 60 ? 'Solid' : 'Low'}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-base font-bold font-mono text-zinc-500">
+                    — Calibrating
+                  </span>
+                )}
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono">(Focus - Distracted) / Focus</span>
+              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${reportData.summary.total_focus_hours > 0.05 ? reportData.summary.deep_work_ratio_7d : 0}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">(Focus - Distracted) / Focus</span>
             </div>
 
             {/* Card 3: Active Streak */}
@@ -401,8 +502,17 @@ export default function Report() {
                 <span className="text-2xl font-bold font-mono text-white">
                   🔥 {reportData.summary.current_streak}d
                 </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                  {reportData.summary.current_streak >= 7 ? 'On Fire' : 'Active'}
+                </span>
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono">
+              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+                <div 
+                  className="bg-orange-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, (reportData.summary.current_streak / Math.max(1, reportData.summary.longest_streak || 7)) * 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">
                 Longest: {reportData.summary.longest_streak}d
               </span>
             </div>
@@ -420,7 +530,13 @@ export default function Report() {
                   {reportData.summary.peak_focus_window}
                 </span>
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono">Optimal alignment window</span>
+              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+                <div 
+                  className="bg-purple-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: reportData.summary.peak_focus_window !== 'N/A' ? '100%' : '20%' }}
+                />
+              </div>
+              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">Optimal alignment window</span>
             </div>
 
             {/* Card 5: Burnout Risk / Total Hours */}
@@ -439,7 +555,16 @@ export default function Report() {
                   ({reportData.summary.total_focus_hours}h total)
                 </span>
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono">Session fatigue index</span>
+              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    reportData.summary.avg_burnout_pct > 70 ? 'bg-rose-500' :
+                    reportData.summary.avg_burnout_pct > 40 ? 'bg-amber-500' : 'bg-emerald-500'
+                  }`} 
+                  style={{ width: `${Math.min(100, Math.max(0, reportData.summary.avg_burnout_pct))}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">Session fatigue index</span>
             </div>
           </motion.div>
 

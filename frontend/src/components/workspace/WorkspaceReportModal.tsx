@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -124,7 +124,7 @@ const CustomBarTooltip = ({ active, payload }: any) => {
           {data.target_minutes > 0 && <span className="text-zinc-400"> / {data.target_minutes}m target</span>}
         </p>
         <p className="text-zinc-300">
-          <span className="text-zinc-500">Deep Work Ratio:</span> <span className="text-emerald-400 font-bold">{data.deep_work_ratio}%</span>
+          <span className="text-zinc-500">Deep Work Ratio:</span> <span className="text-emerald-400 font-bold">{data.minutes_logged > 0 ? `${data.deep_work_ratio}%` : '—'}</span>
         </p>
         <p className="text-zinc-300 capitalize">
           <span className="text-zinc-500">Status:</span>{' '}
@@ -183,6 +183,51 @@ export function WorkspaceReportModal({
   const targetLine = dailyTargetMinutes || (reportData?.daily_series?.[0]?.target_minutes) || 45;
   const categoryIcon = category === 'sprint' ? '🎯' : category === 'casual' ? '⚡' : '🌱';
   const categoryLabel = category === 'sprint' ? 'Sprint Track' : category === 'casual' ? 'Quick Work' : 'Mastery Track';
+
+  const executiveVerdict = useMemo(() => {
+    if (!reportData) return null;
+    const { total_focus_hours, deep_work_ratio_7d, momentum_or_pace_score, current_streak } = reportData.summary;
+    const topDistraction = reportData.distractions_breakdown?.top_platforms?.[0];
+    const driftStr = topDistraction ? `, with ${topDistraction.name || topDistraction.clean_app} (${topDistraction.count} slips) as primary drift trigger` : '';
+
+    if (total_focus_hours <= 0.05) {
+      return {
+        badge: 'Calibrating',
+        badgeClass: 'bg-zinc-800 text-zinc-300 border-zinc-700',
+        title: 'Calibrating Workspace Form',
+        description: `No sessions recorded in this window for ${workspaceName}. Start a focus sprint to establish deep work metrics and tracking accuracy.`,
+        icon: '⚡',
+      };
+    }
+
+    if (momentum_or_pace_score >= 80) {
+      return {
+        badge: 'Strong Lock-In',
+        badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        title: 'Peak Focus Flow',
+        description: `Exceptional focus purity at ${deep_work_ratio_7d}% across ${total_focus_hours}h logged in ${workspaceName}${driftStr}. Maintaining this pace ensures milestone mastery.`,
+        icon: '🔥',
+      };
+    }
+
+    if (momentum_or_pace_score >= 50) {
+      return {
+        badge: 'On Track',
+        badgeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+        title: 'Steady Focus Cadence',
+        description: `Solid consistency with ${total_focus_hours}h completed and a ${current_streak}d streak in ${workspaceName}${driftStr}. Keep your daily momentum steady.`,
+        icon: '⚡',
+      };
+    }
+
+    return {
+      badge: 'Action Needed',
+      badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      title: 'Pace Slipping',
+      description: `Current velocity is at ${momentum_or_pace_score}% with ${total_focus_hours}h completed${driftStr}. Complete one structured session today to protect your streak.`,
+      icon: '⚠️',
+    };
+  }, [reportData, workspaceName]);
 
   return (
     <AnimatePresence>
@@ -252,6 +297,33 @@ export function WorkspaceReportModal({
             </div>
           ) : reportData ? (
             <>
+              {/* Executive Verdict Banner */}
+              {executiveVerdict && (
+                <div className="relative overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-950/30 via-zinc-900/80 to-purple-950/30 p-4 backdrop-blur-xl shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-base shrink-0 shadow-inner">
+                      {executiveVerdict.icon}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold tracking-wider text-blue-400 uppercase">
+                          Workspace Performance Verdict
+                        </span>
+                        <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full border ${executiveVerdict.badgeClass}`}>
+                          {executiveVerdict.badge}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white tracking-tight mt-0.5">
+                        {executiveVerdict.title}
+                      </h4>
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-300 mt-2.5 leading-relaxed font-body">
+                    {executiveVerdict.description}
+                  </p>
+                </div>
+              )}
+
               {/* 1. 4-Card KPI Strip */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
                 {/* 7d Pace */}
@@ -270,7 +342,13 @@ export function WorkspaceReportModal({
                       {reportData.summary.tier_label}
                     </span>
                   </div>
-                  <span className="text-[10px] text-zinc-500 font-mono">Velocity vs target</span>
+                  <div className="w-full bg-zinc-800/60 rounded-full h-1 mt-1 overflow-hidden">
+                    <div 
+                      className="bg-blue-500 h-full rounded-full transition-all duration-500" 
+                      style={{ width: `${Math.min(100, Math.max(0, reportData.summary.momentum_or_pace_score))}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-zinc-500 font-mono mt-1">Velocity vs target</span>
                 </div>
 
                 {/* Deep Work Ratio */}
@@ -282,11 +360,28 @@ export function WorkspaceReportModal({
                     <Brain className="w-4 h-4 text-emerald-400" />
                   </div>
                   <div className="flex items-baseline gap-2 mb-0.5">
-                    <span className="text-xl font-bold font-mono text-emerald-400">
-                      {reportData.summary.deep_work_ratio_7d}%
-                    </span>
+                    {reportData.summary.total_focus_hours > 0.05 ? (
+                      <>
+                        <span className="text-xl font-bold font-mono text-emerald-400">
+                          {reportData.summary.deep_work_ratio_7d}%
+                        </span>
+                        <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {reportData.summary.deep_work_ratio_7d >= 80 ? 'Elite' : 'Active'}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-sm font-bold font-mono text-zinc-500">
+                        — Calibrating
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[10px] text-zinc-500 font-mono">Focus purity ratio</span>
+                  <div className="w-full bg-zinc-800/60 rounded-full h-1 mt-1 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                      style={{ width: `${reportData.summary.total_focus_hours > 0.05 ? reportData.summary.deep_work_ratio_7d : 0}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-zinc-500 font-mono mt-1">Focus purity ratio</span>
                 </div>
 
                 {/* Workspace Streak */}
@@ -302,7 +397,13 @@ export function WorkspaceReportModal({
                       🔥 {reportData.summary.current_streak}d
                     </span>
                   </div>
-                  <span className="text-[10px] text-zinc-500 font-mono">
+                  <div className="w-full bg-zinc-800/60 rounded-full h-1 mt-1 overflow-hidden">
+                    <div 
+                      className="bg-orange-500 h-full rounded-full transition-all duration-500" 
+                      style={{ width: `${Math.min(100, (reportData.summary.current_streak / Math.max(1, reportData.summary.longest_streak || 7)) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-zinc-500 font-mono mt-1">
                     Best: {reportData.summary.longest_streak}d
                   </span>
                 </div>
@@ -320,7 +421,13 @@ export function WorkspaceReportModal({
                       {reportData.summary.total_focus_hours}h
                     </span>
                   </div>
-                  <span className="text-[10px] text-zinc-500 font-mono">Completed focus time</span>
+                  <div className="w-full bg-zinc-800/60 rounded-full h-1 mt-1 overflow-hidden">
+                    <div 
+                      className="bg-purple-500 h-full rounded-full transition-all duration-500" 
+                      style={{ width: reportData.summary.total_focus_hours > 0 ? '100%' : '10%' }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-zinc-500 font-mono mt-1">Completed focus time</span>
                 </div>
               </div>
 
