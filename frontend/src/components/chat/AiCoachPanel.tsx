@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, X, Send, Bot, User, Loader2, Sparkles, AlertTriangle, Zap } from 'lucide-react';
+import { MessageCircle, X, Send, Bot, User, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
@@ -254,7 +254,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
             onClick={() => setIsOpen(true)}
             className="fixed bottom-24 md:bottom-8 right-6 z-40 w-14 h-14 rounded-xl bg-blue-500 shadow-lg shadow-black/50 flex items-center justify-center text-black"
           >
-            <Zap className="w-6 h-6 fill-current" />
+            <Sparkles className="w-6 h-6 fill-current" />
           </motion.button>
         )}
       </AnimatePresence>
@@ -285,7 +285,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-zinc-950/80 backdrop-blur-md">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                    <Zap className="w-5 h-5 text-blue-400" />
+                    <Sparkles className="w-5 h-5 text-blue-400" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
@@ -341,7 +341,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
                   >
                     {msg.role === 'assistant' && (
                       <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
-                        <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                       </div>
                     )}
                     <div className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm leading-relaxed border ${
@@ -375,7 +375,7 @@ const AiCoachPanel = React.memo(function AiCoachPanel({
                     className="flex gap-2 items-start"
                   >
                     <div className="w-7 h-7 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0 shadow-sm">
-                      <Zap className="w-3.5 h-3.5 text-blue-500" />
+                      <Sparkles className="w-3.5 h-3.5 text-blue-500" />
                     </div>
                     <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800">
                       <div className="flex gap-1">

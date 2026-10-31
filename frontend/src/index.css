@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
 
 @tailwind base;
 @tailwind components;
@@ -6,109 +8,103 @@
 
 @layer base {
   :root {
-    --background: 0 0% 0%; /* Pure black */
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3%; /* Very dark gray */
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%; /* White */
-    --primary-foreground: 0 0% 0%; /* Black */
-    --secondary: 0 0% 9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 9%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 0 0% 9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 12%;
-    --input: 0 0% 12%;
-    --ring: 0 0% 20%;
-    --chart-1: 0 0% 98%;
-    --chart-2: 0 0% 70%;
-    --chart-3: 0 0% 40%;
-    --chart-4: 0 0% 20%;
-    --chart-5: 0 0% 10%;
-    --radius: 0.5rem;
-    --font-heading: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-    --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
-    --font-display: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-    --sidebar-background: 0 0% 2%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 0 0% 98%;
-    --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 0 0% 9%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 0 0% 12%;
-    --sidebar-ring: 0 0% 20%;
+    /* ── Warm Paper & Lime Highlighter Tokens ── */
+    --paper: #F6F5F0;
+    --card: #FFFFFF;
+    --ink: #111110;
+    --muted: #6F6E68;
+    --line: #E5E3DA;
+    --lime: #C8F53C;
+    --indigo: #5B3DF5;
+    --amber: #E8A317;
+    --red: #E5484D;
+
+    /* ── Shadcn & Radix Theme Mappings ── */
+    --background: 48 20% 95%; /* #F6F5F0 */
+    --foreground: 60 3% 6%;   /* #111110 */
+    --card-hsl: 0 0% 100%;    /* #FFFFFF */
+    --card-foreground: 60 3% 6%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 60 3% 6%;
+    --primary: 60 3% 6%;      /* #111110 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 44 18% 88%;  /* #E5E3DA */
+    --secondary-foreground: 60 3% 6%;
+    --muted-hsl: 45 3% 42%;   /* #6F6E68 */
+    --muted-foreground: 45 3% 42%;
+    --accent: 75 89% 60%;     /* #C8F53C */
+    --accent-foreground: 60 3% 6%;
+    --destructive: 358 75% 59%; /* #E5484D */
+    --destructive-foreground: 0 0% 100%;
+    --border: 44 18% 88%;     /* #E5E3DA */
+    --input: 44 18% 88%;
+    --ring: 250 89% 60%;      /* #5B3DF5 */
+    --radius: 1rem;
+
+    --font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+    --font-body: 'Inter Variable', Inter, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono Variable', monospace;
   }
 
-  .dark {
-    --background: 0 0% 0%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 0%;
-    --secondary: 0 0% 9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 9%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 0 0% 9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 12%;
-    --input: 0 0% 12%;
-    --ring: 0 0% 20%;
-    --chart-1: 0 0% 98%;
-    --chart-2: 0 0% 70%;
-    --chart-3: 0 0% 40%;
-    --chart-4: 0 0% 20%;
-    --chart-5: 0 0% 10%;
-    --sidebar-background: 0 0% 2%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 0 0% 98%;
-    --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 0 0% 9%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 0 0% 12%;
-    --sidebar-ring: 0 0% 20%;
-  }
-}
-
-@layer base {
   * {
-    @apply border-border outline-ring/50;
+    border-color: var(--line);
+    outline-color: var(--indigo);
   }
 
   body {
-    @apply bg-background text-foreground font-body;
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
+  }
+
+  ::selection {
+    background-color: var(--lime);
+    color: #000000;
   }
 }
 
-/* Custom scrollbar - Cross-browser */
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #2a2a2a #0a0a0a;
+/* ── Typography Utility Classes ── */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.045em;
+  line-height: 0.95;
 }
 
-/* WebKit (Chrome, Safari, Edge) */
-::-webkit-scrollbar {
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Warm Paper Scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #E5E3DA #F6F5F0;
+}
+
+*::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
-::-webkit-scrollbar-track {
-  background: #0a0a0a;
+
+*::-webkit-scrollbar-track {
+  background: #F6F5F0;
 }
-::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
-  border-radius: 3px;
+
+*::-webkit-scrollbar-thumb {
+  background: #E5E3DA;
+  border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #444444;
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #6F6E68;
+}
+
+/* ── Subtle Focus Ring ── */
+:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
 }

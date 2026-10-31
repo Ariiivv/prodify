@@ -12,10 +12,10 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import ai_coach, auth, telemetry, workspaces, analytics, users, metrics
+from app.api import ai_coach, auth, telemetry, workspaces, analytics, users, metrics, friends
 from app.models.connection import create_db_and_tables
 
 # Vision engine is optional — mediapipe/cv2 may not be installed on WSL/headless
@@ -88,6 +88,17 @@ app.include_router(telemetry.router, prefix="/api")
 app.include_router(ai_coach.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(metrics.router, prefix="/api")
+app.include_router(friends.router, prefix="/api")
+app.include_router(friends.router, prefix="")
+
+@app.get("/api/leaderboard/global")
+@app.get("/leaderboard/global")
+def get_global_leaderboard_alias(
+    limit: int = 50,
+    db = Depends(friends.get_db),
+    current_user = Depends(friends.get_current_user),
+):
+    return friends.get_global_leaderboard(limit=limit, db=db, current_user=current_user)
 
 
 @app.websocket("/vision")

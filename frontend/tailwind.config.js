@@ -9,94 +9,79 @@ export default {
   ],
   theme: {
     extend: {
+      colors: {
+        // ── Prodify "Warm Paper, One Lime Highlighter" Palette ──
+        paper: '#F6F5F0',
+        card: '#FFFFFF',
+        ink: '#111110',
+        muted: '#6F6E68',
+        line: '#E5E3DA',
+        lime: '#C8F53C',
+        indigo: '#5B3DF5',
+        amber: '#E8A317',
+        red: '#E5484D',
+
+        // ── Shadcn semantic mappings ──
+        background: 'var(--paper)',
+        foreground: 'var(--ink)',
+        border: 'var(--line)',
+        input: 'var(--line)',
+        ring: 'var(--indigo)',
+        primary: {
+          DEFAULT: '#111110',
+          foreground: '#FFFFFF',
+        },
+        secondary: {
+          DEFAULT: '#E5E3DA',
+          foreground: '#111110',
+        },
+        destructive: {
+          DEFAULT: '#E5484D',
+          foreground: '#FFFFFF',
+        },
+        accent: {
+          DEFAULT: '#C8F53C',
+          foreground: '#111110',
+        },
+        popover: {
+          DEFAULT: '#FFFFFF',
+          foreground: '#111110',
+        },
+        // Legacy compatibility aliases
+        'prodify-bg': '#F6F5F0',
+        'prodify-surface': '#FFFFFF',
+        'prodify-surface-alt': '#F0EFEA',
+        'prodify-border': '#E5E3DA',
+        'prodify-muted': '#6F6E68',
+      },
+      fontFamily: {
+        display: ['"Bricolage Grotesque Variable"', 'system-ui', 'sans-serif'],
+        body: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono Variable"', 'monospace'],
+      },
+      letterSpacing: {
+        tightest: '-0.045em',
+        tighter: '-0.03em',
+        tight: '-0.015em',
+      },
+      lineHeight: {
+        display: '0.95',
+        tight: '1.1',
+      },
       borderRadius: {
+        '2xl': '1rem',
+        '3xl': '1.5rem',
+        full: '9999px',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
-      colors: {
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
-        },
-        popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
-        },
-        primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
-        },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
-        },
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
-        },
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        chart: {
-          '1': 'hsl(var(--chart-1))',
-          '2': 'hsl(var(--chart-2))',
-          '3': 'hsl(var(--chart-3))',
-          '4': 'hsl(var(--chart-4))',
-          '5': 'hsl(var(--chart-5))',
-        },
-        sidebar: {
-          DEFAULT: 'hsl(var(--sidebar-background))',
-          foreground: 'hsl(var(--sidebar-foreground))',
-          primary: 'hsl(var(--sidebar-primary))',
-          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-          accent: 'hsl(var(--sidebar-accent))',
-          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-          border: 'hsl(var(--sidebar-border))',
-          ring: 'hsl(var(--sidebar-ring))',
-        },
-        // 🎯 Prodify Design Tokens 🎯
-        'prodify-bg': '#09090b',
-        'prodify-surface': '#18181b',
-        'prodify-surface-alt': '#27272a',
-        'prodify-accent': '#3b82f6',
-        'prodify-danger': '#ff4444',
-        'prodify-warning': '#fbbf24',
-        'prodify-success': '#4ade80',
-        'prodify-border': '#27272a',
-        'prodify-muted': '#666666',
-      },
-      fontFamily: {
-        heading: ['var(--font-heading)'],
-        body: ['var(--font-body)'],
-        display: ['var(--font-display)'],
-        mono: ['var(--font-mono)'],
-      },
-      keyframes: {
-        'accordion-down': {
-          from: { height: '0' },
-          to: { height: 'var(--radix-accordion-content-height)' },
-        },
-        'accordion-up': {
-          from: { height: 'var(--radix-accordion-content-height)' },
-          to: { height: '0' },
-        },
-      },
-      animation: {
-        'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
+      boxShadow: {
+        sm: '0 1px 2px 0 rgba(17, 17, 16, 0.04)',
+        hover: '0 4px 12px 0 rgba(17, 17, 16, 0.06)',
       },
     },
   },
   plugins: [tailwindcssAnimate],
-}
+};

@@ -93,7 +93,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
         long_break_interval: longBreakInt,
         target_hours: category === 'sprint' && targetHours.trim() ? parseFloat(targetHours) : null,
         deadline: category === 'sprint' && deadline ? format(deadline, 'yyyy-MM-dd') : null,
-        daily_target_minutes: category === 'mastery' ? dailyMin : 60,
+        daily_target_minutes: category === 'mastery' ? dailyMin : (category === 'casual' || category === 'quick_work' ? 0 : 60),
         focus_keywords: sessionIntent.trim() || null,
         current_goal: sessionIntent.trim() || null,
         theme_color: themeColor,

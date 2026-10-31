@@ -7,30 +7,19 @@ import {
   Flame,
   Brain,
   Activity,
-  AlertTriangle,
   Calendar as CalendarIcon,
   Sparkles,
   Layers,
-  TrendingUp,
+  ArrowRight,
+  CheckCircle2,
   Target,
 } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useCacheStore } from '@/store/cacheStore';
-import {
-  BarChart,
-  Bar,
-  Cell,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  ReferenceLine,
-  Tooltip as RechartsTooltip,
-} from 'recharts';
+import { toLocalISODate } from '@/lib/dateUtils';
 import { format, parseISO } from 'date-fns';
 import { StructuredGoalCalendar, type CalendarDay } from '@/components/workspace/StructuredGoalCalendar';
+import { MetricInfoPopover } from '@/components/ui/MetricInfoPopover';
 
 interface ReportSummary {
   momentum_or_pace_score: number;
@@ -40,6 +29,7 @@ interface ReportSummary {
   longest_streak: number;
   peak_focus_window: string;
   total_focus_hours: number;
+  total_sessions?: number;
   avg_burnout_pct: number;
 }
 
@@ -103,21 +93,6 @@ interface ReportData {
   };
 }
 
-const getBarColor = (status: string) => {
-  switch (status) {
-    case 'golden':
-      return '#f59e0b';
-    case 'green':
-      return '#10b981';
-    case 'yellow':
-      return '#eab308';
-    case 'red':
-      return '#f43f5e';
-    default:
-      return '#27272a';
-  }
-};
-
 const getTierBadgeClass = (tier: string) => {
   switch (tier) {
     case 'Strong':
@@ -133,64 +108,16 @@ const getTierBadgeClass = (tier: string) => {
   }
 };
 
-const CustomBarTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload as DailySeriesItem;
-    return (
-      <div className="bg-zinc-950/95 border border-zinc-800 p-3 rounded-xl shadow-2xl backdrop-blur-md text-xs space-y-1 font-mono">
-        <p className="font-bold text-white text-sm mb-1">{data.label} ({data.date})</p>
-        <p className="text-zinc-300">
-          <span className="text-zinc-500">Logged:</span> <span className="font-bold text-white">{data.minutes_logged}m</span>
-          {data.target_minutes > 0 && <span className="text-zinc-400"> / {data.target_minutes}m target</span>}
-        </p>
-        <p className="text-zinc-300">
-          <span className="text-zinc-500">Deep Work Ratio:</span> <span className="text-emerald-400 font-bold">{data.minutes_logged > 0 ? `${data.deep_work_ratio}%` : '—'}</span>
-        </p>
-        <p className="text-zinc-300 capitalize">
-          <span className="text-zinc-500">Status:</span>{' '}
-          <span className={`font-bold ${
-            data.day_status === 'golden' ? 'text-amber-400' :
-            data.day_status === 'green' ? 'text-emerald-400' :
-            data.day_status === 'yellow' ? 'text-amber-300' :
-            data.day_status === 'red' ? 'text-rose-400' : 'text-zinc-500'
-          }`}>{data.day_status}</span>
-        </p>
-      </div>
-    );
-  }
-  return null;
-};
-
-const CustomTrendTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload as DailySeriesItem;
-    return (
-      <div className="bg-zinc-950/95 border border-zinc-800 p-3 rounded-xl shadow-2xl backdrop-blur-md text-xs space-y-1.5 font-mono">
-        <p className="font-bold text-white text-sm mb-1">{data.label}</p>
-        <div className="flex items-center gap-2 text-blue-400">
-          <span className="w-2 h-2 rounded-full bg-blue-500" />
-          <span>Momentum / Pace: <strong>{data.rolling_score}%</strong></span>
-        </div>
-        <div className="flex items-center gap-2 text-emerald-400">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span>Deep Work Ratio: <strong>{data.deep_work_ratio}%</strong></span>
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
-
 export default function Report() {
   const navigate = useNavigate();
   const cachedDash = useCacheStore(state => state.dashboard);
-  const [timeWindowDays, setTimeWindowDays] = useState<number>(30);
   const [workspaces, setWorkspaces] = useState<any[]>(cachedDash.workspaces);
   const [sessions, setSessions] = useState<any[]>(cachedDash.sessions);
   const [homeMetrics, setHomeMetrics] = useState<any>(cachedDash.homeMetrics);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
 
   // Sync state whenever cached dashboard refreshes
   useEffect(() => {
@@ -206,13 +133,13 @@ export default function Report() {
     useCacheStore.getState().fetchDashboard();
   }, []);
 
-  // Fetch global report data when window changes
+  // Fetch global report data (standardized on 30-day window)
   useEffect(() => {
     let isMounted = true;
     const fetchReport = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/api/analytics/report?days=${timeWindowDays}`, {
+        const res = await fetch(`${API_BASE}/api/analytics/report?days=30`, {
           headers: getAuthHeaders(),
           cache: 'no-store',
         });
@@ -228,7 +155,16 @@ export default function Report() {
     };
     fetchReport();
     return () => { isMounted = false; };
-  }, [timeWindowDays]);
+  }, []);
+
+  const earliestCreatedDate = useMemo(() => {
+    if (!workspaces || workspaces.length === 0) return '';
+    return workspaces.reduce((earliest, ws) => {
+      const wsLocal = toLocalISODate((ws as any).created_at);
+      if (!wsLocal) return earliest;
+      return !earliest || wsLocal < earliest ? wsLocal : earliest;
+    }, '');
+  }, [workspaces]);
 
   // Calendar data mapping
   const calendarData: CalendarDay[] = useMemo(() => {
@@ -257,10 +193,10 @@ export default function Report() {
     const dayTarget = seriesEntry?.target_minutes ?? calEntry?.target_minutes ?? 0;
     const dayActual = seriesEntry?.minutes_logged ?? calEntry?.actual_minutes ?? totalDayMinutes;
 
-    const wsMap: Record<string, { name: string; minutes: number; sessionCount: number; targetMinutes?: number }> = {};
+    const wsMap: Record<number, { name: string; minutes: number; sessionCount: number; targetMinutes?: number }> = {};
     daySessions.forEach(s => {
-      const wsId = String(s.workspace_id || s.workspace_name || 'unknown');
-      const wsObj = workspaces.find(w => w.id === s.workspace_id);
+      const wsId = s.workspace_id;
+      const wsObj = workspaces.find(w => w.id === wsId);
       const wsName = s.workspace_name || wsObj?.name || `Workspace #${wsId}`;
       if (!wsMap[wsId]) {
         wsMap[wsId] = {
@@ -291,33 +227,27 @@ export default function Report() {
     };
   }, [selectedDate, reportData, calendarData, sessions, workspaces]);
 
-  const activeDailyTarget = useMemo(() => {
-    const sum = workspaces.reduce((acc, w) => acc + (w.daily_target_minutes || 0), 0);
-    return sum > 0 ? sum : 60;
-  }, [workspaces]);
-
-  const executiveVerdict = useMemo(() => {
+  // Clean, single-sentence coaching insight summarizing current focus health
+  const heroInsight = useMemo(() => {
     if (!reportData) return null;
-    const { total_focus_hours, deep_work_ratio_7d, momentum_or_pace_score, peak_focus_window, current_streak, avg_burnout_pct } = reportData.summary;
+    const { total_focus_hours, deep_work_ratio_7d, momentum_or_pace_score, current_streak } = reportData.summary;
     const topDistraction = reportData.distractions_breakdown?.top_platforms?.[0];
-    const driftStr = topDistraction ? `, with ${topDistraction.name || topDistraction.clean_app} (${topDistraction.count} slips) as primary drift trigger` : '';
+    const topDistName = topDistraction ? `${topDistraction.name || topDistraction.clean_app}` : null;
 
     if (total_focus_hours <= 0.05) {
       return {
         badge: 'Calibrating',
         badgeClass: 'bg-zinc-800 text-zinc-300 border-zinc-700',
-        title: 'Telemetry Initializing',
-        description: 'No focus sessions recorded yet in this window. Launch a 25-minute sprint in your active workspace to establish your baseline Deep Work and Momentum scores.',
+        sentence: 'Establish your baseline Deep Work and Momentum scores by launching your first focused sprint today.',
         icon: '⚡',
       };
     }
 
     if (momentum_or_pace_score >= 80) {
       return {
-        badge: 'Elite Tier',
+        badge: 'Apex Flow',
         badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-        title: 'Strong Lock-In Cadence',
-        description: `Outstanding focus purity at ${deep_work_ratio_7d}% across ${total_focus_hours}h logged. Your peak flow window is ${peak_focus_window}${driftStr}. Maintaining this pace ensures milestone completion.`,
+        sentence: `Outstanding execution: you're sustaining ${deep_work_ratio_7d}% focus purity across ${total_focus_hours}h logged with a solid ${current_streak}d streak.`,
         icon: '🔥',
       };
     }
@@ -326,8 +256,7 @@ export default function Report() {
       return {
         badge: 'On Track',
         badgeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-        title: 'Steady Focus Cadence',
-        description: `Solid performance with ${total_focus_hours}h completed and a ${current_streak}d streak. Cognitive load is balanced at ${avg_burnout_pct}%${driftStr}. Protect your ${peak_focus_window} window from drift.`,
+        sentence: `Steady cadence with ${total_focus_hours}h logged and a ${current_streak}d streak${topDistName ? ` — watch out for drift on ${topDistName}` : ''}.`,
         icon: '⚡',
       };
     }
@@ -335,134 +264,123 @@ export default function Report() {
     return {
       badge: 'Attention Needed',
       badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-      title: 'Focus Calibration Needed',
-      description: `Momentum is currently at ${momentum_or_pace_score}% with ${total_focus_hours}h logged against targets${driftStr}. Complete one structured 25m sprint today to reverse drift and protect your streak.`,
+      sentence: `Focus momentum is slipping at ${momentum_or_pace_score}% with ${total_focus_hours}h logged; complete one structured 25m sprint today to protect your streak.`,
       icon: '⚠️',
     };
   }, [reportData]);
 
+  const distractions_breakdown = reportData?.distractions_breakdown;
+
   return (
     <div className="p-6 md:p-10 max-w-6xl mx-auto space-y-8">
-      {/* ── 1. Global Report Header ── */}
+      {/* ── Page Header ── */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800 pb-6"
+        className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#27272a] pb-6"
       >
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <BarChart3 className="w-5 h-5 text-blue-500" />
-            <span className="text-xs font-mono font-bold text-blue-400 tracking-widest uppercase">Global Analytics</span>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[10px] font-mono font-semibold text-[#f4f4f5] bg-[#27272a] px-2 py-0.5 rounded tracking-[0.2em] uppercase border border-zinc-700/60">Global Analytics</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-heading font-bold text-white tracking-tight">
-            Global Focus & Performance Report
+          <h1 className="text-2xl md:text-3xl font-heading font-bold text-[#f4f4f5] tracking-tight">
+            Focus & Performance Report
           </h1>
-          <p className="text-sm text-zinc-400 mt-1 font-body">
-            Aggregated focus volume, consistency form, deep work purity, and distraction intelligence across all workspaces.
+          <p className="text-sm text-[#a1a1aa] mt-1 font-body">
+            30-day aggregated focus volume, consistency momentum, deep work purity, and distraction intelligence.
           </p>
-        </div>
-
-        {/* Time Window Selector */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
-          <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 shadow-sm">
-            <button
-              onClick={() => setTimeWindowDays(14)}
-              className={`px-3 py-1.5 text-xs font-mono font-medium rounded-lg transition-all ${
-                timeWindowDays === 14 ? 'bg-zinc-800 text-white font-bold shadow-sm' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              14 Days
-            </button>
-            <button
-              onClick={() => setTimeWindowDays(30)}
-              className={`px-3 py-1.5 text-xs font-mono font-medium rounded-lg transition-all ${
-                timeWindowDays === 30 ? 'bg-zinc-800 text-white font-bold shadow-sm' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              30 Days
-            </button>
-          </div>
         </div>
       </motion.div>
 
       {isLoading && !reportData ? (
         <div className="flex flex-col items-center justify-center py-24 space-y-3">
-          <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-          <p className="text-xs text-zinc-500 font-mono">Loading telemetry and behavior analytics...</p>
+          <div className="w-8 h-8 border-2 border-zinc-600 border-t-zinc-200 rounded-full animate-spin" />
+          <p className="text-xs text-[#a1a1aa] font-mono">Loading telemetry and behavior analytics...</p>
         </div>
       ) : reportData ? (
         <>
-          {/* ── Executive Performance Verdict Banner ── */}
-          {executiveVerdict && (
+          {/* ── 1. Hero AI Verdict Banner (Single-Sentence Insight) ── */}
+          {heroInsight && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-950/30 via-zinc-950/80 to-purple-950/30 p-5 backdrop-blur-xl shadow-lg"
+              className="relative overflow-hidden rounded-2xl border border-[#27272a] bg-[#202024]/80 p-5 backdrop-blur-md shadow-sm"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-lg shrink-0 shadow-inner">
-                    {executiveVerdict.icon}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#27272a] border border-zinc-700/40 flex items-center justify-center text-base shrink-0 shadow-inner">
+                  {heroInsight.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-mono font-semibold tracking-wider text-[#a1a1aa] uppercase">
+                      AI Performance Verdict
+                    </span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${heroInsight.badgeClass}`}>
+                      {heroInsight.badge}
+                    </span>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono font-bold tracking-wider text-blue-400 uppercase">
-                        AI Performance Verdict
-                      </span>
-                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${executiveVerdict.badgeClass}`}>
-                        {executiveVerdict.badge}
-                      </span>
-                    </div>
-                    <h3 className="text-sm md:text-base font-bold text-white tracking-tight mt-0.5">
-                      {executiveVerdict.title}
-                    </h3>
-                  </div>
+                  <p className="text-xs sm:text-sm text-[#f4f4f5] leading-relaxed font-body font-medium">
+                    {heroInsight.sentence}
+                  </p>
                 </div>
               </div>
-              <p className="text-xs sm:text-sm text-zinc-300 mt-3 leading-relaxed font-body">
-                {executiveVerdict.description}
-              </p>
             </motion.div>
           )}
 
-          {/* ── 2. Top KPI Command Row (5 Cards) ── */}
+          {/* ── 2. Four Core KPI Cards (Clean, Modular) ── */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.05 }}
-            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4"
+            className="grid grid-cols-2 lg:grid-cols-4 gap-4"
           >
-            {/* Card 1: Momentum */}
-            <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-4 flex flex-col justify-between shadow-sm backdrop-blur-md">
+            {/* Card 1: 7D Momentum */}
+            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                  7d Momentum
-                </span>
-                <Activity className="w-4 h-4 text-blue-400" />
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                    7D Consistency
+                  </span>
+                  <MetricInfoPopover
+                    title="7D Consistency & Momentum"
+                    description="Calculated from rolling 7-day consistency (active days), volume delivered vs target, and quality."
+                    formula="(Consistency + Volume + Deep Work Ratio) / 3"
+                    benchmark=">=80% Strong · 60-79% Solid · 40-59% Shaky · <40% Slipping"
+                  />
+                </div>
+                <Activity className="w-4 h-4 text-zinc-300" />
               </div>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-white">
+                <span className="text-2xl font-bold font-mono text-[#f4f4f5]">
                   {reportData.summary.momentum_or_pace_score}%
                 </span>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getTierBadgeClass(reportData.summary.tier_label)}`}>
                   {reportData.summary.tier_label}
                 </span>
               </div>
-              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
                 <div 
-                  className="bg-blue-500 h-full rounded-full transition-all duration-500" 
+                  className="bg-zinc-300 h-full rounded-full transition-all duration-300" 
                   style={{ width: `${Math.min(100, Math.max(0, reportData.summary.momentum_or_pace_score))}%` }}
                 />
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">7-day rolling performance</span>
+              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">Rolling consistency score</span>
             </div>
 
             {/* Card 2: Deep Work Ratio */}
-            <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-4 flex flex-col justify-between shadow-sm backdrop-blur-md">
+            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                  Deep Work Ratio
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                    Focus Purity
+                  </span>
+                  <MetricInfoPopover
+                    title="Focus Purity"
+                    description="Percentage of session time spent undistracted in focused flow."
+                    formula="((Focus Time - Distracted Time) / Focus Time) × 100"
+                    benchmark="Target: >85% deep flow purity"
+                  />
+                </div>
                 <Brain className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="flex items-baseline gap-2 mb-1">
@@ -481,112 +399,101 @@ export default function Report() {
                   </span>
                 )}
               </div>
-              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
                 <div 
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-300" 
                   style={{ width: `${reportData.summary.total_focus_hours > 0.05 ? reportData.summary.deep_work_ratio_7d : 0}%` }}
                 />
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">(Focus - Distracted) / Focus</span>
+              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">Focus vs. distraction purity</span>
             </div>
 
             {/* Card 3: Active Streak */}
-            <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-4 flex flex-col justify-between shadow-sm backdrop-blur-md">
+            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                  Active Streak
-                </span>
-                <Flame className="w-4 h-4 text-orange-400" />
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                    Active Streak
+                  </span>
+                  <MetricInfoPopover
+                    title="Active Streak"
+                    description="Consecutive days where you met your daily quota. In-progress days are protected with grace."
+                    formula="Consecutive days with daily status >= Green"
+                    benchmark="Keep daily quota cleared"
+                    align="end"
+                  />
+                </div>
+                <Flame className="w-4 h-4 text-amber-400" />
               </div>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-white">
-                  🔥 {reportData.summary.current_streak}d
+                <span className="text-2xl font-bold font-mono text-[#f4f4f5]">
+                  {reportData.summary.current_streak}d
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
-                  {reportData.summary.current_streak >= 7 ? 'On Fire' : 'Active'}
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  Best: {reportData.summary.longest_streak}d
                 </span>
               </div>
-              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
                 <div 
-                  className="bg-orange-500 h-full rounded-full transition-all duration-500" 
+                  className="bg-amber-500 h-full rounded-full transition-all duration-300" 
                   style={{ width: `${Math.min(100, (reportData.summary.current_streak / Math.max(1, reportData.summary.longest_streak || 7)) * 100)}%` }}
                 />
               </div>
-              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">
-                Longest: {reportData.summary.longest_streak}d
+              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">Consecutive quota days</span>
+            </div>
+
+            {/* Card 4: Goal Execution / Completed Sessions */}
+            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                    Goal Execution
+                  </span>
+                  <MetricInfoPopover
+                    title="Goal Execution & Volume"
+                    description="Total focus hours logged alongside completed focus session count and daily volume velocity."
+                    formula="Σ(Session Duration) in hours + Total Completed Sessions"
+                    benchmark="Target: Steady daily session cadence"
+                    align="end"
+                  />
+                </div>
+                <CheckCircle2 className="w-4 h-4 text-zinc-300" />
+              </div>
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="text-2xl font-bold font-mono text-[#f4f4f5]">
+                  {reportData.summary.total_focus_hours}h
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#27272a] text-zinc-200 border border-zinc-700/50">
+                  {reportData.summary.total_sessions ?? sessions.length} Sessions
+                </span>
+              </div>
+              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
+                <div 
+                  className="bg-zinc-200 h-full rounded-full transition-all duration-300" 
+                  style={{ width: `${Math.min(100, (reportData.summary.total_focus_hours / 60) * 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">
+                {Math.round((reportData.summary.total_focus_hours * 60) / 30)}m/day avg focus velocity
               </span>
-            </div>
-
-            {/* Card 4: Peak Focus Window */}
-            <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-4 flex flex-col justify-between shadow-sm backdrop-blur-md">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                  Peak Window
-                </span>
-                <Clock className="w-4 h-4 text-purple-400" />
-              </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-sm font-bold font-mono text-zinc-200 truncate">
-                  {reportData.summary.peak_focus_window}
-                </span>
-              </div>
-              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
-                <div 
-                  className="bg-purple-500 h-full rounded-full transition-all duration-500" 
-                  style={{ width: reportData.summary.peak_focus_window !== 'N/A' ? '100%' : '20%' }}
-                />
-              </div>
-              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">Optimal alignment window</span>
-            </div>
-
-            {/* Card 5: Burnout Risk / Total Hours */}
-            <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-4 flex flex-col justify-between shadow-sm backdrop-blur-md col-span-2 sm:col-span-1">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                  Cognitive Load
-                </span>
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-white">
-                  {reportData.summary.avg_burnout_pct}%
-                </span>
-                <span className="text-xs text-zinc-400 font-mono">
-                  ({reportData.summary.total_focus_hours}h total)
-                </span>
-              </div>
-              <div className="w-full bg-zinc-900 rounded-full h-1 mt-1 overflow-hidden">
-                <div 
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    reportData.summary.avg_burnout_pct > 70 ? 'bg-rose-500' :
-                    reportData.summary.avg_burnout_pct > 40 ? 'bg-amber-500' : 'bg-emerald-500'
-                  }`} 
-                  style={{ width: `${Math.min(100, Math.max(0, reportData.summary.avg_burnout_pct))}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-zinc-500 font-mono mt-1.5">Session fatigue index</span>
             </div>
           </motion.div>
 
-          {/* ── 3. Calendar & Day Inspector Row ── */}
+          {/* ── 3. Structured Goal Calendar & Day Inspector ── */}
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="rounded-2xl border border-zinc-800 bg-zinc-950/80 shadow-md p-6"
+            className="rounded-2xl border border-[#27272a] bg-[#202024]/80 shadow-sm p-6 backdrop-blur-md"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6 border-b border-zinc-800/80 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6 border-b border-[#27272a] pb-4">
               <div>
-                <h3 className="text-base font-semibold text-white tracking-tight flex items-center gap-2">
+                <h3 className="text-base font-semibold text-[#f4f4f5] tracking-tight flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-zinc-300" />
                   <span>Structured Goal Calendar</span>
-                  {selectedWorkspaceId !== null && (
-                    <span className="text-xs font-mono font-normal text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                      Scoped to {activeWorkspaceObj?.name}
-                    </span>
-                  )}
                 </h3>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Click any calendar date to inspect exact minutes logged, target alignment, and workspace contributions.
+                <p className="text-xs text-[#a1a1aa] mt-0.5">
+                  Color-coded daily quota completion. Click any date to inspect exact minutes logged and workspace contributions.
                 </p>
               </div>
             </div>
@@ -595,11 +502,12 @@ export default function Report() {
               {/* Left: Monthly Calendar with Built-in Legend */}
               <div className="lg:col-span-6 xl:col-span-5">
                 <StructuredGoalCalendar
-                  workspaceId={selectedWorkspaceId || 0}
+                  workspaceId={0}
                   calendar={calendarData}
                   selectedDate={selectedDate}
                   onSelectDate={(date) => setSelectedDate(date)}
                   showLegend={true}
+                  createdDate={earliestCreatedDate}
                 />
               </div>
 
@@ -684,7 +592,7 @@ export default function Report() {
                     <div>
                       <div className="flex items-center justify-between mb-2.5">
                         <span className="text-xs font-semibold text-zinc-300 font-mono">
-                          {selectedWorkspaceId !== null ? 'Logged Activity' : `Active Workspaces (${selectedDayInfo.activeWorkspaces.length})`}
+                          Active Workspaces ({selectedDayInfo.activeWorkspaces.length})
                         </span>
                       </div>
 
@@ -723,165 +631,24 @@ export default function Report() {
             </div>
           </motion.div>
 
-          {/* ── 4. Upgraded Charts Grid ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Chart 1: Daily Focus Minutes vs Target */}
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="rounded-2xl border border-zinc-800 bg-zinc-950/80 shadow-md p-6 flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between mb-4 border-b border-zinc-800/60 pb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-                    <Target className="w-4 h-4 text-blue-400" />
-                    <span>Focus Minutes vs Target ({timeWindowDays}d)</span>
-                  </h3>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    Color indicates goal status. The blue dashed line indicates daily required quota.
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded-lg">
-                  <span className="w-2 h-0.5 bg-blue-400 inline-block" />
-                  <span>Target: {activeDailyTarget}m</span>
-                </div>
-              </div>
-
-              <div className="h-[250px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={reportData.daily_series} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fill: '#888', fontSize: 10, fontFamily: 'monospace' }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: '#888', fontSize: 10, fontFamily: 'monospace' }}
-                      tickLine={false}
-                      axisLine={false}
-                      unit="m"
-                    />
-                    <RechartsTooltip content={<CustomBarTooltip />} />
-                    {activeDailyTarget > 0 && (
-                      <ReferenceLine
-                        y={activeDailyTarget}
-                        stroke="#60a5fa"
-                        strokeDasharray="4 4"
-                        strokeWidth={1.5}
-                      />
-                    )}
-                    <Bar dataKey="minutes_logged" radius={[4, 4, 0, 0]}>
-                      {reportData.daily_series.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={getBarColor(entry.day_status)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </motion.div>
-
-            {/* Chart 2: 30-Day Momentum / Pace & Deep Work Ratio Trend */}
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="rounded-2xl border border-zinc-800 bg-zinc-950/80 shadow-md p-6 flex flex-col justify-between"
-            >
-              <div className="flex items-center justify-between mb-4 border-b border-zinc-800/60 pb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-emerald-400" />
-                    <span>Momentum & Deep Work Ratio Trend</span>
-                  </h3>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    Rolling 7-day consistency momentum curve mapped alongside focus purity ratio.
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 text-[10px] font-mono">
-                  <span className="flex items-center gap-1.5 text-blue-400">
-                    <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    Momentum
-                  </span>
-                  <span className="flex items-center gap-1.5 text-emerald-400">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    Deep Work
-                  </span>
-                </div>
-              </div>
-
-              <div className="h-[250px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={reportData.daily_series} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
-                      </linearGradient>
-                      <linearGradient id="colorDWR" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fill: '#888', fontSize: 10, fontFamily: 'monospace' }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      domain={[0, 100]}
-                      tick={{ fill: '#888', fontSize: 10, fontFamily: 'monospace' }}
-                      tickLine={false}
-                      axisLine={false}
-                      unit="%"
-                    />
-                    <RechartsTooltip content={<CustomTrendTooltip />} />
-                    <Area
-                      type="monotone"
-                      dataKey="rolling_score"
-                      name="Momentum / Pace"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      fillOpacity={1}
-                      fill="url(#colorScore)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="deep_work_ratio"
-                      name="Deep Work Ratio"
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      fillOpacity={1}
-                      fill="url(#colorDWR)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* ── 5. Bottom Section: Workspace Leaderboard & Distraction Intelligence ── */}
+          {/* ── 4. Workspace Leaderboard & Distraction Intelligence ── */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Card: Per-Workspace Performance Table */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25 }}
-              className="lg:col-span-6 xl:col-span-7 rounded-2xl border border-zinc-800 bg-zinc-950/80 shadow-md p-6 flex flex-col justify-between"
+              transition={{ delay: 0.15 }}
+              className="lg:col-span-6 xl:col-span-7 rounded-2xl border border-[#27272a] bg-[#202024]/80 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
             >
               <div>
-                <div className="flex items-center justify-between mb-4 border-b border-zinc-800/60 pb-3">
+                <div className="flex items-center justify-between mb-4 border-b border-[#27272a] pb-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-indigo-400" />
+                    <h3 className="text-sm font-semibold text-[#f4f4f5] tracking-tight flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-zinc-300" />
                       <span>Workspace Performance Leaderboard</span>
                     </h3>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      Performance overview across all your active workspaces. Click any workspace to open its focus space.
+                    <p className="text-[11px] text-[#a1a1aa] mt-0.5">
+                      Cumulative volume and consistency across your active tracks. Click any row to enter the workspace.
                     </p>
                   </div>
                 </div>
@@ -889,9 +656,9 @@ export default function Report() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs font-mono">
                     <thead>
-                      <tr className="border-b border-zinc-800 text-zinc-500 text-[10px] uppercase tracking-wider">
+                      <tr className="border-b border-[#27272a] text-[#a1a1aa] text-[10px] uppercase tracking-wider">
                         <th className="pb-2.5 font-semibold">Workspace</th>
-                        <th className="pb-2.5 font-semibold">Category</th>
+                        <th className="pb-2.5 font-semibold">Track</th>
                         <th className="pb-2.5 font-semibold text-right">Hours</th>
                         <th className="pb-2.5 font-semibold text-right">Pace</th>
                         <th className="pb-2.5 font-semibold text-right">Purity</th>
@@ -899,27 +666,25 @@ export default function Report() {
                         <th className="pb-2.5 font-semibold text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-900">
+                    <tbody className="divide-y divide-[#27272a]/60">
                       {reportData.workspaces_table.map((ws) => (
                         <tr
                           key={ws.id}
                           onClick={() => navigate(`/workspace/${ws.id}`)}
-                          className="transition-colors cursor-pointer group hover:bg-zinc-900/60"
+                          className="transition-colors cursor-pointer group hover:bg-[#27272a]/60"
                           title={`Open ${ws.name}`}
                         >
                           <td className="py-3 pr-2">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-white group-hover:text-blue-400 transition-colors">
-                                {ws.name}
-                              </span>
-                            </div>
+                            <span className="font-semibold text-[#f4f4f5] group-hover:text-white transition-colors">
+                              {ws.name}
+                            </span>
                           </td>
                           <td className="py-3 pr-2">
-                            <span className="px-2 py-0.5 text-[10px] font-sans font-medium rounded-md bg-zinc-900 text-zinc-400 border border-zinc-800 uppercase tracking-wider">
+                            <span className="px-2 py-0.5 text-[10px] font-sans font-medium rounded-md bg-[#27272a] text-[#a1a1aa] border border-zinc-700/50 uppercase tracking-wider">
                               {ws.category}
                             </span>
                           </td>
-                          <td className="py-3 text-right font-bold text-zinc-200">
+                          <td className="py-3 text-right font-bold text-[#f4f4f5]">
                             {ws.total_hours}h
                           </td>
                           <td className="py-3 text-right">
@@ -930,12 +695,12 @@ export default function Report() {
                           <td className="py-3 text-right font-bold text-emerald-400">
                             {ws.deep_work_ratio}%
                           </td>
-                          <td className="py-3 text-right text-orange-400 font-bold">
+                          <td className="py-3 text-right text-amber-400 font-bold">
                             🔥 {ws.current_streak}d
                           </td>
                           <td className="py-3 text-right">
-                            <span className="text-[11px] text-zinc-500 group-hover:text-blue-400 transition-colors inline-flex items-center gap-1 font-sans">
-                              Open →
+                            <span className="text-[11px] text-[#a1a1aa] group-hover:text-[#f4f4f5] transition-colors inline-flex items-center gap-1 font-sans">
+                              Open <ArrowRight className="w-3 h-3" />
                             </span>
                           </td>
                         </tr>
@@ -946,27 +711,27 @@ export default function Report() {
               </div>
             </motion.div>
 
-            {/* Right Card: Rich Distraction Intelligence */}
+            {/* Right Card: Distraction Intelligence */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="lg:col-span-6 xl:col-span-5 rounded-2xl border border-zinc-800 bg-zinc-950/80 shadow-md p-6 flex flex-col justify-between"
+              transition={{ delay: 0.2 }}
+              className="lg:col-span-6 xl:col-span-5 rounded-2xl border border-[#27272a] bg-[#202024]/80 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
             >
               <div>
-                <div className="flex items-center justify-between mb-4 border-b border-zinc-800/60 pb-3">
+                <div className="flex items-center justify-between mb-4 border-b border-[#27272a] pb-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-rose-400" />
+                    <h3 className="text-sm font-semibold text-[#f4f4f5] tracking-tight flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
                       <span>Distraction Intelligence</span>
                     </h3>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      Granular activity telemetry classified by semantic intent.
+                    <p className="text-[11px] text-[#a1a1aa] mt-0.5">
+                      Off-task activity telemetry classified by the semantic engine.
                     </p>
                   </div>
                 </div>
 
-                {reportData.distractions_breakdown.top_platforms.length === 0 ? (
+                {!distractions_breakdown || distractions_breakdown.top_platforms.length === 0 ? (
                   <div className="text-center py-12 px-4 border border-dashed border-zinc-800 rounded-xl">
                     <Brain className="w-8 h-8 text-emerald-400/40 mx-auto mb-2" />
                     <p className="text-xs font-semibold text-zinc-300">Zero Distractions Recorded</p>
@@ -976,41 +741,50 @@ export default function Report() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Top Platforms Breakdown */}
-                    <div>
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block mb-2">
-                        Top Off-Task Platforms
-                      </span>
-                      <div className="space-y-2">
-                        {reportData.distractions_breakdown.top_platforms.map((plat, idx) => (
-                          <div key={idx} className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-2.5">
-                            <div className="flex items-center justify-between text-xs mb-1 font-mono">
-                              <span className="font-bold text-zinc-200">
-                                {plat.name} <span className="text-zinc-500 font-normal">({plat.clean_app})</span>
+                    {/* TOP OFF-TASK PLATFORMS - Interactive Grid Button Layout */}
+                    <div className="mb-6">
+                      <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+                        Top Off-Task Platforms & Apps
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {distractions_breakdown.top_platforms.map((platform, index) => (
+                          <button
+                            key={index}
+                            onClick={() => setSelectedPlatform && setSelectedPlatform(platform.name)}
+                            className="group relative text-left p-4 rounded-xl border bg-zinc-900/60 hover:bg-zinc-900 border-zinc-800/80 hover:border-zinc-700 transition-all duration-200 flex flex-col justify-between shadow-sm"
+                          >
+                            <div className="flex items-center justify-between w-full mb-2">
+                              <span className="font-medium text-zinc-200 group-hover:text-white truncate">
+                                {platform.name}
                               </span>
-                              <span className="text-rose-400 font-semibold">
-                                {plat.count} event{plat.count !== 1 ? 's' : ''} (~{plat.estimated_minutes}m)
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-mono">
+                                {platform.count} events
                               </span>
                             </div>
-                            <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-gradient-to-r from-rose-500 to-amber-500 rounded-full"
-                                style={{ width: `${Math.min(100, plat.pct_of_distractions)}%` }}
+                            <div className="flex items-center justify-between text-xs text-zinc-400 w-full mb-3">
+                              <span className="truncate text-zinc-500">{platform.clean_app}</span>
+                              <span className="font-semibold text-zinc-300">~{platform.estimated_minutes}m lost</span>
+                            </div>
+                            {/* Subtle bottom proportional indicator line */}
+                            <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden">
+                              <div 
+                                className="bg-gradient-to-r from-orange-500 to-red-500 h-full rounded-full transition-all duration-500"
+                                style={{ width: `${platform.pct_of_distractions}%` }}
                               />
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
 
                     {/* Specific Content Item Highlights */}
-                    {reportData.distractions_breakdown.recent_distraction_items.length > 0 && (
+                    {distractions_breakdown.recent_distraction_items.length > 0 && (
                       <div className="pt-2">
                         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block mb-2">
                           Specific Content Interventions
                         </span>
                         <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                          {reportData.distractions_breakdown.recent_distraction_items.map((item, idx) => (
+                          {distractions_breakdown.recent_distraction_items.map((item, idx) => (
                             <div key={idx} className="bg-zinc-900/40 border border-zinc-800/60 rounded-xl p-2.5 space-y-1">
                               <div className="flex items-center justify-between text-[11px] font-mono">
                                 <span className="text-blue-400 font-semibold truncate max-w-[200px]">

@@ -1,7 +1,14 @@
 from sqlalchemy.orm import Session
 from app.models import schemas as models
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional, List
+
+def get_local_date(dt: Optional[datetime]) -> date:
+    if not dt:
+        return date.today()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone().date()
 
 
 def create_workspace(
@@ -21,6 +28,7 @@ def create_workspace(
     theme_color: Optional[str] = '#3b82f6',
     current_goal: Optional[str] = None,
     camera_enabled: bool = False,
+    status: Optional[str] = "active",
 ) -> models.Workspace:
     """Create a new workspace for a given user."""
     workspace = models.Workspace(
@@ -39,6 +47,7 @@ def create_workspace(
         theme_color=theme_color,
         current_goal=current_goal,
         camera_enabled=camera_enabled,
+        status=status or "active",
     )
     db.add(workspace)
     db.commit()
@@ -83,6 +92,7 @@ def update_workspace(
     theme_color: Optional[str] = '#3b82f6',
     current_goal: Optional[str] = None,
     camera_enabled: bool = False,
+    status: Optional[str] = "active",
 ) -> models.Workspace:
     """Update an existing workspace's fields."""
     workspace = get_workspace(db, workspace_id=workspace_id)
@@ -105,6 +115,8 @@ def update_workspace(
         workspace.theme_color = theme_color
     workspace.current_goal = current_goal
     workspace.camera_enabled = camera_enabled
+    if status is not None:
+        workspace.status = status
 
     db.commit()
     db.refresh(workspace)
@@ -148,6 +160,11 @@ def log_activity_record_async(
     content_title: Optional[str] = None,
     ai_summary: Optional[str] = None,
     ai_reason: Optional[str] = None,
+    session_id: Optional[int] = None,
+    track_day_number: Optional[int] = None,
+    session_index_today: Optional[int] = None,
+    minute_into_session: Optional[float] = None,
+    clock_hour: Optional[int] = None,
 ):
     """Permanently store a window classification activity log in a background session."""
     from app.models.connection import SessionLocal
@@ -177,6 +194,11 @@ def log_activity_record_async(
             content_title=content_title,
             ai_summary=ai_summary,
             ai_reason=ai_reason or reason,
+            session_id=session_id,
+            track_day_number=track_day_number,
+            session_index_today=session_index_today,
+            minute_into_session=minute_into_session,
+            clock_hour=clock_hour,
         )
         db.add(record)
         db.commit()
@@ -256,7 +278,9 @@ def update_or_create_daily_log(db: Session, workspace_id: int, log_date: date, s
     if not workspace:
         raise ValueError(f"Workspace with id {workspace_id} not found")
 
-    target_req = workspace.daily_target_minutes if workspace.category == "mastery" else 60
+    cat = (workspace.category or "mastery").lower()
+    is_quick_work = cat in ("casual", "quick_work", "quick_flow")
+    target_req = 0 if is_quick_work else (workspace.daily_target_minutes if cat == "mastery" else 60)
 
     log = db.query(models.DailyWorkspaceLog).filter(
         models.DailyWorkspaceLog.workspace_id == workspace_id,
@@ -271,7 +295,7 @@ def update_or_create_daily_log(db: Session, workspace_id: int, log_date: date, s
             target_minutes_required=target_req,
             minutes_logged=0,
             intent_score=0.0,
-            target_met=False
+            target_met=True if is_quick_work else False
         )
         db.add(log)
         db.commit()
@@ -283,7 +307,9 @@ def update_or_create_daily_log(db: Session, workspace_id: int, log_date: date, s
     else:
         log.intent_score = (log.intent_score + intent_score) / 2.0
 
-    if not log.target_met and log.minutes_logged >= log.target_minutes_required:
+    if is_quick_work:
+        log.target_met = True
+    elif not log.target_met and log.minutes_logged >= log.target_minutes_required:
         log.target_met = True
         
         yesterday = log_date - timedelta(days=1)
@@ -311,7 +337,14 @@ def evaluate_global_streak(db: Session, user_id: str, log_date: date):
         return
 
     all_met = True
+    active_count = 0
     for ws in workspaces:
+        cat = (ws.category or "mastery").lower()
+        ws_status = (getattr(ws, "status", None) or "active").lower()
+        if cat in ("casual", "quick_work", "quick_flow") or ws_status in ("paused", "completed"):
+            # Quick work and paused tracks do not demand a daily quota
+            continue
+        active_count += 1
         # Check if they have a log and if target_met is True
         log = db.query(models.DailyWorkspaceLog).filter(
             models.DailyWorkspaceLog.workspace_id == ws.id,
@@ -321,7 +354,7 @@ def evaluate_global_streak(db: Session, user_id: str, log_date: date):
             all_met = False
             break
 
-    if all_met:
+    if active_count > 0 and all_met:
         stats = db.query(models.UserStats).filter(models.UserStats.user_id == user_id).first()
         if not stats:
             stats = models.UserStats(user_id=user_id, current_global_streak=0, longest_global_streak=0)
@@ -350,7 +383,7 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
     from datetime import datetime, date, timedelta
     from sqlalchemy import func, desc, cast, Date
 
-    today = date.today()
+    today = get_local_date(datetime.utcnow())
 
     workspaces = (
         db.query(models.Workspace)
@@ -397,28 +430,34 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
     for dl in daily_logs:
         daily_log_map[(dl.workspace_id, dl.date)] = dl.minutes_logged
 
-    # Pre-fetch past 14 days session aggregation
+    # Pre-fetch past 14 days session aggregation with timezone-aware local date mapping
+    buffer_start = datetime.combine(past_14d - timedelta(days=1), datetime.min.time())
+    buffer_end = datetime.combine(today + timedelta(days=1), datetime.max.time())
     sessions = db.query(
         models.Session.workspace_id,
-        cast(models.Session.start_time, Date).label("d"),
-        func.sum(models.Session.duration).label("total_secs"),
+        models.Session.start_time,
+        models.Session.duration,
     ).filter(
         models.Session.workspace_id.in_(ws_ids),
         models.Session.session_type == "FOCUS",
-        models.Session.status == "COMPLETED",
-        cast(models.Session.start_time, Date) >= past_14d
-    ).group_by(
-        models.Session.workspace_id,
-        cast(models.Session.start_time, Date)
+        models.Session.status.in_(["COMPLETED", "PARTIAL"]),
+        models.Session.start_time >= buffer_start,
+        models.Session.start_time <= buffer_end,
+        models.Session.duration > 0,
     ).all()
 
-    session_day_map = {}
-    for s in sessions:
-        session_day_map[(s.workspace_id, s.d)] = round((s.total_secs or 0) / 60.0)
+    from collections import defaultdict
+    session_day_map: dict[tuple[int, date], float] = defaultdict(float)
+    for ws_id, start_dt, total_secs in sessions:
+        if not start_dt or not total_secs:
+            continue
+        local_d = get_local_date(start_dt)
+        if past_14d <= local_d <= today:
+            session_day_map[(ws_id, local_d)] += (total_secs or 0) / 60.0
 
     def get_minutes_logged(workspace_id: int, target_date: date) -> int:
         dl_mins = daily_log_map.get((workspace_id, target_date), 0)
-        sess_mins = session_day_map.get((workspace_id, target_date), 0)
+        sess_mins = round(session_day_map.get((workspace_id, target_date), 0.0))
         return max(dl_mins, sess_mins)
 
     # Pre-fetch all-time logged minutes per workspace
@@ -484,32 +523,77 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
         cat_raw = (ws.category or "mastery").lower()
         is_sprint = cat_raw == "sprint"
         is_mastery = cat_raw == "mastery"
-        is_active_req = is_sprint or is_mastery
+        is_casual = cat_raw in ("casual", "quick_flow", "quick_work")
+        ws_status = (getattr(ws, "status", None) or "active").lower()
+        is_paused = ws_status == "paused"
+        is_completed_status = ws_status == "completed"
         total_logged_mins = all_time_workspace_minutes.get(ws.id, 0)
 
-        # Compute daily target minutes
+        # Compute raw daily target minutes
+        is_expired = False
+        is_completed = False
+        rem_mins = 0
+
         if is_sprint:
             if ws.target_hours and ws.deadline:
-                days_left = max(1, (ws.deadline - today).days + 1)
                 total_target_mins = round(ws.target_hours * 60)
-                logged_so_far = total_logged_mins
-                rem_mins = max(0, total_target_mins - logged_so_far)
-                daily_target = max(15, round(rem_mins / days_left))
+                rem_mins = max(0, total_target_mins - total_logged_mins)
+                is_expired = ws.deadline < today
+                is_completed = rem_mins <= 0
+                if is_expired or is_completed:
+                    raw_daily_target = 0
+                else:
+                    days_left = max(1, (ws.deadline - today).days + 1)
+                    raw_daily_target = min(480, max(15, round(rem_mins / days_left)))
             else:
-                daily_target = ws.daily_target_minutes or 60
+                raw_daily_target = min(480, max(15, ws.daily_target_minutes or 60))
         elif is_mastery:
-            daily_target = ws.daily_target_minutes or 60
+            # Normalize legacy Mastery quota: cap at 240m (4h) so 540m targets don't create 22 sessions
+            raw_daily_target = min(240, max(15, ws.daily_target_minutes or 60))
         else:
-            # casual / quick_flow
-            daily_target = ws.daily_target_minutes or 0
+            raw_daily_target = 0
+
+        if is_paused or is_completed_status:
+            daily_target = 0
+            is_active_req = False
+        else:
+            daily_target = raw_daily_target
+            is_active_req = True if (not is_casual and not is_expired and not is_completed) else False
 
         today_mins = get_minutes_logged(ws.id, today)
-        today_cleared = (today_mins >= daily_target) if daily_target > 0 else (today_mins > 0)
+        if is_paused:
+            today_cleared = (today_mins >= raw_daily_target) if raw_daily_target > 0 else False
+        elif is_casual:
+            today_cleared = today_mins > 0
+        elif daily_target > 0:
+            today_cleared = today_mins >= daily_target
+        else:
+            today_cleared = False
 
+
+# ──────────────────────────────────────────────────────────────────────
         # Card status label & tone
-        # Card status label & tone
-        ws_created_date = ws.created_at.date() if ws.created_at else today
-        if today_cleared:
+        ws_created_date = get_local_date(ws.created_at)
+        if is_paused:
+            card_status_label = "Track Paused ⏸"
+            card_status_tone = "neutral"
+        elif is_completed_status:
+            card_status_label = "Track Completed ✓"
+            card_status_tone = "success"
+        elif is_sprint and ws.deadline and ws.deadline < today:
+            card_status_label = "Sprint Ended"
+            card_status_tone = "neutral"
+        elif is_sprint and ws.target_hours and rem_mins <= 0:
+            card_status_label = "Sprint Goal Cleared ✓"
+            card_status_tone = "success"
+        elif is_casual:
+            if today_mins > 0:
+                card_status_label = f"{today_mins}m logged today"
+                card_status_tone = "success"
+            else:
+                card_status_label = "Self-Paced"
+                card_status_tone = "neutral"
+        elif today_cleared:
             card_status_label = "Cleared Today ✓"
             card_status_tone = "success"
         elif today_mins > 0:
@@ -523,37 +607,48 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
             card_status_label = f"0m / {daily_target}m Today"
             card_status_tone = "danger"
 
-        # 7-day chain
+                # 7-day chain
         chain = []
         for d in past_7_days:
             d_mins = get_minutes_logged(ws.id, d)
             if d < ws_created_date:
                 status = "untracked"
+            elif is_paused:
+                if raw_daily_target > 0 and d_mins >= raw_daily_target:
+                    status = "cleared"
+                else:
+                    status = "untracked"
             elif daily_target > 0 and d_mins >= daily_target:
                 status = "cleared"
-            elif daily_target <= 0 and d_mins > 0:
+            elif is_casual and d_mins > 0:
                 status = "cleared"
-            elif d_mins > 0:
-                status = "partial"
+            elif daily_target <= 0:
+                status = "untracked"
+            elif d == today:
+                status = "untracked"
+            elif d_mins > 0 and d_mins >= daily_target:
+                status = "cleared"
             else:
                 status = "missed"
 
-            chain.append({
+        chain.append({
                 "date": d.isoformat(),
                 "day_name": d.strftime("%a"),
                 "status": status,
                 "minutes_logged": d_mins,
-                "target_minutes": daily_target,
+                "target_minutes": raw_daily_target if is_paused else daily_target,
             })
 
         workspaces_matrix.append({
             "id": ws.id,
             "name": ws.name,
             "category": cat_raw,
+            "status": ws_status,
             "created_at": ws.created_at.isoformat() if ws.created_at else datetime.utcnow().isoformat(),
             "allowed_intent_whitelist": ws.current_goal or ws.focus_keywords or "",
             "today_logged_minutes": today_mins,
             "daily_target_minutes": daily_target,
+            "raw_daily_target_minutes": raw_daily_target,
             "today_cleared": today_cleared,
             "is_active_requirement": is_active_req,
             "current_streak": ws.current_streak or 0,
@@ -625,27 +720,40 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
         else:
             distracted_ticks += cnt
 
-    total_ticks = focused_ticks + distracted_ticks
-    if total_ticks == 0:
-        focus_purity_pct = 0.0
-    elif distracted_ticks == 0:
-        focus_purity_pct = 100.0
-    else:
-        focus_purity_pct = round((focused_ticks / total_ticks) * 100.0, 1)
-
-    # Today's distractions count
+    # Today's distractions count: actual session distraction pauses, not raw 5s activity ticks
     today_sess_distractions = db.query(func.coalesce(func.sum(models.Session.distraction_count), 0)).filter(
         models.Session.workspace_id.in_(ws_ids),
         cast(models.Session.start_time, Date) == today
     ).scalar() or 0
 
-    today_act_distractions = db.query(models.ActivityLog).filter(
-        models.ActivityLog.workspace_id.in_(ws_ids),
-        models.ActivityLog.is_focused == 0,
-        cast(models.ActivityLog.timestamp, Date) == today
-    ).count()
+    today_distractions_count = int(today_sess_distractions)
 
-    today_distractions_count = max(int(today_sess_distractions), int(today_act_distractions))
+    # Calculate focus purity percentage with actual telemetry durations (no 2.5m multiplier)
+    today_sess_dur = db.query(
+        func.coalesce(func.sum(models.Session.duration), 0),
+        func.coalesce(func.sum(models.Session.distracted_seconds), 0)
+    ).filter(
+        models.Session.workspace_id.in_(ws_ids),
+        models.Session.session_type == "FOCUS",
+        cast(models.Session.start_time, Date) == today
+    ).first()
+
+    today_focus_secs = float(today_sess_dur[0]) if today_sess_dur else 0.0
+    today_distracted_secs = float(today_sess_dur[1]) if today_sess_dur else 0.0
+
+    if today_distracted_secs == 0 and distracted_ticks > 0:
+        today_distracted_secs = float(distracted_ticks * 5.0)
+
+    if today_focus_secs > 0:
+        focus_purity_pct = round((today_focus_secs / max(1.0, today_focus_secs + today_distracted_secs)) * 100.0, 1)
+    elif today_logged_minutes > 0:
+        focus_mins_sec = today_logged_minutes * 60.0
+        focus_purity_pct = round((focus_mins_sec / max(1.0, focus_mins_sec + today_distracted_secs)) * 100.0, 1)
+    elif (focused_ticks + distracted_ticks) > 0:
+        total_ticks = focused_ticks + distracted_ticks
+        focus_purity_pct = round((focused_ticks / max(1, total_ticks)) * 100.0, 1)
+    else:
+        focus_purity_pct = 0.0
 
     # Daily verdict
     if total_active_workspaces > 0 and workspaces_cleared_today == total_active_workspaces:
@@ -676,3 +784,31 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
         "global_summary": global_summary,
         "workspaces_matrix": workspaces_matrix,
     }
+
+# ──────────────────────────────────────────────────────────────────────
+# Session Count — Unified Daily Session Target
+# ──────────────────────────────────────────────────────────────────────
+def compute_total_daily_sessions(
+    daily_quota_minutes: int,
+    work_duration_minutes: int,
+    workspace_status: str = "active",
+) -> int:
+    """
+    Unified session count formula used across backend and frontend.
+
+    Total Daily Sessions = max(1, ceil(Daily Quota Minutes / Work Duration Minutes))
+
+    Paused or completed tracks return 0 sessions (no active quota).
+    """
+    ws_status = (workspace_status or "active").lower()
+    if ws_status in ("paused", "completed"):
+        return 0
+
+    if not daily_quota_minutes or daily_quota_minutes <= 0:
+        return 0
+
+    if not work_duration_minutes or work_duration_minutes <= 0:
+        return 0
+
+    import math
+    return max(1, math.ceil(daily_quota_minutes / work_duration_minutes))

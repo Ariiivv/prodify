@@ -29,7 +29,7 @@ class Workspace(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     name = Column(String, index=True, nullable=False)
     mode = Column(String, nullable=False) # e.g., "Structured Goal Mode", "Flexible Tracking Mode"
-    category = Column(String, nullable=False, default="mastery") # 'sprint' or 'mastery'
+    category = Column(String, nullable=False, default="mastery") # 'mastery', 'sprint', or 'quick_work'
     target_hours = Column(Float, nullable=True) # For Structured Goal Mode
     deadline = Column(Date, nullable=True) # For Structured Goal Mode
     daily_target_minutes = Column(Integer, nullable=True, default=60) # For Mastery Mode
@@ -43,6 +43,7 @@ class Workspace(Base):
     longest_streak = Column(Integer, nullable=False, default=0)
     current_goal = Column(String, nullable=True)
     theme_color = Column(String, nullable=True, default='#3b82f6')
+    status = Column(String, nullable=False, default="active") # 'active', 'paused', 'completed'
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -91,6 +92,8 @@ class Session(Base):
     distraction_count = Column(Integer, nullable=False, default=0)
     distracted_seconds = Column(Float, nullable=False, default=0.0)
     timezone = Column(String, nullable=True)  # IANA timezone string, e.g. "America/New_York"
+    session_index_today = Column(Integer, nullable=False, default=1)
+    track_day_number = Column(Integer, nullable=False, default=1)
 
     workspace = relationship("Workspace", back_populates="sessions")
     telemetry_logs = relationship("TelemetryLog", back_populates="session")
@@ -107,6 +110,11 @@ class TelemetryLog(Base):
     distraction_type = Column(String, nullable=True) # e.g., "TAB_SWITCH", "FATIGUE_EYE_CLOSURE"
     reason = Column(String, nullable=True)          # e.g., "camera_absence", "tab_switch", "manual_override"
     metadata_json = Column(String, nullable=True)   # JSON blob for extra context (perclos_score, grace_duration, etc.)
+    track_day_number = Column(Integer, nullable=True)
+    session_index_today = Column(Integer, nullable=True)
+    minute_into_session = Column(Float, nullable=True)
+    clock_hour = Column(Integer, nullable=True)
+    trigger_app = Column(String, nullable=True)
 
     workspace = relationship("Workspace")
     session = relationship("Session", back_populates="telemetry_logs")
@@ -116,6 +124,7 @@ class ActivityLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     app_name = Column(String, nullable=False)
     window_title = Column(String, nullable=False)
@@ -127,6 +136,10 @@ class ActivityLog(Base):
     content_title = Column(String, nullable=True)
     ai_summary = Column(String, nullable=True)
     ai_reason = Column(String, nullable=True)
+    track_day_number = Column(Integer, nullable=True)
+    session_index_today = Column(Integer, nullable=True)
+    minute_into_session = Column(Float, nullable=True)
+    clock_hour = Column(Integer, nullable=True)
 
     workspace = relationship("Workspace")
 
@@ -165,3 +178,23 @@ class UserStats(Base):
     current_global_streak = Column(Integer, nullable=False, default=0)
     longest_global_streak = Column(Integer, nullable=False, default=0)
     last_global_perfect_date = Column(Date, nullable=True)
+
+class Friendship(Base):
+    __tablename__ = "friendships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    requester_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    addressee_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="pending") # 'pending', 'accepted', 'blocked'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FriendMessage(Base):
+    __tablename__ = "friend_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    receiver_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

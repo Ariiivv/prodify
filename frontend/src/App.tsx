@@ -16,6 +16,7 @@ const HomePage = lazy(() => import('./pages/HomePage'));
 const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
 const Report = lazy(() => import('./pages/Report'));
 const Settings = lazy(() => import('./pages/Settings'));
+const FriendsPage = lazy(() => import('./pages/FriendsPage'));
 
 const PageLoader = () => (
   <div className="min-h-[60vh] flex items-center justify-center">
@@ -138,6 +139,7 @@ function App() {
               <Route element={<AppLayout />}>
                 <Route path="/" element={<Suspense fallback={<PageLoader />}><HomePage /></Suspense>} />
                 <Route path="/workspace/:id" element={<Suspense fallback={<PageLoader />}><WorkspacePage /></Suspense>} />
+                <Route path="/friends" element={<Suspense fallback={<PageLoader />}><FriendsPage /></Suspense>} />
                 <Route path="/report" element={<Suspense fallback={<PageLoader />}><Report /></Suspense>} />
                 <Route path="/analytics" element={<Suspense fallback={<PageLoader />}><Report /></Suspense>} />
                 <Route path="/settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />

@@ -34,6 +34,7 @@ export interface TelemetryStatusInfo {
   cleanAppName?: string;
   platformName?: string;
   summary?: string;
+  reason?: string;
   status?: 'focused' | 'distracted' | 'idle';
   contentTitle?: string;
   rawAppName?: string;
@@ -222,6 +223,7 @@ export function useAdaptiveFocus({
               cleanAppName: data.clean_app_name,
               platformName: data.platform_name,
               summary: data.summary,
+              reason: data.reason,
               status: data.status as any,
               contentTitle: data.content_title || data.window_title,
               rawAppName: data.app_name,

@@ -104,7 +104,7 @@ _DEFAULT_PROFILE = {
     "name": "Pranav",
     "preferred_sprint_minutes": 45,
     "preferred_break_minutes": 5,
-    "known_productive_apps": ["VS Code", "Terminal", "Brave Browser", "Antigravity"],
+    "known_productive_apps": ["Workspace Tools", "Browser Research", "Documentation", "Editor/Studio"],
     "known_distraction_triggers": [],
     "coaching_notes": [],
     "last_updated": None,
@@ -284,9 +284,17 @@ def tool_optimize_workspace_goal(db: Session) -> dict:
     }
 
 
-def analyze_user_patterns(db: Session) -> dict:
+def analyze_user_patterns(db: Session, user_id: Optional[str] = None) -> dict:
     from datetime import date, timedelta
     metrics = db.query(models.WorkspaceMetrics).all()
+
+    dossier = None
+    if user_id:
+        try:
+            from app.services.ml_pattern_engine import mine_user_telemetry_dossier
+            dossier = mine_user_telemetry_dossier(db, str(user_id))
+        except Exception as dex:
+            logger.warning(f"[STAR ML] Could not load telemetry dossier: {dex}")
 
     # Query actual distracting background applications from ActivityLog (not workspaces!)
     cutoff_act = datetime.utcnow() - timedelta(days=7)
@@ -310,9 +318,12 @@ def analyze_user_patterns(db: Session) -> dict:
             app_counts[display_name] = app_counts.get(display_name, 0) + 1
     top_distraction_apps = [app for app, _ in sorted(app_counts.items(), key=lambda x: x[1], reverse=True)[:3]]
 
+    if dossier and dossier.get("top_distraction_triggers") and not top_distraction_apps:
+        top_distraction_apps = [t["app"] for t in dossier["top_distraction_triggers"][:3]]
+
     if not metrics:
         return {
-            "peak_hour": "N/A",
+            "peak_hour": f"{dossier['circadian_vulnerability']['peak_distraction_hour']}:00" if dossier else "N/A",
             "peak_workspace": "N/A",
             "avg_session_length": 0,
             "distraction_triggers": top_distraction_apps,
@@ -320,7 +331,8 @@ def analyze_user_patterns(db: Session) -> dict:
             "workspaces_with_most_distractions": [],
             "burnout_pattern": "low",
             "consistency_score": 0,
-            "best_day_of_week": "N/A"
+            "best_day_of_week": "N/A",
+            "ml_dossier": dossier,
         }
     
     time_of_day_counts = {}
@@ -375,7 +387,8 @@ def analyze_user_patterns(db: Session) -> dict:
         "workspaces_with_most_distractions": [k for k, v in sorted(workspace_distractions.items(), key=lambda item: item[1], reverse=True)[:3]],
         "burnout_pattern": burnout_pattern,
         "consistency_score": consistency_score,
-        "best_day_of_week": best_day_of_week
+        "best_day_of_week": best_day_of_week,
+        "ml_dossier": dossier,
     }
 
 def get_coaching_history(db: Session) -> dict:
@@ -500,14 +513,16 @@ class StarMLEngine:
         else:
             current_intent = str(intent_val)
 
-        # Gather dynamic user patterns
-        patterns = analyze_user_patterns(db)
+        context = context or {}
+        user_id = user_id or context.get("user_id")
+
+        # Gather dynamic user patterns (enriched with ML dossier)
+        patterns = analyze_user_patterns(db, user_id=user_id)
         metrics = db.query(models.WorkspaceMetrics).all()
         total_focus_hours = sum(m.focus_minutes for m in metrics) / 60.0 if metrics else 0.0
         total_sessions = len(metrics)
 
         # Ensure context defaults
-        context = context or {}
         user_name = context.get('user_name', user_name)
         user_age = context.get('user_age', None)
 
@@ -592,6 +607,33 @@ class StarMLEngine:
         if active_ws_matrix:
             ws_today_progress = f"- Today's Target Progress: {active_ws_matrix.get('today_logged_minutes', 0)}m / {active_ws_matrix.get('daily_target_minutes', 0)}m ({active_ws_matrix.get('card_status_label', 'Ready to Start')})\n"
 
+        dossier = patterns.get("ml_dossier")
+        if not dossier and user_id and db:
+            try:
+                from app.services.ml_pattern_engine import mine_user_telemetry_dossier
+                dossier = mine_user_telemetry_dossier(db, str(user_id))
+            except Exception as dex:
+                logger.warning(f"[STAR ML] Failed to load dossier: {dex}")
+
+        dossier_section = ""
+        if dossier and dossier.get("sample_size", 0) > 0:
+            adw = dossier.get("attention_decay_wall", {})
+            circ = dossier.get("circadian_vulnerability", {})
+            cats = dossier.get("category_benchmarks", {})
+            trigs = dossier.get("top_distraction_triggers", [])
+            trig_names = ", ".join(f"{t['app']} ({t['pct']}%)" for t in trigs[:3]) if trigs else "None recorded"
+            dossier_section = f"""
+SCIKIT-LEARN ML TELEMETRY DOSSIER (Middle-Man Engine):
+- Attention Decay Wall: Distraction likelihood spikes around minute {adw.get('predicted_minute', 25.0)} (Median: {adw.get('historical_median', 25.0)}m, Conf: {adw.get('confidence', 'baseline')})
+- Circadian Risk Profile: Peak distraction hour {circ.get('peak_distraction_hour', 15)}:00 | Safest deep focus hour {circ.get('safest_focus_hour', 10)}:00
+- ML Feature Importances: Time-of-day ({circ.get('hour_importance', 0.33):.2f}), Session Fatigue ({circ.get('session_fatigue_importance', 0.33):.2f}), Track Day ({circ.get('track_day_importance', 0.34):.2f})
+- Category Benchmarks:
+  * Mastery: {cats.get('mastery', {}).get('total_focus_minutes', 0)}m logged, {cats.get('mastery', {}).get('purity_pct', 100)}% purity, slip: {cats.get('mastery', {}).get('top_trigger_app', 'None')}
+  * Sprint: {cats.get('sprint', {}).get('total_focus_minutes', 0)}m logged, {cats.get('sprint', {}).get('purity_pct', 100)}% purity, slip: {cats.get('sprint', {}).get('top_trigger_app', 'None')}
+  * Quick Work: {cats.get('quick_work', {}).get('total_focus_minutes', 0)}m logged, {cats.get('quick_work', {}).get('purity_pct', 100)}% purity, slip: {cats.get('quick_work', {}).get('top_trigger_app', 'None')}
+- Primary Distraction Triggers: {trig_names}
+"""
+
         system_prompt = f"""You are Prodify Intelligence — a supportive, sharp, data-driven personal productivity coach.
 You are chatting with {user_name} inside a narrow 350px side panel.
 Never introduce yourself if previous conversation history exists.
@@ -613,6 +655,7 @@ USER PROFILE (Long-Term ML Insights):
 - Burnout Risk Level: {patterns['burnout_pattern']}
 - Weekly Consistency: {patterns['consistency_score']}/7 days
 - Common Distracting Applications: {distracting_apps_str}
+{dossier_section}
 
 ACTIVE WORKSPACE CONTEXT:
 - Workspace Name: "{ws_name}" (NOTE: This is the user's project/workspace name, NOT a distraction or external app!)
@@ -631,7 +674,7 @@ STRICT COACHING GUIDELINES:
    The workspace name "{ws_name}" is the user's focus project. It is NEVER a distracting app or site. Never call "{ws_name}" or any workspace a distraction. Actual distractions refer exclusively to background programs ({distracting_apps_str}).
 2. RESPECT WORKSPACE CATEGORY & INTENT:
    {"- This is a Sprint workspace with target hours/deadline." if is_sprint else f"- This is a {category_display} workspace (mastery / quick work). NEVER tell the user to 'set a deadline' or 'set target hours'. Mastery and Quick Work workspaces are continuous habit tracks and do not require deadlines."}
-   - The user's declared intent is: "{current_intent or 'General focus'}". This is their valid allowed ruleset (e.g. IDEs, browsers, docs, AI tools). NEVER scold, lecture, or question the user for using tools they declared as allowed.
+   - The user's declared intent is: "{current_intent or 'General focus'}". Respect the fluid nature of modern multi-app workflows across any creative, technical, or academic domain (e.g. design tools, 3D modeling, audio DAWs, browsers, reference videos, research papers, editors, terminals). NEVER scold, lecture, or question the user for using tools that contextually align with their declared goal.
 3. PERFORMANCE MATRIX & FORM TIER:
    - If Form Tier is "Calibrating", the user is building their baseline on day 1 or has 0 sessions today. NEVER tell them they are "slumping", "slipping", or failing. Encourage them to launch their first session.
 4. CHAT FORMATTING (MANDATORY FOR 350PX CHAT PANEL):

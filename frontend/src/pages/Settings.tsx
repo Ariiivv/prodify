@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings as SettingsIcon, LogOut, AlertTriangle, Shield, User, Trash2, Save } from 'lucide-react';
+import { Settings as SettingsIcon, LogOut, AlertTriangle, Shield, User, Trash2, Save, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
@@ -174,6 +174,37 @@ export default function Settings() {
                 </Button>
               </div>
             </form>
+          </div>
+        </section>
+
+        {/* Interactive Tour & Guidance */}
+        <section className="bg-card border border-border/40 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-border/20 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-blue-400" />
+            <h2 className="text-sm font-semibold text-foreground">Interactive Tour & Guidance</h2>
+          </div>
+          <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Feature Spotlight Tour</p>
+              <p className="text-xs text-muted-foreground">
+                Replay the walkthrough covering the Focus Command Strip, adaptive workspaces, and AI coaching.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem('prodify_tour_completed');
+                navigate('/');
+                setTimeout(() => {
+                  window.dispatchEvent(new Event('prodify-restart-tour'));
+                }, 350);
+              }}
+              variant="outline"
+              className="bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 font-mono text-xs font-semibold shrink-0 cursor-pointer shadow-sm"
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-2 text-blue-400" />
+              ✨ Replay Guide Tour
+            </Button>
           </div>
         </section>
 

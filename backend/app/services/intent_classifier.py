@@ -33,13 +33,13 @@ class SemanticCache:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._data: dict[str, tuple[Optional[tuple[bool, str]], float]] = {}
+        self._data: dict[str, tuple[Optional[tuple[bool, str, str]], float]] = {}
 
     def _make_key(self, app_name: str, window_title: str, intent: str) -> str:
         raw_key = f"{intent.strip().lower()}:{app_name.strip().lower()}:{window_title.strip().lower()}"
         return hashlib.sha256(raw_key.encode()).hexdigest()
 
-    def get(self, app_name: str, window_title: str, intent: str) -> Optional[tuple[bool, str]]:
+    def get(self, app_name: str, window_title: str, intent: str) -> Optional[tuple[bool, str, str]]:
         key = self._make_key(app_name, window_title, intent)
         with self._lock:
             entry = self._data.get(key)
@@ -55,7 +55,7 @@ class SemanticCache:
                 return _PENDING
             return result
 
-    def set(self, app_name: str, window_title: str, intent: str, result: Optional[tuple[bool, str]]):
+    def set(self, app_name: str, window_title: str, intent: str, result: Optional[tuple[bool, str, str]]):
         key = self._make_key(app_name, window_title, intent)
         with self._lock:
             if len(self._data) >= self._MAX_SIZE:
@@ -67,7 +67,7 @@ class SemanticCache:
         key = self._make_key(app_name, window_title, intent)
         with self._lock:
             self._data.pop(key, None)
-            
+
     def clear(self):
         with self._lock:
             self._data.clear()
@@ -78,6 +78,26 @@ _semantic_cache = SemanticCache()
 _intent_cache = _semantic_cache
 _workspace_states: dict[int, dict] = {}
 _workspace_focus_state = _workspace_states
+_session_overrides: dict[int, set[str]] = {}
+
+
+def allow_window_for_session(workspace_id: int, app_name: str, window_title: str):
+    clean_app, platform, content_title = parse_activity(window_title, app_name)
+    app_key = f"{app_name.lower().strip()}:{window_title.lower().strip()[:50]}"
+    content_key = (content_title or "").lower().strip()[:50]
+
+    overrides = _session_overrides.setdefault(workspace_id, set())
+    overrides.add(app_key)
+    if content_key:
+        overrides.add(content_key)
+
+    current_goal = _workspace_states.get(workspace_id, {}).get("last_goal", "")
+    _semantic_cache.set(app_name, window_title, current_goal, (True, "Marked as relevant by user for this session", "User Whitelisted"))
+    if current_goal != "":
+        _semantic_cache.set(app_name, window_title, "", (True, "Marked as relevant by user for this session", "User Whitelisted"))
+
+    reset_workspace_focus_state(workspace_id)
+    logger.info(f"[SESSION OVERRIDE] Whitelisted window '{window_title[:40]}' on '{app_name}' for workspace {workspace_id}")
 
 
 def clear_semantic_cache():
@@ -95,21 +115,188 @@ def clear_intent_cache(workspace_id: Optional[int] = None):
     _semantic_cache.clear()
     if workspace_id is not None:
         reset_workspace_focus_state(workspace_id)
+        _session_overrides.pop(workspace_id, None)
     else:
         _workspace_states.clear()
+        _session_overrides.clear()
     logger.info(f"[CACHE] Intent cache and focus states cleared (workspace_id={workspace_id}).")
+
+
+# ---------------------------------------------------------------------------
+# Dynamic Domain Concept Clusters for Semantic Alignment
+# Covers modern creative, technical, research, academic, and business workflows
+# without hardcoding any specific executable names or tool whitelists.
+# ---------------------------------------------------------------------------
+_DOMAIN_CONCEPT_CLUSTERS = [
+    # Visual Art, Illustration & 3D Design
+    {"art", "design", "drawing", "draw", "painting", "paint", "sketch", "illustration", "illustrate", "render", "rendering", "animation", "animate", "3d", "model", "modeling", "sculpt", "sculpting", "anatomy", "pose", "lighting", "color", "texture", "palette", "concept", "character", "composition", "blender", "photoshop", "figma", "procreate", "maya", "zbrush"},
+    # Music Production & Audio Engineering
+    {"music", "audio", "sound", "synthesis", "synth", "mixing", "mastering", "track", "daw", "instrument", "beat", "production", "vocals", "arrangement", "sample", "plugin", "reverb", "equalizer", "compression", "tempo", "ableton", "logic", "fl studio", "reaper"},
+    # Software Engineering & Dev
+    {"software", "code", "coding", "dev", "development", "developer", "programming", "program", "backend", "frontend", "web", "app", "api", "database", "db", "bug", "debug", "terminal", "algorithm", "tutorial", "docs", "documentation", "repository", "commit", "server", "architecture", "github", "stack", "react", "python", "fastapi"},
+    # Science, Mathematics & Medical Research
+    {"science", "study", "studying", "math", "mathematics", "physics", "chemistry", "biology", "medical", "medicine", "research", "experiment", "lab", "paper", "data", "analysis", "statistics", "clinical", "thesis", "proof", "derivation", "journal", "pubmed"},
+    # History, Social Sciences & Humanities
+    {"history", "documentary", "historical", "empire", "war", "civilization", "archaeology", "ancient", "archive", "period", "century", "monarchy", "culture", "philosophy", "sociology", "anthropology", "geopolitics", "law", "statute"},
+    # Writing, Journalism & Literature
+    {"writing", "writer", "write", "draft", "article", "essay", "novel", "book", "blog", "copywriting", "manuscript", "literature", "chapter", "script", "screenplay", "prose", "poetry", "publishing"},
+    # Marketing, Growth & Business Management
+    {"marketing", "brand", "branding", "growth", "advertising", "ad", "ads", "campaign", "trends", "audience", "social", "media", "content", "creator", "influencer", "seo", "analytics", "funnel", "customer", "sales", "strategy", "pr"},
+    # General Productivity, Planning & Administration
+    {"productivity", "planning", "plan", "budget", "finance", "schedule", "calendar", "organize", "notes", "tasks", "roadmap", "sheet", "sheets", "doc", "docs", "workspace", "workflow", "management", "project", "presentation", "meeting", "deck"},
+]
+
+_STOPWORDS = {
+    "a", "an", "the", "and", "or", "in", "on", "at", "to", "for", "with",
+    "of", "by", "from", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "this", "that", "these", "those",
+    "it", "its", "my", "your", "his", "her", "their", "our", "you", "we", "they",
+    "i", "me", "us", "him", "them", "how", "what", "why", "when", "where", "which"
+}
+
+
+def _extract_semantic_tokens(text: str) -> set[str]:
+    import string
+    clean = text.lower().translate(str.maketrans("", "", string.punctuation))
+    return {t for t in clean.split() if len(t) > 2 and t not in _STOPWORDS}
+
+
+def evaluate_semantics_offline(
+    app_name: str, window_title: str, intent: str
+) -> tuple[bool, str, str, float]:
+    """
+    Pure Dynamic Semantic Intent Matching Engine (Offline):
+    - Strictly avoids application/executable whitelists or tool blacklists.
+    - Evaluates 100% on dynamic semantic similarity between stated goal and window title.
+    - Context-aware flexibility: recognizes multi-app fluid workflows across all professional/creative/academic domains.
+    - Never flags an application purely based on executable name (e.g. browser.exe, code.exe, vlc.exe).
+    """
+    clean_app, platform, content_title = parse_activity(window_title, app_name)
+    intent_clean = (intent or "").strip().lower()
+    if not intent_clean or intent_clean in ["general", "none", "work", "focus"]:
+        intent_clean = "general productivity and professional focus"
+
+    content_clean = (content_title or window_title or "").strip().lower()
+    full_context = f"{clean_app} {platform} {content_clean} {window_title}".strip().lower()
+
+    intent_tokens = _extract_semantic_tokens(intent_clean)
+    context_tokens = _extract_semantic_tokens(full_context)
+
+    # 1. True Recreational Diversion Detection (Semantic Content Only)
+    # Only trigger if the actual content title/subject represents an explicit entertainment diversion
+    # AND the user's declared goal does not cover that domain.
+    recreational_diversions = {
+        "gameplay", "walkthrough", "speedrun", "esports", "streamer",
+        "roblox", "minecraft", "fortnite", "valorant", "gta 5", "gta v", "gta",
+        "funny moments", "prank", "cringe compilation", "meme compilation",
+        "celebrity gossip", "reaction video", "shorts feed", "reels feed"
+    }
+
+    matched_diversion = [t for t in recreational_diversions if t in content_clean or t in full_context]
+    intent_allows_diversion = any(t in intent_clean for t in matched_diversion) or any(
+        term in intent_clean for term in ["game", "gaming", "stream", "entertainment", "social media", "content creation", "video editing"]
+    )
+
+    if matched_diversion and not intent_allows_diversion:
+        return (
+            False,
+            f"Content '{content_title[:45] or window_title[:45]}' represents an off-task entertainment diversion from your declared goal.",
+            "Off-task Diversion",
+            0.85,
+        )
+
+    # 2. General / Broad Intent Handling
+    is_broad_intent = any(
+        kw in intent_clean for kw in [
+            "general productivity", "deep work", "focus", "study", "learning", "research", "project", "work"
+        ]
+    ) and len(intent_tokens) <= 4
+
+    # 3. Dynamic Multi-Scale Semantic Similarity
+    # A. Word-level TF-IDF n-grams (1-3 words)
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        word_vec = TfidfVectorizer(ngram_range=(1, 3), stop_words="english", sublinear_tf=True)
+        word_tfidf = word_vec.fit_transform([intent_clean, full_context])
+        word_sim = float(cosine_similarity(word_tfidf[0:1], word_tfidf[1:2])[0][0])
+    except Exception:
+        word_sim = 0.0
+
+    # B. Character n-gram similarity (morphological roots, compounding, abbreviations)
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        char_vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True)
+        char_tfidf = char_vec.fit_transform([intent_clean, full_context])
+        char_sim = float(cosine_similarity(char_tfidf[0:1], char_tfidf[1:2])[0][0])
+    except Exception:
+        char_sim = 0.0
+
+    # C. Direct Token Overlap & Morphological Stems
+    overlap = len(intent_tokens & context_tokens)
+    stem_matches = sum(1 for it in intent_tokens if any(it in ct or ct in it for ct in context_tokens))
+
+    # D. Domain Concept Cluster Alignment
+    shared_domains = 0
+    for cluster in _DOMAIN_CONCEPT_CLUSTERS:
+        if bool(intent_tokens & cluster) and bool(context_tokens & cluster):
+            shared_domains += 1
+
+    domain_boost = 0.30 if shared_domains > 0 else 0.0
+    composite_score = (0.35 * word_sim) + (0.25 * char_sim) + (0.20 * (1.0 if stem_matches > 0 else 0.0)) + (0.20 * domain_boost)
+
+    # 4. Pure Semantic Decision:
+    # High direct similarity, shared domain, or stem overlap -> ALIGNED
+    if composite_score >= 0.12 or overlap >= 1 or stem_matches >= 1 or shared_domains >= 1:
+        return (
+            True,
+            f"'{content_title[:45] or window_title[:45]}' dynamically aligns with your declared objective.",
+            "Aligned Activity",
+            round(max(composite_score, 0.75), 2),
+        )
+
+    # Broad intent with no diversion signals -> ALIGNED
+    if is_broad_intent:
+        return (
+            True,
+            f"Active tool/content logically supports your general focus session.",
+            "Aligned Workflow",
+            0.70,
+        )
+
+    # Divergent from stated specific goal
+    return (
+        False,
+        f"Window '{content_title[:45] or window_title[:45]}' diverges from your declared goal: '{intent[:40]}'.",
+        "Divergent Activity",
+        round(1.0 - composite_score, 2),
+    )
 
 
 _last_eval_time = 0.0
 _last_eval_target = ""
 _eval_lock = asyncio.Lock()
 
+
 async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> Optional[tuple[bool, str, str]]:
     """
-    AI-powered semantic evaluation via Groq (Qwen 3.8 27B).
+    Intelligent semantic workflow alignment engine with dynamic ecosystem inference.
+    Uses LLM as the primary intelligence when available, with generalized smart offline fallback.
     """
+    has_groq = bool(os.getenv("GROQ_API_KEY") and os.getenv("GROQ_API_KEY") != "missing_key")
+
+    if not has_groq:
+        offline_focused, offline_reason, offline_summary, _ = evaluate_semantics_offline(
+            app_name=app_name, window_title=window_title, intent=intent
+        )
+        logger.info(f"[SEMANTIC] GROQ_API_KEY missing - using smart offline inference: focused={offline_focused}")
+        return offline_focused, offline_reason, offline_summary
+
     global _last_eval_time, _last_eval_target
-    current_target_key = f"{app_name.lower().strip()}:{window_title.lower().strip()}"
+    current_target_key = f"{intent.lower().strip()}:{app_name.lower().strip()}:{window_title.lower().strip()}"
     
     async with _eval_lock:
         now = time.time()
@@ -126,46 +313,19 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
 
     clean_app, platform, content_title = parse_activity(window_title, app_name)
 
-    system_prompt = (
-        "You are an intelligent, contextual focus mentor evaluating screen activity against a user's declared goal.\n"
-        "Your role is to understand the real-world workflow ecosystem required to achieve the user's focus goal:\n\n"
-        "### CONTEXTUAL WORKFLOW INTELLIGENCE CONTRACT:\n\n"
-        "1. WORKFLOW ECOSYSTEM RECOGNITION (VERDICT: TRUE):\n"
-        "   - Auxiliary Productivity & Study Tools: If the user is studying, researching, writing, or building a project (e.g. CIS, computer science, networking, math, writing essays, software development), auxiliary productivity tools are intrinsically ALIGNED:\n"
-        "     * Terminals and command prompts (Terminal, PowerShell, CMD, Git Bash)\n"
-        "     * Technical documentation, developer references, MDN, Stack Overflow, GitHub, arXiv, Wikipedia\n"
-        "     * AI research assistants (Claude, ChatGPT, Gemini, Perplexity)\n"
-        "     * Writing & note-taking software (Google Docs, Google Sheets, Notion, Obsidian, Word)\n"
-        "     * Calculators, PDF readers, IDEs, code editors, and file managers assisting the subject\n"
-        "     * Educational YouTube lectures or tutorials whose topic or subject matches the user's declared field of study\n"
-        "   - These tools are ALIGNED even if the user did not explicitly list them word-for-word in their goal.\n\n"
-        "2. STRICT PROJECT & TOPIC BOUNDARIES (VERDICT: FALSE):\n"
-        "   - Never hallucinate or invent associations between distinct projects or acronyms.\n"
-        "   - If the user's declared goal is for project \"CIS\", working on code or windows for a different project (e.g. \"CEP\" or unrelated repos) is strictly DISALIGNED (VERDICT: FALSE).\n"
-        "   - If the user drifts into off-topic web searches, articles, or shopping that have no relationship to their declared goal, return VERDICT: FALSE.\n\n"
-        "3. ENTERTAINMENT & DISTRACTION REJECTION (VERDICT: FALSE):\n"
-        "   - Entertainment platforms (Netflix, Twitch, Disney+, Spotify playback, Steam, video games) are DISALIGNED.\n"
-        "   - Social media feeds (Reddit, Twitter/X, Instagram, Facebook, TikTok) are DISALIGNED.\n"
-        "   - YouTube entertainment videos (gaming, sports highlights, celebrity gossip, movie trailers, comedy) are DISALIGNED.\n\n"
-        "4. TEMPORARY NAVIGATION & SEARCH GRACE (VERDICT: TRUE):\n"
-        "   - Neutral blank tabs (\"New Tab\", \"about:blank\"), search engine homepages, or brief queries seeking resources related to the topic receive navigation grace (VERDICT: TRUE).\n\n"
-        "### OUTPUT FORMAT:\n"
-        "Respond with exactly one line in this format:\n"
-        "VERDICT: [TRUE|FALSE] | SUMMARY: [Short 3-6 word summary] | REASON: [One clear sentence explaining why it is aligned or why it is a distraction]\n\n"
-        "### EXAMPLES:\n"
-        "- Goal: \"CIS learning and study\"\n"
-        "  App: \"Terminal\" | Platform: \"Terminal\" | Content: \"Windows PowerShell - ping 192.168.1.1\"\n"
-        "  -> VERDICT: TRUE | SUMMARY: Network diagnostics terminal | REASON: Using the terminal for networking diagnostics directly supports CIS learning.\n"
-        "- Goal: \"CIS learning and would use google docs and ai\"\n"
-        "  App: \"VS Code\" | Platform: \"VS Code\" | Content: \"localhost:4173 - CEP - Visual Studio Code\"\n"
-        "  -> VERDICT: FALSE | SUMMARY: Unrelated project CEP | REASON: You are working on project 'CEP' in VS Code, which is outside your goal of studying CIS.\n"
-        "- Goal: \"Linear algebra exam prep\"\n"
-        "  App: \"Brave Browser\" | Platform: \"YouTube\" | Content: \"3Blue1Brown - Essence of linear algebra\"\n"
-        "  -> VERDICT: TRUE | SUMMARY: Linear algebra video lecture | REASON: 3Blue1Brown's linear algebra lecture directly aligns with your exam prep.\n"
-        "- Goal: \"Linear algebra exam prep\"\n"
-        "  App: \"Google Chrome\" | Platform: \"Twitter / X\" | Content: \"Trending Posts / X\"\n"
-        "  -> VERDICT: FALSE | SUMMARY: Social media feed | REASON: Browsing Twitter/X is a social media distraction from your math prep."
-    )
+    system_prompt = """You are Prodify's pure semantic intent evaluation engine.
+Your job is to determine whether the user's active window or browser tab dynamically aligns with their declared goal or workspace objective.
+
+CORE PRINCIPLES:
+1. STRICTLY NO APP NAME BIAS: Never approve or reject an application based on its executable name (e.g., chrome.exe, code.exe, vlc.exe, brave.exe, blender.exe, word.exe). A browser or video player is a universal canvas: an art student watching a figure drawing reference or tutorial on YouTube, a developer reading API docs or StackOverflow on Chrome, a researcher watching a historical documentary on VLC, or an audio engineer studying sound design tutorials are all 100% focused.
+2. DYNAMIC CONTENT CONTEXT: Evaluate the contextual relevance of the window title and active content topic against the user's declared goal. Ask: "Does this specific content logically support, inform, inspire, or serve as tooling for the user's stated objective?"
+3. FLUID MULTI-APP WORKFLOWS: Real-world knowledge work and creative workflows span multiple apps (code editors, terminals, web browsers, design tools, document readers, video tutorials, audio DAWs, notes). If the active activity is a logical part of that workflow, mark it as TRUE (Aligned).
+4. CLEAR DISTRACTIONS ONLY: Only flag an activity as FALSE if the window content represents an unambiguous, off-task recreational diversion (e.g., video gaming, comedy pranks, binge entertainment streaming, online shopping, mindless social media feeds) that has no relevance to their declared objective.
+5. DOMAIN-SPECIFIC LENIENCY: If the user's goal itself involves game development, social media marketing, video editing, or entertainment analysis, respect that context and do not flag related content as off-task.
+
+OUTPUT FORMAT:
+Respond with exactly one line in this format:
+VERDICT: [TRUE|FALSE] | SUMMARY: [Short 3-5 word summary] | REASON: [One clear sentence explaining the contextual relevance or divergence]"""
 
     user_prompt = (
         f"USER'S DECLARED GOAL (ACTIVE WORKSPACE):\n"
@@ -224,9 +384,11 @@ async def evaluate_semantics(app_name: str, window_title: str, intent: str) -> O
         return is_focused, reason, summary
 
     except Exception as exc:
-        logger.warning(f"[SEMANTIC] Groq call failed (defaulting to focused): {exc}")
-        # Fail open: if Groq fails, default to focused (don't falsely pause)
-        return True, "Focus tracking temporarily unavailable (assuming focused)", "System Error"
+        logger.warning(f"[SEMANTIC] Groq call failed (falling back to smart offline engine): {exc}")
+        offline_focused, offline_reason, offline_summary, _ = evaluate_semantics_offline(
+            app_name=app_name, window_title=window_title, intent=intent
+        )
+        return offline_focused, offline_reason, offline_summary
 
 
 def update_focus_state(
@@ -393,6 +555,26 @@ async def classify_with_intent(
             # Keep distracted but never overwrite active_distraction_reason or trigger new strikes
             return "distracted", state.get("active_distraction_reason") or "Session paused", "System Utility"
         return "focused", "System utility transition", "System Utility"
+
+    # 2.5. Per-Workspace Session Override Whitelist (User explicitly marked window as relevant)
+    if workspace_id and workspace_id in _session_overrides:
+        clean_app, platform, content_title = parse_activity(window_title, app_name)
+        app_key = f"{app_name.lower().strip()}:{window_title.lower().strip()[:50]}"
+        content_key = (content_title or "").lower().strip()[:50]
+        window_key = window_title.lower().strip()[:50]
+        overrides = _session_overrides[workspace_id]
+        if app_key in overrides or (content_key and content_key in overrides) or window_key in overrides:
+            logger.info(f"[INTENT] Whitelist match in workspace {workspace_id} for '{window_title[:50]}'")
+            status, reason = update_focus_state(
+                workspace_id=workspace_id,
+                current_goal=intent,
+                app_name=app_name,
+                window_title=window_title,
+                is_focused=True,
+                reason="Marked as relevant for this session by user",
+                is_cache_hit=True,
+            )
+            return status, reason, "User Whitelisted"
 
     is_focused = True
     reason = ""

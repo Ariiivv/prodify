@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Layers, ArrowRight, MoreVertical, Pencil, Trash2, Flame } from 'lucide-react';
-import { format, subDays, parseISO } from 'date-fns';
+import { format, subDays, parseISO, isSameDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
+import { toLocalISODate, getTodayLocalISODate } from '@/lib/dateUtils';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useCacheStore } from '@/store/cacheStore';
+import { EditWorkspaceModal } from './EditWorkspaceModal';
 
 interface Workspace {
   id: number;
@@ -47,10 +49,11 @@ export interface WorkspaceMatrixItem {
   today_cleared: boolean;
   card_status_label: string;
   card_status_tone: 'success' | 'progress' | 'neutral' | 'danger';
+  raw_daily_target_minutes?: number;
   seven_day_chain: {
     date: string;
     day_name?: string;
-    status: 'cleared' | 'partial' | 'missed' | 'untracked';
+    status: 'cleared' | 'partial' | 'missed' | 'untracked' | 'paused';
     minutes_logged: number;
     target_minutes: number;
   }[];
@@ -61,6 +64,7 @@ interface WorkspaceCardProps {
   workspace: Workspace;
   index?: number;
   onDeleted?: (workspaceId: number) => void;
+  onUpdated?: (updatedWs: any) => void;
   totalMinutesLogged?: number;
   matrixItem?: WorkspaceMatrixItem;
 }
@@ -69,11 +73,13 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
   workspace, 
   index = 0, 
   onDeleted, 
+  onUpdated,
   totalMinutesLogged = 0,
   matrixItem
 }: WorkspaceCardProps) {
   const navigate = useNavigate();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const cachedMetrics = useCacheStore(state => state.workspaceMetrics[workspace.id]?.data);
   const perfMatrixItem = useCacheStore(state =>
@@ -107,29 +113,40 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
   }, [workspace.id, resolvedMatrix]);
 
   const today = new Date();
+  const todayStr = getTodayLocalISODate();
   const last7Days = Array.from({length: 7}).map((_, i) => format(subDays(today, 6 - i), 'yyyy-MM-dd'));
+  const localCreatedDate = toLocalISODate((workspace as any).created_at || (resolvedMatrix as any)?.created_at);
 
   const renderConsistencyChain = () => {
     if (resolvedMatrix?.seven_day_chain) {
       return (
         <div className="flex items-center gap-1.5">
           {resolvedMatrix.seven_day_chain.map((day) => {
+            const isToday = day.date === todayStr;
+            const isPreCreation = Boolean(localCreatedDate && day.date < localCreatedDate);
+            const isPausedWorkspace = (workspace as any).status === 'paused' || resolvedMatrix?.status === 'paused';
             let className = "w-2.5 h-2.5 rounded-[3px] transition-all duration-300 ";
-            if (day.status === 'untracked') {
+            if (isPreCreation) {
               className += "border border-zinc-800 bg-transparent opacity-40";
             } else if (day.status === 'cleared') {
               className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]";
-            } else if (day.status === 'partial') {
-              className += "bg-amber-400/80";
+            } else if (isToday) {
+              className += "border border-blue-400 bg-blue-500/20 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]";
             } else if (day.status === 'missed') {
               className += "bg-rose-500/80";
+            } else {
+              className += "border border-zinc-800 bg-zinc-900/60";
             }
 
-            const statusDisplay = day.status === 'cleared' ? 'Cleared' :
-              day.status === 'partial' ? 'In Progress' :
-              day.status === 'missed' ? 'Missed Quota' : 'Untracked';
+            const statusDisplay = isPreCreation ? 'Prior to creation' :
+              day.status === 'cleared' ? 'Cleared' :
+              isToday ? (isPausedWorkspace ? 'Paused' : 'In Progress Today') :
+              day.status === 'missed' ? 'Missed Quota' :
+              isPausedWorkspace ? 'Paused' : 'Untracked';
             
-            const tooltipText = `${day.day_name || day.date}: ${statusDisplay} (${day.minutes_logged}m / ${day.target_minutes}m)`;
+            const tooltipText = isToday 
+              ? `Today: ${day.status === 'cleared' ? 'Cleared' : (isPausedWorkspace ? 'Paused' : 'In Progress')} (${day.minutes_logged}m / ${day.target_minutes}m)`
+              : `${day.day_name || day.date}: ${statusDisplay} (${day.minutes_logged}m / ${day.target_minutes}m)`;
 
             return (
               <TooltipProvider key={day.date} delayDuration={100}>
@@ -161,21 +178,33 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
     return (
       <div className="flex items-center gap-1">
         {last7Days.map(dateStr => {
+          const isToday = dateStr === todayStr;
+          const isPreCreation = Boolean(localCreatedDate && dateStr < localCreatedDate);
           const dayLog = metrics.calendar?.find((c) => c.date === dateStr);
           let className = "w-2.5 h-2.5 rounded-[3px] transition-all duration-300 ";
           
-          if (!dayLog || !dayLog.status) {
+          const isPausedWorkspace = (workspace as any).status === 'paused';
+          const rawHabitTarget = workspace.daily_target_minutes || 60;
+          const isClearedToday = dayLog && (dayLog.actual_minutes ?? 0) >= rawHabitTarget;
+
+          if (isPreCreation) {
             className += "border border-zinc-800 bg-transparent opacity-40";
-          } else if (dayLog.status === 'golden' || dayLog.status === 'green') {
+          } else if (dayLog?.status === 'golden' || dayLog?.status === 'green' || isClearedToday) {
             className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]";
-          } else if (dayLog.status === 'yellow') {
-            className += "bg-amber-400/80";
-          } else if (dayLog.status === 'red') {
+          } else if (isToday) {
+            className += "border border-blue-400 bg-blue-500/20 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]";
+          } else if (dayLog?.status === 'red') {
             className += "bg-rose-500/80";
+          } else {
+            className += "border border-zinc-800 bg-zinc-900/60";
           }
 
-          const statusDisplay = dayLog?.status ? dayLog.status.charAt(0).toUpperCase() + dayLog.status.slice(1) : 'No activity';
-          const tooltipText = `${format(parseISO(dateStr), 'MMM d')}: ${statusDisplay}`;
+          const statusDisplay = isToday 
+            ? (dayLog?.status === 'golden' || dayLog?.status === 'green' || isClearedToday ? 'Cleared' : (isPausedWorkspace ? 'Paused' : 'In Progress Today'))
+            : (dayLog?.status ? dayLog.status.charAt(0).toUpperCase() + dayLog.status.slice(1) : (isPausedWorkspace ? 'Paused' : 'Untracked'));
+          const tooltipText = isToday
+            ? `Today: ${statusDisplay}`
+            : `${format(parseISO(dateStr), 'MMM d')}: ${statusDisplay}`;
           
           return (
             <TooltipProvider key={dateStr} delayDuration={100}>
@@ -220,9 +249,11 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsEditModalOpen(true);
   };
 
   const isSprint = workspace.category === 'sprint';
+  const isQuickWork = workspace.category === 'casual' || workspace.category === 'quick_work';
   const totalHoursLogged = (totalMinutesLogged / 60).toFixed(1);
   const currentStreak = resolvedMatrix ? ((resolvedMatrix as any).current_streak ?? workspace.current_streak ?? 0) : (metrics ? metrics.workspace_streak_current : (workspace.current_streak || 0));
 
@@ -235,25 +266,23 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
   return (
     <>
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: index * 0.05 }}
-        whileHover={{ y: -4, transition: { duration: 0.18 } }}
+        transition={{ delay: index * 0.04 }}
+        whileHover={{ y: -2, transition: { duration: 0.15 } }}
         onClick={() => navigate(`/workspace/${workspace.id}`)}
-        className="relative flex flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-5 cursor-pointer overflow-hidden group h-full"
+        className="relative flex flex-col rounded-xl border border-[#27272a] bg-[#202024]/90 hover:bg-[#202024] hover:border-zinc-700/80 p-5 cursor-pointer overflow-hidden group h-full shadow-sm transition-all duration-150"
       >
-        <div className={`absolute inset-0 bg-gradient-to-br ${isSprint ? 'from-blue-500/5' : 'from-[#8b5cf6]/5'} to-transparent opacity-0 group-hover:opacity-100 transition-opacity`} />
-        
         <div className="relative z-10 flex flex-col h-full flex-grow">
           <div className="flex items-center justify-between mb-4">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isSprint ? 'bg-blue-500/10' : 'bg-[#8b5cf6]/10'}`}>
-              <Layers className={`w-5 h-5 ${isSprint ? 'text-white' : 'text-[#8b5cf6]'}`} />
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#27272a] border border-zinc-700/50 text-[#f4f4f5] shadow-inner">
+              <Layers className="w-4 h-4 text-zinc-200" />
             </div>
             <div className="flex items-center gap-1">
-              <ArrowRight className="w-4 h-4 text-[#888888] opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ArrowRight className="w-4 h-4 text-[#a1a1aa] opacity-0 group-hover:opacity-100 transition-opacity" />
               <button
                 onClick={handleDeleteClick}
-                className="w-7 h-7 rounded-xl flex items-center justify-center text-[#888888] hover:text-red-400 hover:bg-white/5 transition-all opacity-0 group-hover:opacity-100"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#a1a1aa] hover:text-rose-400 hover:bg-[#27272a] transition-all opacity-0 group-hover:opacity-100"
                 title="Delete workspace"
               >
                 <Trash2 className="w-4 h-4" />
@@ -261,17 +290,17 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                   <button
-                    className="w-7 h-7 rounded-xl flex items-center justify-center text-[#888888] hover:text-white hover:bg-white/5 transition-all"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-[#a1a1aa] hover:text-white hover:bg-[#27272a] transition-all"
                   >
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl border-zinc-800 bg-zinc-950 shadow-xl text-white">
-                  <DropdownMenuItem onClick={handleEdit} className="cursor-pointer rounded-xl hover:bg-zinc-800 focus:bg-zinc-800 focus:text-white">
+                <DropdownMenuContent align="end" className="rounded-xl border-[#27272a] bg-[#202024] shadow-xl text-[#f4f4f5]">
+                  <DropdownMenuItem onClick={handleEdit} className="cursor-pointer rounded-lg hover:bg-[#27272a] focus:bg-[#27272a] focus:text-white">
                     <Pencil className="w-4 h-4 mr-2" />
                     Edit
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDeleteClick} className="cursor-pointer rounded-xl text-red-400 hover:text-red-300 focus:text-red-300 hover:bg-zinc-800 focus:bg-zinc-800">
+                  <DropdownMenuItem onClick={handleDeleteClick} className="cursor-pointer rounded-lg text-rose-400 hover:text-rose-300 focus:text-rose-300 hover:bg-[#27272a] focus:bg-[#27272a]">
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
@@ -281,15 +310,15 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
           </div>
           
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-sm font-bold text-white">{workspace.name}</h3>
+            <h3 className="text-sm font-semibold text-[#f4f4f5] tracking-tight">{workspace.name}</h3>
             {currentStreak > 0 && (
-              <span className="text-[10px] font-bold text-orange-400 bg-orange-400/10 px-1.5 py-0.5 rounded-sm border border-orange-400/20 shadow-[0_0_8px_rgba(251,146,60,0.2)] flex items-center">
-                <Flame className="w-3 h-3 mr-0.5 inline" /> {currentStreak}d
+              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20 flex items-center gap-1">
+                <Flame className="w-3 h-3 text-amber-400" /> {currentStreak}d
               </span>
             )}
           </div>
 
-          <p className="text-xs text-[#888888] line-clamp-2 mb-5 flex-grow">
+          <p className="text-xs text-[#a1a1aa] line-clamp-2 mb-5 flex-grow">
             {workspace.focus_keywords || workspace.description || `${workspace.mode || 'structured'} track`}
           </p>
           
@@ -299,52 +328,63 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
               
               <div className="space-y-3">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-[#888888] uppercase tracking-wider text-[10px] font-bold">Total Logged</span>
-                <span className="text-white font-mono font-bold">{totalHoursLogged}h</span>
+                <span className="text-[#a1a1aa] uppercase tracking-wider text-[10px] font-mono font-semibold">Total Logged</span>
+                <span className="text-[#f4f4f5] font-mono font-bold">{totalHoursLogged}h</span>
               </div>
               
               {/* Today's Quota Progress */}
-              <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2.5 space-y-1.5">
+              <div className="bg-[#18181b]/70 border border-[#27272a] rounded-xl p-3 space-y-1.5">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Today's Quota</span>
+                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-mono font-semibold">Today's Quota</span>
                   <span className={`text-[11px] font-mono font-bold ${
                     statusTone === 'success' || statusTone === 'green' ? 'text-emerald-400' :
-                    statusTone === 'progress' || statusTone === 'amber' || statusTone === 'blue' ? 'text-blue-400' :
-                    statusTone === 'danger' || statusTone === 'red' ? 'text-rose-400' : 'text-zinc-400'
+                    statusTone === 'progress' || statusTone === 'amber' || statusTone === 'blue' ? 'text-amber-400' :
+                    statusTone === 'danger' || statusTone === 'red' ? 'text-rose-400' : 'text-[#a1a1aa]'
                   }`}>
                     {statusLabel}
                   </span>
                 </div>
                 {dailyTarget > 0 ? (
                   <>
-                    <div className="w-full bg-zinc-800/80 h-1.5 rounded-full overflow-hidden">
+                    <div className="w-full bg-[#27272a] h-1.5 rounded-full overflow-hidden">
                       <div 
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          todayCleared ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' :
-                          todayLogged > 0 ? 'bg-blue-500' : 'bg-transparent'
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          todayCleared ? 'bg-emerald-400' :
+                          todayLogged > 0 ? 'bg-zinc-300' : 'bg-transparent'
                         }`}
                         style={{ width: `${Math.min(100, Math.round((todayLogged / dailyTarget) * 100))}%` }}
                       />
                     </div>
-                    <div className="flex justify-between items-center text-[10px] text-zinc-500 font-mono">
+                    <div className="flex justify-between items-center text-[10px] text-[#a1a1aa] font-mono">
                       <span>{todayLogged}m / {dailyTarget}m Today</span>
                       <span>{Math.round((todayLogged / dailyTarget) * 100)}%</span>
                     </div>
                   </>
                 ) : (
-                  <div className="text-[10px] text-zinc-500 font-mono">
+                  <div className="text-[10px] text-[#a1a1aa] font-mono">
                     <span>{todayLogged > 0 ? `${todayLogged}m logged today` : 'Flexible flow'}</span>
                   </div>
                 )}
               </div>
               
-              <div className="flex items-center justify-between mt-2 pt-3 border-t border-zinc-800">
-                <span className={`${isSprint ? 'text-blue-500 bg-blue-500/10 border-blue-500/20' : 'text-[#8b5cf6] bg-[#8b5cf6]/10 border-[#8b5cf6]/20'} px-2 py-1 rounded-xl text-[10px] font-bold tracking-wide uppercase border`}>
-                  {isSprint ? '⚡ Sprint' : '🌌 Mastery'}
-                </span>
+              <div className="flex items-center justify-between mt-2 pt-3 border-t border-[#27272a]">
+                <div className="flex items-center gap-1.5">
+                  <span className={`${
+                    isSprint ? 'text-amber-300 bg-amber-500/10 border-amber-500/20' :
+                    isQuickWork ? 'text-zinc-300 bg-zinc-800/80 border-zinc-700/50' :
+                    'text-zinc-200 bg-zinc-800/80 border-zinc-700/50'
+                  } px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold tracking-wide uppercase border`}>
+                    {isSprint ? 'Sprint' : isQuickWork ? 'Quick Work' : 'Mastery'}
+                  </span>
+                  {((workspace as any).status === 'paused' || resolvedMatrix?.status === 'paused') && (
+                    <span className="text-zinc-400 bg-zinc-800/80 border border-zinc-700/60 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium">
+                      Paused
+                    </span>
+                  )}
+                </div>
                 
-                <button className={`text-[10px] font-bold text-white uppercase tracking-wider ${isSprint ? 'hover:text-blue-500' : 'hover:text-[#8b5cf6]'} transition-colors flex items-center gap-1`}>
-                  Continue Track <ArrowRight className="w-3 h-3" />
+                <button className="text-[11px] font-medium text-[#a1a1aa] group-hover:text-[#f4f4f5] transition-colors flex items-center gap-1">
+                  Continue <ArrowRight className="w-3 h-3" />
                 </button>
               </div>
             </div>
@@ -400,6 +440,16 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
           </div>
         )}
       </AnimatePresence>
+
+      <EditWorkspaceModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        workspace={workspace}
+        onSaved={(updated) => {
+          setIsEditModalOpen(false);
+          onUpdated?.(updated);
+        }}
+      />
     </>
   );
 });

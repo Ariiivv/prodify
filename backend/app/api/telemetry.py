@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from app.services.intent_classifier import (
     classify_with_intent,
     reset_workspace_focus_state,
     clear_intent_cache,
+    allow_window_for_session,
 )
 from app.services.activity_parser import parse_activity
 
@@ -42,6 +43,8 @@ class ActivityLog(BaseModel):
     app_name: str
     intent: str = ""
     workspace_id: Optional[int] = None
+    minute_into_session: Optional[float] = None
+    trigger_app: Optional[str] = None
 
 
 class ActivityClassification(BaseModel):
@@ -69,6 +72,8 @@ class DistractionLog(BaseModel):
     workspace_id: int
     distraction_type: str
     timestamp: str
+    minute_into_session: Optional[float] = None
+    trigger_app: Optional[str] = None
 
 
 class SessionCreate(BaseModel):
@@ -79,6 +84,7 @@ class SessionCreate(BaseModel):
     burnout_score: float = 0.0
     timezone: Optional[str] = None  # IANA timezone string, e.g. "America/New_York"
     status: Optional[str] = "COMPLETED"
+    minute_into_session: Optional[float] = None
 
 
 def require_owned_workspace(workspace_id: int, user_id: str, db: Session) -> models.Workspace:
@@ -90,6 +96,48 @@ def require_owned_workspace(workspace_id: int, user_id: str, db: Session) -> mod
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
     return workspace
+
+
+def _compute_telemetry_coordinates(
+    db: Session,
+    workspace_id: int,
+    event_time: Optional[datetime] = None,
+    minute_into_session: Optional[float] = None,
+) -> dict:
+    if event_time is None:
+        event_time = datetime.utcnow()
+
+    workspace = db.query(models.Workspace).filter(models.Workspace.id == workspace_id).first()
+    if workspace and workspace.created_at:
+        track_day_number = max(1, (event_time.date() - workspace.created_at.date()).days + 1)
+    else:
+        track_day_number = 1
+
+    today_start_utc = datetime.combine(event_time.date(), datetime.min.time())
+    session_count = (
+        db.query(func.count(models.Session.id))
+        .filter(
+            models.Session.workspace_id == workspace_id,
+            models.Session.session_type == "FOCUS",
+            models.Session.start_time >= today_start_utc,
+        )
+        .scalar()
+        or 0
+    )
+    session_index_today = session_count + 1
+    clock_hour = event_time.hour
+
+    if minute_into_session is not None:
+        clean_minute = round(max(0.0, float(minute_into_session)), 2)
+    else:
+        clean_minute = 0.0
+
+    return {
+        "track_day_number": track_day_number,
+        "session_index_today": session_index_today,
+        "minute_into_session": clean_minute,
+        "clock_hour": clock_hour,
+    }
 
 
 @router.get("/telemetry/sessions", response_model=list[SessionResponse])
@@ -134,10 +182,12 @@ def create_completed_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    require_owned_workspace(payload.workspace_id, current_user.id, db)
+    workspace = require_owned_workspace(payload.workspace_id, current_user.id, db)
     end_time = datetime.utcnow()
     duration_secs = max(0, payload.duration_minutes) * 60
     start_time = end_time - timedelta(seconds=duration_secs)
+
+    coords = _compute_telemetry_coordinates(db, payload.workspace_id, start_time)
 
     session = models.Session(
         workspace_id=payload.workspace_id,
@@ -150,10 +200,28 @@ def create_completed_session(
         distraction_count=max(0, payload.distraction_count),
         distracted_seconds=max(0.0, payload.distracted_seconds),
         timezone=payload.timezone,
+        track_day_number=coords["track_day_number"],
+        session_index_today=coords["session_index_today"],
     )
     db.add(session)
     db.commit()
     db.refresh(session)
+
+    # Immediately sync DailyWorkspaceLog & streak calculation
+    try:
+        from app.models.crud import update_or_create_daily_log, evaluate_global_streak, get_local_date
+        session_mins = max(1, round(duration_secs / 60))
+        local_session_date = get_local_date(start_time)
+        update_or_create_daily_log(
+            db=db,
+            workspace_id=payload.workspace_id,
+            log_date=local_session_date,
+            session_minutes=session_mins,
+            intent_score=1.0,
+        )
+        evaluate_global_streak(db=db, user_id=current_user.id, log_date=local_session_date)
+    except Exception as log_ex:
+        logger.warning(f"[TELEMETRY] Failed to sync daily log for workspace {payload.workspace_id}: {log_ex}")
 
     # Persist the distraction count as a summary TelemetryLog so it survives
     # beyond the response and is queryable via the existing TelemetryLog join.
@@ -165,9 +233,31 @@ def create_completed_session(
             distraction_type="AGGREGATE",
             value=float(payload.distraction_count),
             reason=f"{payload.distraction_count} distractions during {payload.duration_minutes}min session",
+            track_day_number=coords["track_day_number"],
+            session_index_today=coords["session_index_today"],
+            clock_hour=end_time.hour,
+            minute_into_session=float(payload.duration_minutes),
         )
         db.add(summary_log)
         db.commit()
+
+    # Sprint Auto-Completion Check
+    if workspace.category == "sprint" and workspace.target_hours:
+        total_focus_secs = (
+            db.query(func.sum(models.Session.duration))
+            .filter(
+                models.Session.workspace_id == workspace.id,
+                models.Session.session_type == "FOCUS",
+                models.Session.status == "COMPLETED",
+            )
+            .scalar() or 0
+        )
+        target_secs = workspace.target_hours * 3600
+        past_deadline = bool(workspace.deadline and date.today() > workspace.deadline)
+        if total_focus_secs >= target_secs or past_deadline:
+            workspace.status = "completed"
+            workspace.daily_target_minutes = 0
+            db.commit()
 
     return SessionResponse(
         id=session.id,
@@ -186,11 +276,23 @@ def log_distraction(
     current_user: models.User = Depends(get_current_user),
 ):
     require_owned_workspace(payload.workspace_id, current_user.id, db)
+    try:
+        event_time = datetime.fromisoformat(payload.timestamp)
+    except Exception:
+        event_time = datetime.utcnow()
+
+    coords = _compute_telemetry_coordinates(db, payload.workspace_id, event_time, payload.minute_into_session)
+
     log = models.TelemetryLog(
         workspace_id=payload.workspace_id,
         metric_type=payload.distraction_type.upper(),
         distraction_type=payload.distraction_type,
-        timestamp=datetime.fromisoformat(payload.timestamp),
+        timestamp=event_time,
+        track_day_number=coords["track_day_number"],
+        session_index_today=coords["session_index_today"],
+        minute_into_session=coords["minute_into_session"],
+        clock_hour=coords["clock_hour"],
+        trigger_app=payload.trigger_app,
     )
     db.add(log)
     db.commit()
@@ -341,8 +443,12 @@ async def log_activity(
     Receive desktop window activity, classify it as focused/distracted,
     update the FocusTracker, and return classification.
     """
+    coords = None
     if payload.workspace_id is not None:
         require_owned_workspace(payload.workspace_id, current_user.id, db)
+        coords = _compute_telemetry_coordinates(
+            db, payload.workspace_id, datetime.utcnow(), payload.minute_into_session
+        )
 
     status, reason, summary = await classify_with_intent(
         window_title=payload.window_title,
@@ -376,7 +482,30 @@ async def log_activity(
         content_title=content_title,
         ai_summary=summary,
         ai_reason=reason,
+        track_day_number=coords["track_day_number"] if coords else None,
+        session_index_today=coords["session_index_today"] if coords else None,
+        minute_into_session=coords["minute_into_session"] if coords else None,
+        clock_hour=coords["clock_hour"] if coords else None,
     )
+
+    if status == "distracted" and payload.workspace_id is not None and coords:
+        try:
+            distraction_log = models.TelemetryLog(
+                workspace_id=payload.workspace_id,
+                metric_type="WINDOW_DISTRACTION",
+                distraction_type="TAB_SWITCH",
+                trigger_app=payload.trigger_app or clean_app_name or payload.app_name,
+                reason=reason,
+                track_day_number=coords["track_day_number"],
+                session_index_today=coords["session_index_today"],
+                minute_into_session=coords["minute_into_session"],
+                clock_hour=coords["clock_hour"],
+                timestamp=datetime.utcnow(),
+            )
+            db.add(distraction_log)
+            db.commit()
+        except Exception as ex:
+            logger.error(f"Failed to record granular window distraction telemetry: {ex}")
 
     return ActivityClassification(
         status=status,
@@ -410,6 +539,35 @@ def reset_focus(
     else:
         clear_intent_cache()
     return {"success": True}
+
+
+class AllowWindowPayload(BaseModel):
+    workspace_id: int
+    app_name: str
+    window_title: str
+
+
+@router.post("/telemetry/allow-window")
+def allow_window_endpoint(
+    payload: AllowWindowPayload,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Allow a specific window/application for the duration of the active session in this workspace.
+    Adds window to session override whitelist, immediately unlatches workspace focus state,
+    and sets semantic cache to focused.
+    """
+    require_owned_workspace(payload.workspace_id, current_user.id, db)
+    allow_window_for_session(
+        workspace_id=payload.workspace_id,
+        app_name=payload.app_name,
+        window_title=payload.window_title,
+    )
+    return {
+        "success": True,
+        "message": f"Window '{payload.window_title[:40]}' whitelisted for session.",
+    }
 
 
 class CoachInsightsResponse(BaseModel):
@@ -497,6 +655,10 @@ async def get_coach_insights(
 class BurnoutPredictionResponse(BaseModel):
     tab_switch_probability: float
     burnout_risk: str
+    predicted_decay_minute: Optional[float] = 25.0
+    top_trigger_app: Optional[str] = None
+    peak_distraction_hour: Optional[int] = None
+    safest_focus_hour: Optional[int] = None
 
 
 @router.get("/ml/burnout-prediction", response_model=BurnoutPredictionResponse)
@@ -504,19 +666,51 @@ class BurnoutPredictionResponse(BaseModel):
 def get_burnout_prediction(
     current_hour: int = 14,
     current_focus_minutes: int = 0,
+    distraction_count: int = 0,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    Calculate real-time burnout probability based on elapsed focus time, time of day, and recent tab switches.
+    Calculate real-time burnout and tab switch probability based on cumulative focus time,
+    distraction count, and user's Scikit-Learn attention decay wall & circadian profile.
     """
-    base_prob = min(0.95, (current_focus_minutes / 45.0) * 0.4)
-    # Adjust for afternoon slump (2-4 PM) or late night (>10 PM)
-    if 14 <= current_hour <= 16 or current_hour >= 22:
-        base_prob = min(0.95, base_prob + 0.15)
-    
-    risk = "High" if base_prob >= 0.7 else ("Moderate" if base_prob >= 0.4 else "Low")
-    return BurnoutPredictionResponse(
-        tab_switch_probability=round(base_prob, 2),
-        burnout_risk=risk,
-    )
+    try:
+        from app.services.ml_pattern_engine import predict_realtime_burnout
+
+        ml_res = predict_realtime_burnout(
+            db=db,
+            user_id=current_user.id,
+            current_hour=current_hour,
+            current_focus_minutes=current_focus_minutes,
+            distraction_count=distraction_count,
+        )
+        return BurnoutPredictionResponse(
+            tab_switch_probability=ml_res["tab_switch_probability"],
+            burnout_risk=ml_res["burnout_risk"],
+            predicted_decay_minute=ml_res.get("predicted_decay_minute", 25.0),
+            top_trigger_app=ml_res.get("top_trigger_app"),
+            peak_distraction_hour=ml_res.get("peak_distraction_hour"),
+            safest_focus_hour=ml_res.get("safest_focus_hour"),
+        )
+    except Exception as exc:
+        logger.warning(f"[BURNOUT] Scikit-Learn prediction failed, falling back to heuristic: {exc}")
+        fatigue_from_time = (current_focus_minutes / 60.0) * 0.12
+        fatigue_from_distractions = distraction_count * 0.02
+        base_prob = fatigue_from_time + fatigue_from_distractions
+
+        if current_hour >= 22 or current_hour < 5:
+            base_prob += 0.10
+        elif 14 <= current_hour <= 16:
+            base_prob += 0.05
+
+        base_prob = max(0.0, min(0.90, base_prob))
+        risk = "High" if base_prob >= 0.70 else ("Moderate" if base_prob >= 0.35 else "Low")
+
+        return BurnoutPredictionResponse(
+            tab_switch_probability=round(base_prob, 2),
+            burnout_risk=risk,
+            predicted_decay_minute=25.0,
+            top_trigger_app=None,
+            peak_distraction_hour=15,
+            safest_focus_hour=10,
+        )

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Brain, Eye, RotateCcw, Loader2, AlertTriangle, Moon } from 'lucide-react';
+import { Bot, Brain, Eye, RotateCcw, Loader2, AlertTriangle, Moon } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import ReactMarkdown from 'react-markdown';
 
@@ -104,9 +104,9 @@ export default function CoachInsightPanel({
   }, [insightMode]);
 
   // Config for each mode
-  const modeConfig: Record<InsightMode, { icon: typeof Zap; label: string; gradient: string; glowColor: string; borderColor: string; badgeBg: string; badgeText: string }> = {
+  const modeConfig: Record<InsightMode, { icon: typeof Bot; label: string; gradient: string; glowColor: string; borderColor: string; badgeBg: string; badgeText: string }> = {
     idle: {
-      icon: Zap,
+      icon: Bot,
       label: 'Coach Ready',
       gradient: 'from-slate-500/10 to-slate-600/5',
       glowColor: 'shadow-slate-500/5',
