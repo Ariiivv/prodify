@@ -10,6 +10,8 @@ import TrackingConsentModal from './components/auth/TrackingConsentModal';
 import ScrollToTop from './components/ScrollToTop';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { supabase } from '@/lib/supabase';
 
 // Route-based code splitting — heavy pages are loaded on-demand
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -25,8 +27,6 @@ const PageLoader = () => (
 );
 
 const queryClient = new QueryClient();
-
-import { supabase } from '@/lib/supabase';
 
 function App() {
   const initialize = useAuthStore((state) => state.initialize);
@@ -80,7 +80,6 @@ function App() {
                 await initialize();
                 
                 try {
-                  const { getCurrentWindow } = await import('@tauri-apps/api/window');
                   await getCurrentWindow().setFocus();
                 } catch (e) {
                   console.error('Failed to focus window:', e);
