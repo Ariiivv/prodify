@@ -145,7 +145,18 @@ const HomePage: React.FC = () => {
   const handleDeleted = useCallback((workspaceId: number) => {
     useCacheStore.getState().removeWorkspaceFromCache(workspaceId);
     setWorkspaces(prev => prev.filter(ws => ws.id !== workspaceId));
-  }, []);
+    setSessions(prev => prev.filter(s => s.workspace_id !== workspaceId));
+    setPerformanceMatrix(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        workspaces_matrix: (prev.workspaces_matrix || []).filter(
+          item => item.id !== workspaceId && (item as any).workspace_id !== workspaceId
+        ),
+      };
+    });
+    fetchData(true);
+  }, [fetchData]);
 
   // Unified User Performance Matrix & command metrics
   const globalSummary = performanceMatrix?.global_summary;
@@ -274,16 +285,16 @@ const HomePage: React.FC = () => {
         >
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[10px] font-mono font-semibold text-[#f4f4f5] bg-[#27272a] px-2 py-0.5 rounded tracking-[0.2em] uppercase border border-zinc-700/60">Prodify</span>
+              <span className="text-[10px] font-mono font-semibold text-zinc-100 bg-zinc-800 px-2 py-0.5 rounded tracking-[0.2em] uppercase border border-zinc-700/60">Prodify</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-heading font-bold text-[#f4f4f5] tracking-tight">Focus Tracks</h1>
-            <p className="text-sm text-[#a1a1aa] mt-1 font-body">Focus smarter. Track burnout. Stay sharp.</p>
+            <h1 className="text-2xl md:text-3xl font-heading font-bold text-zinc-100 tracking-tight">Focus Tracks</h1>
+            <p className="text-sm text-zinc-400 mt-1 font-body">Focus smarter. Track burnout. Stay sharp.</p>
           </div>
           <div className="flex items-center gap-3">
             <Link
               to="/report"
               data-tour="sidebar-report"
-              className="hidden md:flex items-center gap-2 px-3 py-2 border border-[#27272a] bg-[#202024] hover:bg-[#27272a] text-[#a1a1aa] hover:text-[#f4f4f5] text-xs font-mono font-medium rounded-xl transition-all shadow-sm"
+              className="hidden md:flex items-center gap-2 px-3 py-2 border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 text-xs font-mono font-medium rounded-xl transition-all shadow-sm"
             >
               <BarChart3 className="w-3.5 h-3.5" />
               Analytics
@@ -296,13 +307,13 @@ const HomePage: React.FC = () => {
 
         {/* ── Data Warnings Banner ── */}
         {dataWarnings.length > 0 && (
-          <div className="flex items-center justify-between mb-4 bg-[#202024] border border-[#27272a] p-3 rounded-xl">
+          <div className="flex items-center justify-between mb-4 bg-zinc-900/60 border border-zinc-800/80 p-3 rounded-xl">
             <span className="text-sm font-medium text-amber-400">
               Some data couldn't load: {dataWarnings.join(', ')}
             </span>
             <button
               onClick={() => setDataWarnings([])}
-              className="text-[#a1a1aa] hover:text-white transition-colors text-xs font-bold"
+              className="text-zinc-400 hover:text-white transition-colors text-xs font-bold"
             >
               DISMISS
             </button>
@@ -314,16 +325,16 @@ const HomePage: React.FC = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             data-tour="hero-metrics"
-            className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row flex-wrap items-center justify-between gap-4 md:gap-8 bg-[#202024]/80 backdrop-blur-md border border-[#27272a] rounded-xl p-5 mb-8 w-full shadow-sm"
+            className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row flex-wrap items-center justify-between gap-4 md:gap-8 bg-zinc-900/60 backdrop-blur-md border border-zinc-800/80 rounded-xl p-5 mb-8 w-full shadow-sm"
           >
             {/* 1. Today's Progress */}
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-[#27272a] border border-zinc-700/40 rounded-xl text-[#f4f4f5] shadow-inner">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-zinc-800 border border-zinc-700/40 rounded-xl text-zinc-100 shadow-inner">
                 <Target className="w-4 h-4 text-zinc-300" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-mono font-semibold">Today's Progress</span>
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono font-semibold">Today's Progress</span>
                   <MetricInfoPopover
                     title="Today's Progress"
                     description="Actual logged deep work time compared to your summed daily goal quotas across all active workspaces today. Measures your progress toward complete daily execution."
@@ -333,10 +344,10 @@ const HomePage: React.FC = () => {
                     onToggle={(open) => toggleTooltip('progress', open)}
                   />
                 </div>
-                <span className="text-[#f4f4f5] font-mono font-bold text-sm sm:text-base">
+                <span className="text-zinc-100 font-mono font-bold text-sm sm:text-base">
                   {todayLoggedHours}h / {todayTargetHours}h
                 </span>
-                <span className="text-[10px] text-[#a1a1aa] font-mono">
+                <span className="text-[10px] text-zinc-400 font-mono">
                   {globalSummary ? (
                     globalSummary.total_active_workspaces > 0
                       ? `${globalSummary.workspaces_cleared_today} / ${globalSummary.total_active_workspaces} Cleared`
@@ -348,12 +359,12 @@ const HomePage: React.FC = () => {
 
             {/* 2. 7D Consistency */}
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-[#27272a] border border-zinc-700/40 rounded-xl text-[#f4f4f5] shadow-inner">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-zinc-800 border border-zinc-700/40 rounded-xl text-zinc-100 shadow-inner">
                 <Activity className="w-4 h-4 text-zinc-300" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-mono font-semibold">7D Consistency</span>
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono font-semibold">7D Consistency</span>
                   <MetricInfoPopover
                     title="7D Consistency & Momentum"
                     description="Tracks your execution discipline over a rolling 7-day window. Evaluates active streak adherence, daily hours completed against target quotas, and focus quality."
@@ -363,7 +374,7 @@ const HomePage: React.FC = () => {
                     onToggle={(open) => toggleTooltip('consistency', open)}
                   />
                 </div>
-                <span className="text-[#f4f4f5] font-mono font-bold text-sm sm:text-base">
+                <span className="text-zinc-100 font-mono font-bold text-sm sm:text-base">
                   {momentumScore != null ? `${momentumScore}%` : 'Calibrating'}
                 </span>
                 <span className={`text-[10px] font-semibold ${getMomentumColor(momentumLabel)}`}>
@@ -374,12 +385,12 @@ const HomePage: React.FC = () => {
 
             {/* 3. Focus Purity */}
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-[#27272a] border border-zinc-700/40 rounded-xl text-[#f4f4f5] shadow-inner">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-zinc-800 border border-zinc-700/40 rounded-xl text-zinc-100 shadow-inner">
                 <Brain className="w-4 h-4 text-zinc-300" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-mono font-semibold">Focus Purity</span>
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono font-semibold">Focus Purity</span>
                   <MetricInfoPopover
                     title="Focus Purity"
                     description="The percentage of your total focused session time spent in deep flow without off-task diversions. Quantifies cognitive efficiency and attention quality."
@@ -392,7 +403,7 @@ const HomePage: React.FC = () => {
                 <span className="text-emerald-400 font-mono font-bold text-sm sm:text-base">
                   {deepWorkRatio}%
                 </span>
-                <span className="text-[10px] text-[#a1a1aa] font-mono">
+                <span className="text-[10px] text-zinc-400 font-mono">
                   {globalSummary?.today_distractions_count != null ? `${globalSummary.today_distractions_count} slips today` : '7d purity'}
                 </span>
               </div>
@@ -400,12 +411,12 @@ const HomePage: React.FC = () => {
 
             {/* 4. Peak Hour (14D Model) */}
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-[#27272a] border border-zinc-700/40 rounded-xl text-[#f4f4f5] shadow-inner">
+              <div className="hidden sm:flex w-10 h-10 items-center justify-center bg-zinc-800 border border-zinc-700/40 rounded-xl text-zinc-100 shadow-inner">
                 <Clock className="w-4 h-4 text-zinc-300" />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-mono font-semibold">Peak Hour (14D Model)</span>
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono font-semibold">Peak Hour (14D Model)</span>
                   <MetricInfoPopover
                     title="Peak Hour (14D Machine Learning Model)"
                     description="Your chronobiological peak focus window discovered by machine learning telemetry. Continuously calibrated over a rolling 14-day history by clustering hourly alignment rates, session lengths, and low-distraction intervals."
@@ -419,7 +430,7 @@ const HomePage: React.FC = () => {
                 <span className="font-mono font-bold text-xs sm:text-sm tracking-tight text-zinc-200">
                   {peakWindow}
                 </span>
-                <span className="text-[10px] text-[#a1a1aa] font-mono">
+                <span className="text-[10px] text-zinc-400 font-mono">
                   {peakSubtitle}
                 </span>
               </div>
@@ -432,7 +443,7 @@ const HomePage: React.FC = () => {
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-mono font-semibold">Active Streak</span>
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono font-semibold">Active Streak</span>
                   <MetricInfoPopover
                     title="Active Streak"
                     description="The number of consecutive days you have met your daily focus quota across all active workspaces. Today's in-progress day is granted grace so streaks are never broken prematurely while you are working."
@@ -446,7 +457,7 @@ const HomePage: React.FC = () => {
                 <span className="text-amber-400 font-mono font-bold text-sm sm:text-base">
                   {currentStreak} Day{currentStreak !== 1 ? 's' : ''}
                 </span>
-                <span className="text-[10px] text-[#a1a1aa] font-mono">
+                <span className="text-[10px] text-zinc-400 font-mono">
                   Best: {longestStreak}d
                 </span>
               </div>
@@ -455,14 +466,14 @@ const HomePage: React.FC = () => {
 
         {/* ── Workspaces Section ── */}
         <div className="space-y-6" id="workspaces">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272a] pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => setActiveTab('all')}
                 className={`px-3 py-1.5 text-xs font-medium transition-all rounded-lg border ${
                   activeTab === 'all' 
-                    ? 'text-[#f4f4f5] bg-[#27272a] border-zinc-700/60 shadow-sm' 
-                    : 'text-[#a1a1aa] border-transparent hover:text-[#f4f4f5] hover:bg-[#202024]'
+                    ? 'text-zinc-100 bg-zinc-800 border-zinc-700/60 shadow-sm' 
+                    : 'text-zinc-400 border-transparent hover:text-zinc-100 hover:bg-zinc-900/60'
                 }`}
               >
                 All ({workspaces.length})
@@ -471,8 +482,8 @@ const HomePage: React.FC = () => {
                 onClick={() => setActiveTab('casual')}
                 className={`px-3 py-1.5 text-xs font-medium transition-all rounded-lg flex items-center gap-1.5 border ${
                   activeTab === 'casual' 
-                    ? 'text-[#f4f4f5] bg-[#27272a] border-zinc-700/60 shadow-sm' 
-                    : 'text-[#a1a1aa] border-transparent hover:text-[#f4f4f5] hover:bg-[#202024]'
+                    ? 'text-zinc-100 bg-zinc-800 border-zinc-700/60 shadow-sm' 
+                    : 'text-zinc-400 border-transparent hover:text-zinc-100 hover:bg-zinc-900/60'
                 }`}
               >
                 <Zap className="w-3.5 h-3.5" /> Quick Work ({casualCount})
@@ -481,8 +492,8 @@ const HomePage: React.FC = () => {
                 onClick={() => setActiveTab('mastery')}
                 className={`px-3 py-1.5 text-xs font-medium transition-all rounded-lg flex items-center gap-1.5 border ${
                   activeTab === 'mastery' 
-                    ? 'text-[#f4f4f5] bg-[#27272a] border-zinc-700/60 shadow-sm' 
-                    : 'text-[#a1a1aa] border-transparent hover:text-[#f4f4f5] hover:bg-[#202024]'
+                    ? 'text-zinc-100 bg-zinc-800 border-zinc-700/60 shadow-sm' 
+                    : 'text-zinc-400 border-transparent hover:text-zinc-100 hover:bg-zinc-900/60'
                 }`}
               >
                 <TrendingUp className="w-3.5 h-3.5" /> Mastery ({masteryCount})
@@ -491,8 +502,8 @@ const HomePage: React.FC = () => {
                 onClick={() => setActiveTab('sprint')}
                 className={`px-3 py-1.5 text-xs font-medium transition-all rounded-lg flex items-center gap-1.5 border ${
                   activeTab === 'sprint' 
-                    ? 'text-amber-300 bg-[#27272a] border-zinc-700/60 shadow-sm' 
-                    : 'text-[#a1a1aa] border-transparent hover:text-[#f4f4f5] hover:bg-[#202024]'
+                    ? 'text-amber-300 bg-zinc-800 border-zinc-700/60 shadow-sm' 
+                    : 'text-zinc-400 border-transparent hover:text-zinc-100 hover:bg-zinc-900/60'
                 }`}
               >
                 <Target className="w-3.5 h-3.5" /> Sprints ({sprintCount})
@@ -521,7 +532,7 @@ const HomePage: React.FC = () => {
               className="text-center py-20 border border-dashed border-prodify-border rounded-xl flex flex-col items-center justify-center bg-zinc-950/30"
             >
               <Layers className="w-10 h-10 text-prodify-muted/30 mx-auto mb-4" />
-              <p className="text-[#888888] text-sm mb-6">No workspaces found in this category.</p>
+              <p className="text-zinc-500 text-sm mb-6">No workspaces found in this category.</p>
               {activeTab === 'all' && <CreateWorkspaceDialog onCreated={fetchData} />}
             </motion.div>
           ) : (

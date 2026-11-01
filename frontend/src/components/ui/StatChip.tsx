@@ -31,21 +31,21 @@ export const StatChip: React.FC<StatChipProps> = ({
   // Category specific styles adhering to "warm paper + one lime" palette
   const getStyles = () => {
     if (isLive) {
-      return 'bg-lime text-black border-black/15 font-semibold';
+      return 'bg-emerald-400 text-black font-semibold';
     }
     if (isActive) {
-      return 'bg-ink text-white border-ink font-medium';
+      return 'bg-white text-black border-white font-semibold';
     }
     switch (normalized) {
       case 'sprint':
-        return 'bg-amber-50 text-amber-900 border-amber-200/80';
+        return 'bg-amber-500/10 text-amber-300 border-amber-500/20';
       case 'quick_work':
       case 'casual':
       case 'quick_flow':
-        return 'bg-emerald-50 text-emerald-900 border-emerald-200/80';
+        return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
       case 'mastery':
       default:
-        return 'bg-black/[0.04] text-ink border-line';
+        return 'bg-zinc-800 text-zinc-200 border-zinc-700';
     }
   };
 

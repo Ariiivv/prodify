@@ -1,16 +1,37 @@
-from app.models.schemas import Base, User, Workspace, Session, TelemetryLog, ActivityLog, Friendship, FriendMessage
+from app.models.schemas import (
+    Base,
+    User,
+    UserStats,
+    Workspace,
+    Session,
+    TelemetryLog,
+    ActivityLog,
+    DailyWorkspaceLog,
+    WorkspaceMetrics,
+    CoachingInteraction,
+    WorkspaceChatHistory,
+    Friendship,
+    FriendMessage,
+    DirectMessage,
+)
 from app.models.connection import get_db, SessionLocal, engine, create_db_and_tables
 from app.models import crud
 
 __all__ = [
     "Base",
     "User",
+    "UserStats",
     "Workspace",
     "Session",
     "TelemetryLog",
     "ActivityLog",
+    "DailyWorkspaceLog",
+    "WorkspaceMetrics",
+    "CoachingInteraction",
+    "WorkspaceChatHistory",
     "Friendship",
     "FriendMessage",
+    "DirectMessage",
     "get_db",
     "SessionLocal",
     "engine",

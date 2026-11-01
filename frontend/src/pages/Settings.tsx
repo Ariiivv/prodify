@@ -6,7 +6,6 @@ import { useAuthStore } from '@/store/authStore';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 export default function Settings() {
   const { user, signOut } = useAuthStore();
@@ -50,7 +49,6 @@ export default function Settings() {
       }
 
       const data = await res.json();
-      // Update the auth store user directly from the save response
       const currentUser = useAuthStore.getState().user;
       if (currentUser && data.user) {
         useAuthStore.setState({
@@ -107,90 +105,90 @@ export default function Settings() {
   return (
     <div className="max-w-3xl mx-auto pt-10 md:pt-12 pb-16 px-6">
       <div className="flex items-center gap-3 mb-8">
-        <div className="w-10 h-10 rounded-xl bg-card border border-border/40 flex items-center justify-center">
-          <SettingsIcon className="w-5 h-5 text-foreground" />
+        <div className="w-10 h-10 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex items-center justify-center">
+          <SettingsIcon className="w-5 h-5 text-zinc-100" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
-          <p className="text-sm text-muted-foreground">Manage your profile, account, and data.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Settings</h1>
+          <p className="text-sm text-zinc-400">Manage your profile, account, and data.</p>
         </div>
       </div>
 
       <div className="space-y-6">
         {/* Profile Section */}
-        <section className="bg-card border border-border/40 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-border/20 flex items-center gap-2">
-            <User className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-foreground">Profile</h2>
+        <section className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-zinc-800/60 flex items-center gap-2">
+            <User className="w-4 h-4 text-zinc-400" />
+            <h2 className="text-sm font-semibold text-zinc-100">Profile</h2>
           </div>
           <div className="p-6">
             <form onSubmit={handleSaveProfile} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Full Name (for AI Coach)</label>
-                  <Input
+                  <label className="text-xs font-medium text-zinc-400 mb-1.5 block">Full Name (for AI Coach)</label>
+                  <input
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="e.g., John Doe"
-                    className="bg-background/50 border-border/40 text-foreground"
+                    className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none rounded-lg px-3 py-2 text-sm transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Age (Optional)</label>
-                  <Input
+                  <label className="text-xs font-medium text-zinc-400 mb-1.5 block">Age (Optional)</label>
+                  <input
                     type="number"
                     value={age}
                     onChange={(e) => setAge(e.target.value)}
                     placeholder="e.g., 25"
                     min="1"
                     max="120"
-                    className="bg-background/50 border-border/40 text-foreground"
+                    className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none rounded-lg px-3 py-2 text-sm transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Username (Unique ID)</label>
-                  <div className="bg-background/50 border border-border/40 text-foreground rounded-md px-3 py-2 text-sm opacity-80 cursor-not-allowed">
+                  <label className="text-xs font-medium text-zinc-400 mb-1.5 block">Username (Unique ID)</label>
+                  <div className="bg-zinc-950 border border-zinc-800/60 text-zinc-400 rounded-lg px-3 py-2 text-sm opacity-80 cursor-not-allowed select-none">
                     {user?.username || 'N/A'}
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Email</label>
-                  <div className="bg-background/50 border border-border/40 text-foreground rounded-md px-3 py-2 text-sm opacity-80 cursor-not-allowed">
+                  <label className="text-xs font-medium text-zinc-400 mb-1.5 block">Email</label>
+                  <div className="bg-zinc-950 border border-zinc-800/60 text-zinc-400 rounded-lg px-3 py-2 text-sm opacity-80 cursor-not-allowed select-none">
                     {user?.email || 'N/A'}
                   </div>
                 </div>
               </div>
               
               <div className="flex justify-end pt-2">
-                <Button
+                <button
                   type="submit"
-                  disabled={isSavingProfile || !fullName.trim() || fullName === user?.full_name && age === String(user?.age || '')}
-                  className="bg-prodify-accent hover:bg-prodify-accent/90 text-black font-bold"
+                  disabled={isSavingProfile || !fullName.trim() || (fullName === user?.full_name && age === String(user?.age || ''))}
+                  className="bg-white text-black hover:bg-zinc-200 font-medium px-4 py-2 rounded-lg text-sm transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4" />
                   {isSavingProfile ? "Saving..." : "Save Profile"}
-                </Button>
+                </button>
               </div>
             </form>
           </div>
         </section>
 
         {/* Interactive Tour & Guidance */}
-        <section className="bg-card border border-border/40 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-border/20 flex items-center gap-2">
+        <section className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-zinc-800/60 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-blue-400" />
-            <h2 className="text-sm font-semibold text-foreground">Interactive Tour & Guidance</h2>
+            <h2 className="text-sm font-semibold text-zinc-100">Interactive Tour & Guidance</h2>
           </div>
           <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">Feature Spotlight Tour</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm font-medium text-zinc-100">Feature Spotlight Tour</p>
+              <p className="text-xs text-zinc-400 leading-relaxed">
                 Replay the walkthrough covering the Focus Command Strip, adaptive workspaces, and AI coaching.
               </p>
             </div>
-            <Button
+            <button
               type="button"
               onClick={() => {
                 localStorage.removeItem('prodify_tour_completed');
@@ -199,44 +197,42 @@ export default function Settings() {
                   window.dispatchEvent(new Event('prodify-restart-tour'));
                 }, 350);
               }}
-              variant="outline"
-              className="bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 font-mono text-xs font-semibold shrink-0 cursor-pointer shadow-sm"
+              className="bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 text-xs font-semibold px-3 py-2 rounded-lg shrink-0 cursor-pointer shadow-sm transition-colors flex items-center gap-2"
             >
-              <Sparkles className="w-3.5 h-3.5 mr-2 text-blue-400" />
+              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
               ✨ Replay Guide Tour
-            </Button>
+            </button>
           </div>
         </section>
 
         {/* Account Section */}
-        <section className="bg-card border border-border/40 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-border/20 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-foreground">Account</h2>
+        <section className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-zinc-800/60 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-zinc-400" />
+            <h2 className="text-sm font-semibold text-zinc-100">Account</h2>
           </div>
           <div className="p-6 flex flex-col items-start gap-4">
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-zinc-400">
               Your account is authenticated securely via {user?.auth_provider === 'dev' ? 'Local Dev Bypass' : 'Supabase (Google/Email)'}.
             </div>
-            <Button
+            <button
               onClick={handleSignOut}
-              variant="outline"
-              className="bg-transparent border-border/40 text-foreground hover:bg-white/5"
+              className="bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
             >
-              <LogOut className="w-4 h-4 mr-2" />
+              <LogOut className="w-4 h-4" />
               Sign Out
-            </Button>
+            </button>
           </div>
         </section>
 
         {/* Data & Privacy Section */}
-        <section className="bg-red-500/5 border border-red-500/20 rounded-xl overflow-hidden">
+        <section className="bg-red-500/[0.03] border border-red-500/20 rounded-xl overflow-hidden shadow-sm">
           <div className="px-6 py-4 border-b border-red-500/10 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500" />
-            <h2 className="text-sm font-semibold text-red-500">Data & Privacy</h2>
+            <AlertTriangle className="w-4 h-4 text-red-400" />
+            <h2 className="text-sm font-semibold text-red-400">Data & Privacy</h2>
           </div>
           <div className="p-6 space-y-4">
-            <p className="text-sm text-red-400/80 max-w-xl">
+            <p className="text-sm text-red-400/80 max-w-xl leading-relaxed">
               Permanently delete ALL your workspaces, focus session history, distraction patterns, AI coaching memory, and chat history. Your account will be reset to a completely blank state, as if you just signed up.
             </p>
             <Button
@@ -244,7 +240,7 @@ export default function Settings() {
                 setResetInput('');
                 setResetDialogVisible(true);
               }}
-              className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 transition-colors"
+              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-colors"
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Reset All My Data
@@ -269,25 +265,24 @@ export default function Settings() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-sm z-50 p-6 flex flex-col gap-4 rounded-xl shadow-2xl"
-              style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}
+              className="relative w-full max-w-sm z-50 p-6 flex flex-col gap-4 rounded-xl shadow-2xl bg-zinc-950 border border-zinc-800"
             >
               <div>
-                <h3 className="text-lg font-bold text-red-500 mb-2 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-red-400 mb-2 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
                   Reset All Data?
                 </h3>
-                <p className="text-sm text-gray-400 leading-relaxed mb-4">
+                <p className="text-sm text-zinc-400 leading-relaxed mb-4">
                   This will permanently delete ALL your workspaces, focus session history, distraction patterns, AI coaching memory, and chat history. Your account will be reset to a completely blank state, as if you just signed up. <strong>This cannot be undone.</strong>
                 </p>
                 
-                <label className="text-xs font-medium text-gray-500 mb-1.5 block">Type RESET to confirm</label>
+                <label className="text-xs font-medium text-zinc-400 mb-1.5 block">Type RESET to confirm</label>
                 <input
                   type="text"
                   value={resetInput}
                   onChange={(e) => setResetInput(e.target.value)}
                   placeholder="RESET"
-                  className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus:border-red-500 rounded-xl px-3 py-2 text-sm focus:outline-none"
                 />
               </div>
 
@@ -302,7 +297,7 @@ export default function Settings() {
                 <button
                   onClick={() => setResetDialogVisible(false)}
                   disabled={isDeleting}
-                  className="w-full py-2.5 text-sm font-semibold text-gray-400 hover:text-white transition-colors rounded-xl border border-zinc-800 bg-zinc-950"
+                  className="w-full py-2.5 text-sm font-semibold text-zinc-400 hover:text-zinc-100 transition-colors rounded-xl border border-zinc-800 bg-zinc-900"
                 >
                   Cancel
                 </button>

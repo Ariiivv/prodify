@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from app.models import schemas as models
 from datetime import date, datetime, timezone
 from typing import Optional, List
+from app.services.metrics_utils import focus_purity_percent
 
 def get_local_date(dt: Optional[datetime]) -> date:
     if not dt:
@@ -123,13 +124,69 @@ def update_workspace(
     return workspace
 
 
-def delete_workspace(db: Session, workspace_id: int):
-    """Delete a workspace by its ID."""
+def delete_workspace(db: Session, workspace_id: int, keep_metrics: bool = False):
+    """
+    Hard Cascade Deletion:
+    Permanently delete a workspace and ALL associated child records across the database:
+    - Session records (models.Session.workspace_id == workspace_id)
+    - TelemetryLog & ActivityLog records (by workspace_id and by session_id)
+    - DailyWorkspaceLog entries (models.DailyWorkspaceLog.workspace_id == workspace_id)
+    - WorkspaceMetrics entries
+    - CoachingInteraction entries
+    - WorkspaceChatHistory entries
+    - Workspace record itself
+    Recalculates global streak and metrics immediately.
+    """
     db_workspace = db.query(models.Workspace).filter(models.Workspace.id == workspace_id).first()
-    if db_workspace:
+    if not db_workspace:
+        return None
+
+    user_id = db_workspace.user_id
+
+    try:
+        session_ids = db.query(models.Session.id).filter(
+            models.Session.workspace_id == workspace_id
+        ).scalar_subquery()
+
+        # Delete both directly-owned logs and logs attached to a session in this workspace.
+        db.query(models.ActivityLog).filter(
+            (models.ActivityLog.workspace_id == workspace_id) |
+            models.ActivityLog.session_id.in_(session_ids)
+        ).delete(synchronize_session=False)
+        db.query(models.TelemetryLog).filter(
+            (models.TelemetryLog.workspace_id == workspace_id) |
+            models.TelemetryLog.session_id.in_(session_ids)
+        ).delete(synchronize_session=False)
+
+        db.query(models.DailyWorkspaceLog).filter(
+            models.DailyWorkspaceLog.workspace_id == workspace_id
+        ).delete(synchronize_session=False)
+        if not keep_metrics:
+            db.query(models.WorkspaceMetrics).filter(
+                models.WorkspaceMetrics.workspace_id == workspace_id
+            ).delete(synchronize_session=False)
+        db.query(models.CoachingInteraction).filter(
+            models.CoachingInteraction.workspace_id == workspace_id
+        ).delete(synchronize_session=False)
+        db.query(models.WorkspaceChatHistory).filter(
+            models.WorkspaceChatHistory.workspace_id == workspace_id
+        ).delete(synchronize_session=False)
+        db.query(models.Session).filter(
+            models.Session.workspace_id == workspace_id
+        ).delete(synchronize_session=False)
+
         db.delete(db_workspace)
+        if user_id:
+            evaluate_global_streak(
+                db=db,
+                user_id=user_id,
+                log_date=get_local_date(datetime.utcnow()),
+            )
         db.commit()
-    return db_workspace
+        return db_workspace
+    except Exception:
+        db.rollback()
+        raise
 
 
 def share_workspace(
@@ -160,6 +217,7 @@ def log_activity_record_async(
     content_title: Optional[str] = None,
     ai_summary: Optional[str] = None,
     ai_reason: Optional[str] = None,
+    similarity_score: Optional[float] = None,
     session_id: Optional[int] = None,
     track_day_number: Optional[int] = None,
     session_index_today: Optional[int] = None,
@@ -188,6 +246,7 @@ def log_activity_record_async(
             window_title=window_title,
             intent=intent,
             is_focused=1 if is_focused else 0,
+            similarity_score=similarity_score,
             reason=reason,
             clean_app_name=clean_app_name,
             platform_name=platform_name,
@@ -203,7 +262,11 @@ def log_activity_record_async(
         db.add(record)
         db.commit()
     except Exception as e:
-        logger.error(f"Error asynchronously saving activity log: {e}")
+        try:
+            db.rollback()
+        except Exception as rollback_exc:
+            logger.warning("[OFFLINE] Activity log rollback failed; discarding broken session: %s", rollback_exc)
+        logger.warning("[OFFLINE] Activity log was not persisted; polling continues: %s", e)
     finally:
         db.close()
 
@@ -333,7 +396,15 @@ def update_or_create_daily_log(db: Session, workspace_id: int, log_date: date, s
 def evaluate_global_streak(db: Session, user_id: str, log_date: date):
     from datetime import timedelta
     workspaces = db.query(models.Workspace).filter(models.Workspace.user_id == user_id).all()
+    stats = db.query(models.UserStats).filter(models.UserStats.user_id == user_id).first()
+    if not stats:
+        stats = models.UserStats(user_id=user_id, current_global_streak=0, longest_global_streak=0)
+        db.add(stats)
+        db.flush()
+
     if not workspaces:
+        stats.current_global_streak = 0
+        stats.last_global_perfect_date = None
         return
 
     all_met = True
@@ -354,14 +425,11 @@ def evaluate_global_streak(db: Session, user_id: str, log_date: date):
             all_met = False
             break
 
-    if active_count > 0 and all_met:
-        stats = db.query(models.UserStats).filter(models.UserStats.user_id == user_id).first()
-        if not stats:
-            stats = models.UserStats(user_id=user_id, current_global_streak=0, longest_global_streak=0)
-            db.add(stats)
-            db.commit()
-            db.refresh(stats)
+    if active_count == 0 or not all_met:
+        stats.current_global_streak = 0
+        return
 
+    if active_count > 0 and all_met:
         yesterday = log_date - timedelta(days=1)
         if stats.last_global_perfect_date == yesterday:
             stats.current_global_streak += 1
@@ -372,7 +440,6 @@ def evaluate_global_streak(db: Session, user_id: str, log_date: date):
             stats.longest_global_streak = stats.current_global_streak
 
         stats.last_global_perfect_date = log_date
-        db.commit()
 
 
 def build_user_performance_matrix(db: Session, user_id: str) -> dict:
@@ -398,6 +465,9 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
     longest_global_streak = user_stats.longest_global_streak if user_stats else 0
 
     if not workspaces:
+        if user_stats and user_stats.current_global_streak > 0:
+            user_stats.current_global_streak = 0
+            db.commit()
         return {
             "global_summary": {
                 "workspaces_cleared_today": 0,
@@ -411,7 +481,7 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
                 "focus_purity_pct": 0.0,
                 "today_distractions_count": 0,
                 "daily_verdict": "Not Started Today",
-                "current_global_streak": current_global_streak,
+                "current_global_streak": 0,
                 "longest_global_streak": longest_global_streak,
             },
             "workspaces_matrix": []
@@ -421,8 +491,11 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
 
     # Pre-fetch past 14 days daily logs
     past_14d = today - timedelta(days=14)
-    daily_logs = db.query(models.DailyWorkspaceLog).filter(
+    daily_logs = db.query(models.DailyWorkspaceLog).join(
+        models.Workspace, models.DailyWorkspaceLog.workspace_id == models.Workspace.id
+    ).filter(
         models.DailyWorkspaceLog.workspace_id.in_(ws_ids),
+        models.DailyWorkspaceLog.workspace_id.isnot(None),
         models.DailyWorkspaceLog.date >= past_14d
     ).all()
 
@@ -437,8 +510,11 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
         models.Session.workspace_id,
         models.Session.start_time,
         models.Session.duration,
+    ).join(
+        models.Workspace, models.Session.workspace_id == models.Workspace.id
     ).filter(
         models.Session.workspace_id.in_(ws_ids),
+        models.Session.workspace_id.isnot(None),
         models.Session.session_type == "FOCUS",
         models.Session.status.in_(["COMPLETED", "PARTIAL"]),
         models.Session.start_time >= buffer_start,
@@ -464,8 +540,11 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
     all_time_totals = db.query(
         models.DailyWorkspaceLog.workspace_id,
         func.coalesce(func.sum(models.DailyWorkspaceLog.minutes_logged), 0)
+    ).join(
+        models.Workspace, models.DailyWorkspaceLog.workspace_id == models.Workspace.id
     ).filter(
-        models.DailyWorkspaceLog.workspace_id.in_(ws_ids)
+        models.DailyWorkspaceLog.workspace_id.in_(ws_ids),
+        models.DailyWorkspaceLog.workspace_id.isnot(None)
     ).group_by(models.DailyWorkspaceLog.workspace_id).all()
     all_time_workspace_minutes = {wid: total_m for wid, total_m in all_time_totals}
 
@@ -491,8 +570,11 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
         models.ActivityLog.app_name,
         models.ActivityLog.window_title,
         func.count(models.ActivityLog.id).label("cnt")
+    ).join(
+        models.Workspace, models.ActivityLog.workspace_id == models.Workspace.id
     ).filter(
         models.ActivityLog.workspace_id.in_(ws_ids),
+        models.ActivityLog.workspace_id.isnot(None),
         models.ActivityLog.is_focused == 0
     ).group_by(
         models.ActivityLog.workspace_id,
@@ -745,10 +827,10 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
         today_distracted_secs = float(distracted_ticks * 5.0)
 
     if today_focus_secs > 0:
-        focus_purity_pct = round((today_focus_secs / max(1.0, today_focus_secs + today_distracted_secs)) * 100.0, 1)
+        focus_purity_pct = focus_purity_percent(today_focus_secs, today_distracted_secs)
     elif today_logged_minutes > 0:
         focus_mins_sec = today_logged_minutes * 60.0
-        focus_purity_pct = round((focus_mins_sec / max(1.0, focus_mins_sec + today_distracted_secs)) * 100.0, 1)
+        focus_purity_pct = focus_purity_percent(focus_mins_sec, today_distracted_secs)
     elif (focused_ticks + distracted_ticks) > 0:
         total_ticks = focused_ticks + distracted_ticks
         focus_purity_pct = round((focused_ticks / max(1, total_ticks)) * 100.0, 1)

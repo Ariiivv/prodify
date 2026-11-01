@@ -68,7 +68,7 @@ export const Drawer: React.FC<DrawerProps> = ({
             animate="visible"
             exit="exit"
             onClick={onClose}
-            className="fixed inset-0 bg-black/20 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
             aria-hidden="true"
           />
 
@@ -81,19 +81,19 @@ export const Drawer: React.FC<DrawerProps> = ({
             role="dialog"
             aria-modal="true"
             aria-label={title || 'Panel'}
-            className={`relative z-10 flex h-full w-full ${widthClasses} flex-col border-l border-line bg-card shadow-xl ${className}`}
+            className={`relative z-10 flex h-full w-full ${widthClasses} flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl ${className}`}
           >
             {/* Header */}
             {(title || subtitle) && (
-              <div className="flex items-center justify-between border-b border-line px-6 py-5">
+              <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-5">
                 <div className="min-w-0 pr-4">
                   {title && (
-                    <h2 className="text-lg font-semibold tracking-tight text-ink font-body">
+                    <h2 className="text-lg font-semibold tracking-tight text-zinc-100 font-body">
                       {title}
                     </h2>
                   )}
                   {subtitle && (
-                    <p className="mt-0.5 text-xs text-muted font-body">
+                    <p className="mt-0.5 text-xs text-zinc-400 font-body">
                       {subtitle}
                     </p>
                   )}

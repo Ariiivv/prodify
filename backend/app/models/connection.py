@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, event
+from sqlite3 import Connection as SQLite3Connection
 from sqlalchemy.orm import sessionmaker
 from .schemas import Base
 import logging
@@ -41,6 +42,14 @@ else:
         connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
     )
 
+# Enforce foreign key constraints in SQLite
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if isinstance(dbapi_connection, SQLite3Connection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
@@ -66,9 +75,16 @@ def create_db_and_tables():
         ("activity_logs", "session_index_today", "INTEGER"),
         ("activity_logs", "minute_into_session", "FLOAT"),
         ("activity_logs", "clock_hour", "INTEGER"),
+        ("activity_logs", "similarity_score", "FLOAT"),
         # Session columns
+        ("sessions", "user_id", "VARCHAR"),
         ("sessions", "session_index_today", "INTEGER NOT NULL DEFAULT 1"),
         ("sessions", "track_day_number", "INTEGER NOT NULL DEFAULT 1"),
+        # Workspace columns
+        ("workspaces", "description", "VARCHAR"),
+        # UserStats columns
+        ("user_stats", "momentum_score", "FLOAT NOT NULL DEFAULT 0.0"),
+        ("user_stats", "last_evaluated_date", "DATE"),
         # TelemetryLog columns
         ("telemetry_logs", "track_day_number", "INTEGER"),
         ("telemetry_logs", "session_index_today", "INTEGER"),

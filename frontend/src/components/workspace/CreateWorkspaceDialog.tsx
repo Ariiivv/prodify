@@ -154,7 +154,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
         onClick={() => setOpen(true)}
         className={
           variant === 'primary'
-            ? "rounded-xl bg-blue-500 hover:bg-blue-500/80 text-black text-xs font-semibold px-4 py-2"
+            ? "rounded-xl bg-white hover:bg-zinc-200 text-black text-xs font-semibold px-4 py-2 transition-colors shadow-sm"
             : "border border-zinc-800 text-white bg-transparent hover:bg-zinc-900 px-4 py-2 text-xs rounded-xl"
         }
       >
@@ -454,7 +454,7 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                   <Button
                     type="submit"
                     disabled={!name.trim() || isSubmitting}
-                    className="w-full bg-blue-500 hover:bg-blue-500/90 text-black font-bold rounded-xl h-11"
+                    className="w-full bg-white hover:bg-zinc-200 text-black font-bold rounded-xl h-11 transition-colors shadow-sm"
                   >
                     {isSubmitting ? "Creating..." : "Create Workspace"}
                   </Button>

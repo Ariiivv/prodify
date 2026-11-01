@@ -47,7 +47,7 @@ export const ScoreBadge: React.FC<ScoreBadgeProps> = ({
 
   return (
     <div
-      className={`inline-flex flex-col justify-between rounded-xl border border-line bg-card text-ink transition-all hover:border-black/20 ${sizeConfig.container} ${className}`}
+      className={`inline-flex flex-col justify-between rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-100 transition-all hover:border-zinc-700 ${sizeConfig.container} ${className}`}
     >
       {label && (
         <span className={`font-mono text-muted uppercase tracking-wider mb-1 ${sizeConfig.label}`}>

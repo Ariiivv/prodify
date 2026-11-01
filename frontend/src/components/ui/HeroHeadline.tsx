@@ -28,7 +28,7 @@ export const HeroHeadline: React.FC<HeroHeadlineProps> = ({
 
   if (prefersReduced) {
     return (
-      <h1 className={`font-display font-normal text-ink ${sizeClasses} ${className}`}>
+      <h1 className={`font-display font-normal text-zinc-100 ${sizeClasses} ${className}`}>
         {children}
       </h1>
     );
@@ -39,7 +39,7 @@ export const HeroHeadline: React.FC<HeroHeadlineProps> = ({
       variants={staggerContainerVariants}
       initial="hidden"
       animate="visible"
-      className={`font-display font-normal text-ink ${sizeClasses} ${className}`}
+      className={`font-display font-normal text-zinc-100 ${sizeClasses} ${className}`}
     >
       {React.Children.map(children, (child, idx) => {
         // If string, split words so they reveal from a mask

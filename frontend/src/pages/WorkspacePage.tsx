@@ -418,52 +418,52 @@ interface ActiveDistractionInfo {
     },
   });
 
-  const handleReturnToFocus = useCallback(async () => {
-    try {
-      if (wsId) {
-        await fetch(`${API_BASE}/api/telemetry/reset-focus`, {
-          method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ workspace_id: wsId }),
-        });
-      }
-    } catch (e) {
-      console.error('Failed to reset focus state:', e);
-    }
+  const handleReturnToFocus = useCallback(() => {
+    // Commit the interaction locally first so offline mode never freezes the modal.
     setActiveDistraction(null);
     useTimerStore.getState().resumeFocus();
+
+    if (wsId) {
+      void fetch(`${API_BASE}/api/telemetry/reset-focus`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ workspace_id: wsId }),
+      }).catch(() => {});
+    }
   }, [wsId]);
 
-  const handleAllowForSession = useCallback(async () => {
+  const handleAllowForSession = useCallback(() => {
     toast.success("Allowed for this session", { description: "Resuming focus now." });
+    const distraction = activeDistraction;
+    const appName = distraction?.rawAppName || distraction?.cleanAppName || '';
+    const windowTitle = distraction?.rawWindowTitle || distraction?.contentTitle || '';
+
+    // Clear the modal and restore the local timer immediately. The server sync
+    // is best-effort and must never block the desktop focus loop.
     markAsRelevant();
-    try {
-      if (wsId) {
-        const appName = activeDistraction?.rawAppName || activeDistraction?.cleanAppName || '';
-        const windowTitle = activeDistraction?.rawWindowTitle || activeDistraction?.contentTitle || '';
-        if (appName || windowTitle) {
-          await fetch(`${API_BASE}/api/telemetry/allow-window`, {
-            method: 'POST',
-            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-              workspace_id: wsId,
-              app_name: appName,
-              window_title: windowTitle,
-            }),
-          });
-        }
-        await fetch(`${API_BASE}/api/telemetry/reset-focus`, {
+    setActiveDistraction(null);
+    const store = useTimerStore.getState();
+    store.decrementDistraction();
+    store.resumeFocus();
+
+    if (wsId) {
+      if (appName || windowTitle) {
+        void fetch(`${API_BASE}/api/telemetry/allow-window`, {
           method: 'POST',
           headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ workspace_id: wsId }),
-        });
+          body: JSON.stringify({
+            workspace_id: wsId,
+            app_name: appName,
+            window_title: windowTitle,
+          }),
+        }).catch(() => {});
       }
-    } catch (e) {
-      console.error('Failed to reset focus state:', e);
+      void fetch(`${API_BASE}/api/telemetry/reset-focus`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ workspace_id: wsId }),
+      }).catch(() => {});
     }
-    setActiveDistraction(null);
-    useTimerStore.getState().decrementDistraction();
-    useTimerStore.getState().resumeFocus();
   }, [markAsRelevant, wsId, activeDistraction]);
 
   const isTabDistracted = !isTabFocused;
@@ -780,7 +780,7 @@ interface ActiveDistractionInfo {
 
   return (
     <motion.div
-      className="min-h-screen p-6 md:p-10 max-w-5xl mx-auto text-[#f4f4f5]"
+      className="p-6 md:p-10 max-w-5xl mx-auto text-zinc-100"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
@@ -794,7 +794,7 @@ interface ActiveDistractionInfo {
           <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-amber-400">Focus Tracking Unavailable</p>
-            <p className="text-xs text-[#a1a1aa] mt-0.5">
+            <p className="text-xs text-zinc-400 mt-0.5">
               {cameraErrorMessage || "Camera is not accessible. The timer will still work, but distraction detection is disabled."}
             </p>
           </div>
@@ -809,12 +809,12 @@ interface ActiveDistractionInfo {
 
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-10">
         <div className="flex items-center gap-4">
-          <Link to="/" className="w-10 h-10 rounded-xl border border-[#27272a] bg-[#202024] flex items-center justify-center text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#27272a] transition-all">
+          <Link to="/" className="w-10 h-10 rounded-xl border border-zinc-800/80 bg-zinc-900/60 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-all">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-[#f4f4f5]">{workspace.name}</h1>
-            <p className="text-xs text-[#a1a1aa]">
+            <h1 className="text-xl md:text-2xl font-bold text-zinc-100">{workspace.name}</h1>
+            <p className="text-xs text-zinc-400">
               {workspace.category === 'casual' ? '⚡ Quick Work' : 
                workspace.category === 'sprint' ? '🎯 Sprint Track' : 
                '🌱 Mastery Track'} 
@@ -831,13 +831,13 @@ interface ActiveDistractionInfo {
                 <button 
                   onClick={() => setIsManualOverride(!isManualOverride)}
                   className={`px-3.5 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                    isManualOverride ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' : 'bg-[#202024] border-[#27272a] text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#27272a]'
+                    isManualOverride ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
                   }`}
                 >
                   {isManualOverride ? "Tracking Paused (Manual)" : "Tracking Active"}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[250px] text-center bg-[#202024] border-[#27272a] text-[#f4f4f5]">
+              <TooltipContent side="bottom" className="max-w-[250px] text-center bg-zinc-900/60 border-zinc-800/80 text-zinc-100">
                 Prodify is actively monitoring your window activity, keyboard input, and camera (if enabled) to track your focus.
               </TooltipContent>
             </Tooltip>
@@ -856,7 +856,7 @@ interface ActiveDistractionInfo {
                     <span className="hidden sm:inline">Debrief</span>
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="bg-[#202024] border-[#27272a] text-[#f4f4f5]">
+                <TooltipContent side="bottom" className="bg-zinc-900/60 border-zinc-800/80 text-zinc-100">
                   AI Coach Sprint Completion Debrief & Memory Review
                 </TooltipContent>
               </Tooltip>
@@ -874,7 +874,7 @@ interface ActiveDistractionInfo {
                       ? 'bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25'
                       : workspace?.status === 'completed'
                         ? 'bg-sky-500/15 border-sky-500/30 text-sky-400 hover:bg-sky-500/25'
-                        : 'bg-[#202024] border-[#27272a] text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#27272a]'
+                        : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
                   }`}
                 >
                   {workspace?.status === 'paused' ? (
@@ -889,13 +889,13 @@ interface ActiveDistractionInfo {
                     </>
                   ) : (
                     <>
-                      <Pause className="w-3.5 h-3.5 text-[#a1a1aa]" />
+                      <Pause className="w-3.5 h-3.5 text-zinc-400" />
                       <span className="hidden sm:inline">Pause Track</span>
                     </>
                   )}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="bg-[#202024] border-[#27272a] text-[#f4f4f5]">
+              <TooltipContent side="bottom" className="bg-zinc-900/60 border-zinc-800/80 text-zinc-100">
                 {workspace?.status === 'paused' ? "Resume this track to reactivate daily quotas" : "Pause this track to temporarily stop daily requirements without breaking streaks"}
               </TooltipContent>
             </Tooltip>
@@ -904,7 +904,7 @@ interface ActiveDistractionInfo {
           <button 
             onClick={() => setIsEditModalOpen(true)}
             aria-label="Edit Workspace Settings"
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#202024] border border-[#27272a] text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#27272a] transition-colors"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900/60 border border-zinc-800/80 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
             title="Edit Workspace & Timer Settings"
           >
             <Settings className="w-5 h-5" />
@@ -946,18 +946,18 @@ interface ActiveDistractionInfo {
                     setIntentInput(workspace?.current_goal || (typeof workspace?.focus_keywords === 'string' ? workspace.focus_keywords : '') || '');
                     setIsEditingIntent(true);
                   }}
-                  className="group flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#202024] border border-[#27272a] hover:border-zinc-700 hover:bg-[#27272a] transition-all cursor-pointer shadow-sm max-w-xl text-left"
+                  className="group flex items-center gap-2.5 px-4 py-2 rounded-full bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800 transition-all cursor-pointer shadow-sm max-w-xl text-left"
                 >
                   <div className="w-5 h-5 rounded-full bg-sky-500/10 flex items-center justify-center shrink-0">
                     <Target className="w-3.5 h-3.5 text-sky-400" />
                   </div>
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[11px] font-mono uppercase tracking-wider text-[#a1a1aa] shrink-0 font-semibold">Intent Guard:</span>
-                    <span className="text-xs text-[#f4f4f5] font-medium truncate max-w-[260px] sm:max-w-[340px]">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 shrink-0 font-semibold">Intent Guard:</span>
+                    <span className="text-xs text-zinc-100 font-medium truncate max-w-[260px] sm:max-w-[340px]">
                       {workspace?.current_goal || workspace?.focus_keywords || 'Click to declare session goal & allowed tools...'}
                     </span>
                   </div>
-                  <Pencil className="w-3 h-3 text-[#a1a1aa] opacity-60 group-hover:opacity-100 group-hover:text-sky-400 transition-all shrink-0 ml-1" />
+                  <Pencil className="w-3 h-3 text-zinc-400 opacity-60 group-hover:opacity-100 group-hover:text-sky-400 transition-all shrink-0 ml-1" />
                 </button>
               ) : (
                 <form
@@ -965,7 +965,7 @@ interface ActiveDistractionInfo {
                     e.preventDefault();
                     handleSaveIntent();
                   }}
-                  className="flex items-center gap-2 max-w-xl w-full px-3 py-1.5 bg-[#202024] border border-zinc-700 rounded-full shadow-lg backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
+                  className="flex items-center gap-2 max-w-xl w-full px-3 py-1.5 bg-zinc-900/60 border border-zinc-700 rounded-full shadow-lg backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
                 >
                   <Target className="w-4 h-4 text-sky-400 shrink-0 ml-1" />
                   <input
@@ -974,7 +974,7 @@ interface ActiveDistractionInfo {
                     value={intentInput}
                     onChange={(e) => setIntentInput(e.target.value)}
                     placeholder="e.g. VS Code React frontend, documentation, Linear tasks..."
-                    className="flex-1 bg-transparent border-none text-xs text-[#f4f4f5] focus:outline-none focus:ring-0 px-2 py-0.5 placeholder:text-zinc-600"
+                    className="flex-1 bg-transparent border-none text-xs text-zinc-100 focus:outline-none focus:ring-0 px-2 py-0.5 placeholder:text-zinc-600"
                   />
                   <button
                     type="submit"
@@ -987,7 +987,7 @@ interface ActiveDistractionInfo {
                   <button
                     type="button"
                     onClick={() => setIsEditingIntent(false)}
-                    className="w-7 h-7 rounded-full hover:bg-[#27272a] text-[#a1a1aa] hover:text-[#f4f4f5] flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                    className="w-7 h-7 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
                     title="Cancel"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -998,22 +998,22 @@ interface ActiveDistractionInfo {
 
             <div className="mb-8 flex flex-col items-center w-full">
               {/* Pomofocus Mode Pills */}
-                <div className="flex items-center gap-1.5 mb-6 bg-[#202024] p-1.5 rounded-full border border-[#27272a]">
+                <div className="flex items-center gap-1.5 mb-6 bg-zinc-900/60 p-1.5 rounded-full border border-zinc-800/80">
                   <button 
                     onClick={() => switchMode('FOCUS')} 
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-zinc-800 text-[#f4f4f5] shadow-sm border border-zinc-700/60' : 'text-[#a1a1aa] hover:text-[#f4f4f5]'}`}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60' : 'text-zinc-400 hover:text-zinc-100'}`}
                   >
                     Focus
                   </button>
                   <button 
                     onClick={() => switchMode('SHORT_BREAK')} 
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-zinc-800 text-[#f4f4f5] shadow-sm border border-zinc-700/60' : 'text-[#a1a1aa] hover:text-[#f4f4f5]'}`}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60' : 'text-zinc-400 hover:text-zinc-100'}`}
                   >
                     Short Break
                   </button>
                   <button 
                     onClick={() => switchMode('LONG_BREAK')} 
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-zinc-800 text-[#f4f4f5] shadow-sm border border-zinc-700/60' : 'text-[#a1a1aa] hover:text-[#f4f4f5]'}`}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60' : 'text-zinc-400 hover:text-zinc-100'}`}
                   >
                     Long Break
                   </button>
@@ -1051,7 +1051,7 @@ interface ActiveDistractionInfo {
                     
                     return (
                       <>
-                        <span className="text-xs font-mono font-semibold text-[#a1a1aa] tracking-wider uppercase mb-2">
+                        <span className="text-xs font-mono font-semibold text-zinc-400 tracking-wider uppercase mb-2">
                           Session {displaySessionNumber} of {totalSessionsForDay} today
                         </span>
                         <div className="flex gap-2 flex-wrap justify-center max-w-[280px]">
@@ -1060,7 +1060,7 @@ interface ActiveDistractionInfo {
                             return (
                               <div 
                                 key={i} 
-                                className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-[#f4f4f5]' : 'bg-[#27272a]'}`} 
+                                className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-zinc-100' : 'bg-zinc-800'}`} 
                               />
                             );
                           })}
@@ -1124,14 +1124,14 @@ interface ActiveDistractionInfo {
                   <motion.div
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-[#202024] border border-[#27272a] text-xs shadow-sm backdrop-blur-md"
+                    className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-zinc-900/60 border border-zinc-800/80 text-xs shadow-sm backdrop-blur-md"
                   >
-                    <span className="flex items-center gap-2 font-medium text-[#f4f4f5]">
-                      <span className="inline-flex rounded-full h-2 w-2 bg-[#a1a1aa]"></span>
+                    <span className="flex items-center gap-2 font-medium text-zinc-100">
+                      <span className="inline-flex rounded-full h-2 w-2 bg-zinc-400"></span>
                       Ready • Intent Guard Armed
                     </span>
                     {sessionIntent && (
-                      <span className="text-[11px] font-medium text-[#a1a1aa] bg-[#18181b] px-2.5 py-0.5 rounded-full truncate max-w-[260px] italic border border-[#27272a]" title={sessionIntent}>
+                      <span className="text-[11px] font-medium text-zinc-400 bg-zinc-950 px-2.5 py-0.5 rounded-full truncate max-w-[260px] italic border border-zinc-800/80" title={sessionIntent}>
                         "{sessionIntent}"
                       </span>
                     )}
@@ -1185,7 +1185,7 @@ interface ActiveDistractionInfo {
                   </div>
                   <div>
                     <h4 className="text-sm font-semibold text-amber-400">Poor Lighting / Face Not Visible</h4>
-                    <p className="text-xs text-[#a1a1aa] mt-1 leading-relaxed">
+                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
                       The camera cannot clearly see your face. It may be too dark, or you might be out of frame. Please move to a well-lit area to start your session.
                     </p>
                   </div>
@@ -1216,7 +1216,7 @@ interface ActiveDistractionInfo {
               <motion.div 
                 initial={{ opacity: 0, scale: 0.96, y: 8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                className="w-full max-w-lg bg-[#202024] border border-[#27272a] rounded-xl p-6 md:p-8 shadow-2xl relative overflow-hidden"
+                className="w-full max-w-lg bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-6 md:p-8 shadow-2xl relative overflow-hidden"
               >
                 {/* Header: Badge + Title + Detected Pill */}
                 <div className="flex items-center justify-between gap-3 mb-5">
@@ -1224,7 +1224,7 @@ interface ActiveDistractionInfo {
                     <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0">
                       <AlertTriangle className="w-4 h-4" />
                     </div>
-                    <h3 className="text-lg font-bold text-[#f4f4f5] tracking-tight">Focus Interrupted</h3>
+                    <h3 className="text-lg font-bold text-zinc-100 tracking-tight">Focus Interrupted</h3>
                   </div>
 
                   {(activeDistraction?.platformName || activeDistraction?.cleanAppName) && (
@@ -1238,14 +1238,14 @@ interface ActiveDistractionInfo {
                 
                 {/* Detected Activity Title */}
                 <div className="mb-4">
-                  <p className="text-[11px] text-[#a1a1aa] uppercase tracking-wider font-semibold mb-1">Detected Activity</p>
-                  <p className="text-sm font-semibold text-[#f4f4f5] leading-snug break-words">
+                  <p className="text-[11px] text-zinc-400 uppercase tracking-wider font-semibold mb-1">Detected Activity</p>
+                  <p className="text-sm font-semibold text-zinc-100 leading-snug break-words">
                     {activeDistraction?.contentTitle || activeDistraction?.rawWindowTitle || currentTabTitle || 'External application'}
                   </p>
                 </div>
                 
                 {/* AI Coach Callout Box: Full semantic reason */}
-                <div className="mb-4 bg-[#18181b] border border-[#27272a] rounded-xl p-3.5">
+                <div className="mb-4 bg-zinc-950 border border-zinc-800/80 rounded-xl p-3.5">
                   <div className="flex items-center gap-2 mb-1.5">
                     <Brain className="w-4 h-4 text-rose-400" />
                     <p className="text-xs font-semibold text-rose-300 uppercase tracking-wider">Why Prodify Paused Your Session</p>
@@ -1257,8 +1257,8 @@ interface ActiveDistractionInfo {
 
                 {/* Comparison Box: Declared Goal */}
                 {sessionIntent && (
-                  <div className="mb-6 bg-[#18181b] border border-[#27272a] rounded-xl p-3.5">
-                    <p className="text-[11px] font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Your Stated Goal</p>
+                  <div className="mb-6 bg-zinc-950 border border-zinc-800/80 rounded-xl p-3.5">
+                    <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">Your Stated Goal</p>
                     <p className="text-xs font-medium text-zinc-200 italic">"{sessionIntent}"</p>
                   </div>
                 )}
@@ -1267,13 +1267,13 @@ interface ActiveDistractionInfo {
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <button 
                     onClick={handleReturnToFocus}
-                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-[#f4f4f5] border border-zinc-700 font-medium py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
+                    className="flex-1 bg-white hover:bg-zinc-200 text-black font-semibold py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow-sm"
                   >
                     Return to Focus
                   </button>
                   <button 
                     onClick={handleAllowForSession}
-                    className="flex-1 bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#a1a1aa] hover:text-[#f4f4f5] font-medium py-2 px-4 rounded-xl transition-all text-xs flex items-center justify-center gap-2"
+                    className="flex-1 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-400 hover:text-zinc-100 font-medium py-2 px-4 rounded-xl transition-all text-xs flex items-center justify-center gap-2"
                   >
                     Allow for This Session
                   </button>
@@ -1285,14 +1285,14 @@ interface ActiveDistractionInfo {
 
         <motion.div variants={columnVariants} className="space-y-4">
           {!isDetectionEnabled && (
-            <div className="rounded-xl border border-[#27272a] p-4 bg-[#202024]">
+            <div className="rounded-xl border border-zinc-800/80 p-4 bg-zinc-900/60">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
                   <CameraOff className="w-4 h-4 text-amber-500" />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-[#f4f4f5]">Tracking Disabled</p>
-                  <p className="text-[10px] text-[#a1a1aa]">
+                  <p className="text-xs font-semibold text-zinc-100">Tracking Disabled</p>
+                  <p className="text-[10px] text-zinc-400">
                     {isManualOverride ? 'Manual override active' : 'Whitelisted site'}
                   </p>
                 </div>
@@ -1301,9 +1301,9 @@ interface ActiveDistractionInfo {
           )}
 
           {(isDetectionEnabled && workspace.camera_enabled) && (
-            <div className="rounded-xl border border-[#27272a] overflow-hidden bg-[#202024]/80 backdrop-blur-md">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-[#27272a] bg-[#202024]/40">
-                <span className="text-xs font-medium text-[#a1a1aa] flex items-center gap-1.5">
+            <div className="rounded-xl border border-zinc-800/80 overflow-hidden bg-zinc-900/60 backdrop-blur-md">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/80 bg-zinc-950/40">
+                <span className="text-xs font-medium text-zinc-400 flex items-center gap-1.5">
                   <Webcam className="w-3.5 h-3.5" />
                   Camera Feed
                 </span>
@@ -1342,7 +1342,7 @@ interface ActiveDistractionInfo {
                   isTimerRunning={timerState.currentState === 'FOCUS_RUNNING'}
                 />
                 {cameraStatus === 'disabled' && (
-                  <div className="flex flex-col items-center justify-center py-6 text-[#a1a1aa]">
+                  <div className="flex flex-col items-center justify-center py-6 text-zinc-400">
                     <CameraOff className="w-8 h-8 mb-2 opacity-50" />
                     <p className="text-xs">Camera not initialized</p>
                   </div>
@@ -1369,9 +1369,9 @@ interface ActiveDistractionInfo {
             {/* ── Compact 2×2 Key Metrics Grid (Folded Live Stats) ── */}
             <div className="grid grid-cols-2 gap-2 mb-3">
               {/* 1. Pace or Logged Today */}
-              <div className="flex flex-col justify-between bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
+              <div className="flex flex-col justify-between bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
                 <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
                     {workspace?.category !== 'casual' ? 'Pace' : 'Logged'}
                   </span>
                   <MetricInfoPopover
@@ -1382,7 +1382,7 @@ interface ActiveDistractionInfo {
                   />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[#f4f4f5] font-mono font-bold text-sm leading-snug">
+                  <span className="text-zinc-100 font-mono font-bold text-sm leading-snug">
                     {workspace?.category !== 'casual' ? (
                       metrics?.pace ? (
                         (() => {
@@ -1407,27 +1407,27 @@ interface ActiveDistractionInfo {
                               }>
                                 {effectiveLabel}
                               </span>
-                              {effectiveScore != null && <span className="text-[#a1a1aa] text-[10px] ml-1">({Math.round(effectiveScore)})</span>}
+                              {effectiveScore != null && <span className="text-zinc-400 text-[10px] ml-1">({Math.round(effectiveScore)})</span>}
                             </>
                           );
                         })()
                       ) : (
-                        <span className="text-[#a1a1aa]">—</span>
+                        <span className="text-zinc-400">—</span>
                       )
                     ) : (
                       metrics ? `${Math.floor(metrics.today_actual_minutes / 60)}h ${Math.round(metrics.today_actual_minutes % 60)}m` : '—'
                     )}
                   </span>
-                  <span className="text-[10px] font-mono mt-0.5 text-[#a1a1aa] truncate">
+                  <span className="text-[10px] font-mono mt-0.5 text-zinc-400 truncate">
                     {metrics?.workspace_streak_current ? `${metrics.workspace_streak_current}d streak` : 'Streak active'}
                   </span>
                 </div>
               </div>
 
               {/* 2. Deep Work Ratio (Reflects Cognitive Penalty) */}
-              <div className="flex flex-col justify-between bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
+              <div className="flex flex-col justify-between bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
                 <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
                     Deep Flow
                   </span>
                   <MetricInfoPopover
@@ -1442,16 +1442,16 @@ interface ActiveDistractionInfo {
                   <span className="text-emerald-400 font-mono font-bold text-sm">
                     {liveDeepFlowRatio != null ? `${liveDeepFlowRatio}%` : '—'}
                   </span>
-                  <span className={`text-[10px] font-mono mt-0.5 truncate ${todayDistractions > 0 ? 'text-rose-400 font-medium' : 'text-[#a1a1aa]'}`}>
+                  <span className={`text-[10px] font-mono mt-0.5 truncate ${todayDistractions > 0 ? 'text-rose-400 font-medium' : 'text-zinc-400'}`}>
                     {todayDistractions} distraction{todayDistractions === 1 ? '' : 's'} today
                   </span>
                 </div>
               </div>
 
               {/* 3. Today's Quota / Remaining */}
-              <div className="flex flex-col justify-between bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
+              <div className="flex flex-col justify-between bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
                 <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
                     Today's Quota
                   </span>
                   <MetricInfoPopover
@@ -1462,7 +1462,7 @@ interface ActiveDistractionInfo {
                   />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[#f4f4f5] font-mono font-bold text-sm">
+                  <span className="text-zinc-100 font-mono font-bold text-sm">
                     {metrics ? (
                       (() => {
                         const effectiveTarget = workspace?.category === 'mastery'
@@ -1474,10 +1474,10 @@ interface ActiveDistractionInfo {
                         return `${totalSessions} session${totalSessions !== 1 ? 's' : ''} today`;
                       })()
                     ) : (
-                      <span className="text-[#a1a1aa]">—</span>
+                      <span className="text-zinc-400">—</span>
                     )}
                   </span>
-                  <span className="text-[10px] font-mono mt-0.5 text-[#a1a1aa] truncate">
+                  <span className="text-[10px] font-mono mt-0.5 text-zinc-400 truncate">
                     {todayCompletedSessions} session{todayCompletedSessions === 1 ? '' : 's'} ({todayLoggedMinutes}m) today
                   </span>
                 </div>
@@ -1494,7 +1494,7 @@ interface ActiveDistractionInfo {
                   ? 'bg-rose-500/10 border-rose-500/30'
                   : isModFatigue
                     ? 'bg-amber-500/10 border-amber-500/30'
-                    : 'bg-[#202024]/80 border border-[#27272a]';
+                    : 'bg-zinc-900/60 border border-zinc-800/80';
                 const fatigueLabel = isHighFatigue
                   ? 'High Fatigue'
                   : isModFatigue
@@ -1504,7 +1504,7 @@ interface ActiveDistractionInfo {
                   <div className={`flex flex-col justify-between p-3 rounded-xl border ${tileBorder} hover:border-zinc-700 transition-colors shadow-sm`}>
                     <div className="flex items-center gap-1 mb-1.5">
                       <HeartPulse className={`w-3 h-3 ${iconColor}`} />
-                      <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">
+                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
                         Vitality
                       </span>
                       <MetricInfoPopover
@@ -1519,7 +1519,7 @@ interface ActiveDistractionInfo {
                       <span className={`font-mono font-bold text-sm ${vitalityColor}`}>
                         {vitalityPct}%
                       </span>
-                      <span className="text-[10px] font-mono mt-0.5 text-[#a1a1aa] truncate">
+                      <span className="text-[10px] font-mono mt-0.5 text-zinc-400 truncate">
                         {fatigueLabel}
                       </span>
                     </div>
@@ -1585,11 +1585,11 @@ interface ActiveDistractionInfo {
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-2xl bg-[#202024] border border-[#27272a] rounded-xl p-6 sm:p-8 shadow-2xl overflow-hidden"
+              className="relative w-full max-w-2xl bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-6 sm:p-8 shadow-2xl overflow-hidden"
             >
               <button
                 onClick={() => setShowDebrief(false)}
-                className="absolute top-4 right-4 p-2 text-[#a1a1aa] hover:text-[#f4f4f5] rounded-lg hover:bg-[#27272a] transition-colors cursor-pointer"
+                className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-zinc-100 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
@@ -1598,7 +1598,7 @@ interface ActiveDistractionInfo {
               {debriefLoading ? (
                 <div className="flex flex-col items-center justify-center py-16 space-y-4">
                   <div className="w-10 h-10 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-                  <p className="text-xs font-mono text-[#a1a1aa] animate-pulse">
+                  <p className="text-xs font-mono text-zinc-400 animate-pulse">
                     Synthesizing Sprint Debrief & Reviewing Coach Memory...
                   </p>
                 </div>
@@ -1613,7 +1613,7 @@ interface ActiveDistractionInfo {
                       <span className="text-[11px] font-mono uppercase tracking-[0.2em] font-bold text-amber-400">
                         Mission Debrief
                       </span>
-                      <h2 className="text-xl sm:text-2xl font-bold text-[#f4f4f5] tracking-tight mt-0.5">
+                      <h2 className="text-xl sm:text-2xl font-bold text-zinc-100 tracking-tight mt-0.5">
                         {workspace.name}
                       </h2>
                     </div>
@@ -1627,38 +1627,38 @@ interface ActiveDistractionInfo {
 
                   {/* 4 Stat KPIs */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-[#18181b] border border-[#27272a] p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">Focus Hours</span>
-                      <span className="text-base sm:text-lg font-mono font-bold text-[#f4f4f5] mt-0.5">
+                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
+                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Focus Hours</span>
+                      <span className="text-base sm:text-lg font-mono font-bold text-zinc-100 mt-0.5">
                         {debriefData?.total_focus_hours ?? 0}h
                       </span>
-                      <span className="text-[10px] text-[#a1a1aa]/80">of {debriefData?.target_hours ?? workspace.target_hours ?? 0}h target</span>
+                      <span className="text-[10px] text-zinc-400/80">of {debriefData?.target_hours ?? workspace.target_hours ?? 0}h target</span>
                     </div>
-                    <div className="bg-[#18181b] border border-[#27272a] p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">Goal Progress</span>
+                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
+                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Goal Progress</span>
                       <span className="text-base sm:text-lg font-mono font-bold text-emerald-400 mt-0.5">
                         {debriefData?.completion_pct ?? 0}%
                       </span>
-                      <span className="text-[10px] text-[#a1a1aa]/80">Total volume</span>
+                      <span className="text-[10px] text-zinc-400/80">Total volume</span>
                     </div>
-                    <div className="bg-[#18181b] border border-[#27272a] p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">Deep Work Purity</span>
+                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
+                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Deep Work Purity</span>
                       <span className="text-base sm:text-lg font-mono font-bold text-sky-400 mt-0.5">
                         {debriefData?.focus_purity ?? 0}%
                       </span>
-                      <span className="text-[10px] text-[#a1a1aa]/80">Flow purity</span>
+                      <span className="text-[10px] text-zinc-400/80">Flow purity</span>
                     </div>
-                    <div className="bg-[#18181b] border border-[#27272a] p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-semibold font-mono">Sessions</span>
-                      <span className="text-base sm:text-lg font-mono font-bold text-[#f4f4f5] mt-0.5">
+                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
+                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Sessions</span>
+                      <span className="text-base sm:text-lg font-mono font-bold text-zinc-100 mt-0.5">
                         {debriefData?.session_count ?? 0}
                       </span>
-                      <span className="text-[10px] text-[#a1a1aa]/80">Completed</span>
+                      <span className="text-[10px] text-zinc-400/80">Completed</span>
                     </div>
                   </div>
 
                   {/* AI Coach Memory Debrief Bubble */}
-                  <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-4 sm:p-5 relative">
+                  <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-4 sm:p-5 relative">
                     <div className="flex items-center gap-2 mb-2 text-xs font-mono font-semibold text-sky-400">
                       <Brain className="w-4 h-4" />
                       <span>AI Performance Coach Memory Debrief</span>
@@ -1675,14 +1675,14 @@ interface ActiveDistractionInfo {
                         setShowDebrief(false);
                         setIsReportOpen(true);
                       }}
-                      className="px-4 py-2 text-xs font-semibold rounded-xl bg-[#18181b] hover:bg-[#27272a] border border-[#27272a] text-[#f4f4f5] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      className="px-4 py-2 text-xs font-semibold rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-100 transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
-                      <ShieldCheck className="w-3.5 h-3.5 text-[#a1a1aa]" />
+                      <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
                       View Analytics
                     </button>
                     <button
                       onClick={() => setShowDebrief(false)}
-                      className="px-5 py-2 text-xs font-semibold rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[#f4f4f5] transition-colors cursor-pointer"
+                      className="px-5 py-2 text-xs font-semibold rounded-xl bg-white hover:bg-zinc-200 text-black transition-colors cursor-pointer shadow-sm"
                     >
                       Continue
                     </button>

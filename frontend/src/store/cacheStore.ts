@@ -83,12 +83,25 @@ interface CacheStoreState {
   fetchWorkspaceMetrics: (id: number, force?: boolean) => Promise<WorkspaceMetrics | null>;
   updateWorkspaceInCache: (workspace: Partial<CachedWorkspace> & { id: number }) => void;
   updateWorkspaceGoal: (id: number, goal: string) => void;
+  deleteWorkspace: (id: number, keepMetrics?: boolean) => Promise<void>;
   removeWorkspaceFromCache: (id: number) => void;
   invalidateAll: () => void;
 }
 
 // In-flight promise map for request deduplication
 const inFlightRequests = new Map<string, Promise<any>>();
+const requestGenerations = new Map<string, number>();
+const requestControllers = new Map<string, AbortController>();
+const deletedWorkspaceIds = new Set<number>();
+
+const nextGeneration = (key: string) => {
+  const generation = (requestGenerations.get(key) ?? 0) + 1;
+  requestGenerations.set(key, generation);
+  return generation;
+};
+
+const isCurrentGeneration = (key: string, generation: number) =>
+  requestGenerations.get(key) === generation;
 
 const DASHBOARD_TTL = 30000; // 30 seconds fresh
 const DETAIL_TTL = 45000;    // 45 seconds fresh
@@ -122,6 +135,10 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
     }
 
     set({ isDashboardFetching: true });
+    const requestGeneration = nextGeneration(flightKey);
+    requestControllers.get(flightKey)?.abort();
+    const controller = new AbortController();
+    requestControllers.set(flightKey, controller);
 
     const fetchPromise = (async () => {
       try {
@@ -133,10 +150,10 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
 
         // Parallel unified fetch
         const [wsRes, metRes, sessRes, perfRes] = await Promise.allSettled([
-          fetch(`${API_BASE}/workspaces`, { headers, cache: 'no-store' }),
-          fetch(`${API_BASE}/api/metrics/home`, { headers, cache: 'no-store' }),
-          fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers, cache: 'no-store' }),
-          fetch(`${API_BASE}/api/analytics/performance-matrix`, { headers, cache: 'no-store' }),
+          fetch(`${API_BASE}/workspaces`, { headers, cache: 'no-store', signal: controller.signal }),
+          fetch(`${API_BASE}/api/metrics/home`, { headers, cache: 'no-store', signal: controller.signal }),
+          fetch(`${API_BASE}/api/telemetry/sessions?limit=100`, { headers, cache: 'no-store', signal: controller.signal }),
+          fetch(`${API_BASE}/api/analytics/performance-matrix`, { headers, cache: 'no-store', signal: controller.signal }),
         ]);
 
         let workspaces = dashboard.workspaces;
@@ -181,19 +198,24 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
           newDetails[ws.id] = { data: ws, timestamp: Date.now() };
         });
 
-        set({
-          dashboard: newDashboard,
-          workspaceDetails: newDetails,
-          isDashboardFetching: false,
-        });
+        if (isCurrentGeneration(flightKey, requestGeneration)) {
+          set({
+            dashboard: newDashboard,
+            workspaceDetails: newDetails,
+            isDashboardFetching: false,
+          });
+        }
 
         return newDashboard;
       } catch (err) {
         console.error('[CacheStore] Dashboard fetch error:', err);
-        set({ isDashboardFetching: false });
+        if (isCurrentGeneration(flightKey, requestGeneration)) {
+          set({ isDashboardFetching: false });
+        }
         return get().dashboard;
       } finally {
         inFlightRequests.delete(flightKey);
+        requestControllers.delete(flightKey);
       }
     })();
 
@@ -216,18 +238,23 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
     }
 
     const fetchPromise = (async () => {
+      const requestGeneration = nextGeneration(flightKey);
+      const controller = new AbortController();
+      requestControllers.set(flightKey, controller);
       try {
         const headers = getAuthHeaders();
-        const res = await fetch(`${API_BASE}/workspaces/${id}`, { headers, cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/workspaces/${id}`, { headers, cache: 'no-store', signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: CachedWorkspace = await res.json();
 
-        set(state => ({
-          workspaceDetails: {
-            ...state.workspaceDetails,
-            [id]: { data, timestamp: Date.now() },
-          },
-        }));
+        if (isCurrentGeneration(flightKey, requestGeneration) && !deletedWorkspaceIds.has(id)) {
+          set(state => ({
+            workspaceDetails: {
+              ...state.workspaceDetails,
+              [id]: { data, timestamp: Date.now() },
+            },
+          }));
+        }
 
         return data;
       } catch (err) {
@@ -235,6 +262,7 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
         return cached?.data || null;
       } finally {
         inFlightRequests.delete(flightKey);
+        requestControllers.delete(flightKey);
       }
     })();
 
@@ -257,18 +285,23 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
     }
 
     const fetchPromise = (async () => {
+      const requestGeneration = nextGeneration(flightKey);
+      const controller = new AbortController();
+      requestControllers.set(flightKey, controller);
       try {
         const headers = getAuthHeaders();
-        const res = await fetch(`${API_BASE}/api/metrics/workspace/${id}`, { headers, cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/api/metrics/workspace/${id}`, { headers, cache: 'no-store', signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: WorkspaceMetrics = await res.json();
 
-        set(state => ({
-          workspaceMetrics: {
-            ...state.workspaceMetrics,
-            [id]: { data, timestamp: Date.now() },
-          },
-        }));
+        if (isCurrentGeneration(flightKey, requestGeneration) && !deletedWorkspaceIds.has(id)) {
+          set(state => ({
+            workspaceMetrics: {
+              ...state.workspaceMetrics,
+              [id]: { data, timestamp: Date.now() },
+            },
+          }));
+        }
 
         return data;
       } catch (err) {
@@ -276,6 +309,7 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
         return cached?.data || null;
       } finally {
         inFlightRequests.delete(flightKey);
+        requestControllers.delete(flightKey);
       }
     })();
 
@@ -310,21 +344,72 @@ export const useCacheStore = create<CacheStoreState>((set, get) => ({
     get().updateWorkspaceInCache({ id, current_goal: goal });
   },
 
+  deleteWorkspace: async (id: number, keepMetrics = false) => {
+    const previous = get();
+    deletedWorkspaceIds.add(id);
+    nextGeneration('dashboard');
+    nextGeneration(`workspace-detail-${id}`);
+    nextGeneration(`workspace-metrics-${id}`);
+    requestControllers.get('dashboard')?.abort();
+    requestControllers.get(`workspace-detail-${id}`)?.abort();
+    requestControllers.get(`workspace-metrics-${id}`)?.abort();
+
+    get().removeWorkspaceFromCache(id);
+    try {
+      const response = await fetch(
+        `${API_BASE}/workspaces/${id}?keep_metrics=${keepMetrics}`,
+        { method: 'DELETE', headers: getAuthHeaders(), cache: 'no-store' },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || `HTTP ${response.status}`);
+      }
+      await get().fetchDashboard(true);
+      deletedWorkspaceIds.delete(id);
+    } catch (error) {
+      deletedWorkspaceIds.delete(id);
+      set({
+        dashboard: previous.dashboard,
+        workspaceDetails: previous.workspaceDetails,
+        workspaceMetrics: previous.workspaceMetrics,
+      });
+      throw error;
+    }
+  },
+
   removeWorkspaceFromCache: (id: number) => {
     set(state => {
       const newDetails = { ...state.workspaceDetails };
       delete newDetails[id];
       const newMetrics = { ...state.workspaceMetrics };
       delete newMetrics[id];
+
+      const remainingWorkspaces = state.dashboard.workspaces.filter(w => w.id !== id);
+      const remainingSessions = state.dashboard.sessions.filter(s => s.workspace_id !== id);
+
+      let newPerformanceMatrix = state.dashboard.performanceMatrix;
+      if (newPerformanceMatrix) {
+        newPerformanceMatrix = {
+          ...newPerformanceMatrix,
+          workspaces_matrix: (newPerformanceMatrix.workspaces_matrix || []).filter(
+            (wm: any) => wm.id !== id && wm.workspace_id !== id
+          ),
+        };
+      }
+
       return {
         workspaceDetails: newDetails,
         workspaceMetrics: newMetrics,
         dashboard: {
           ...state.dashboard,
-          workspaces: state.dashboard.workspaces.filter(w => w.id !== id),
+          workspaces: remainingWorkspaces,
+          sessions: remainingSessions,
+          performanceMatrix: newPerformanceMatrix,
+          lastFetched: 0,
         },
       };
     });
+    // Callers that only have a confirmed server deletion can explicitly revalidate.
   },
 
   invalidateAll: () => {

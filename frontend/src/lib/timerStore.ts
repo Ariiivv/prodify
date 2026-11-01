@@ -98,6 +98,32 @@ export const useTimerStore = create<TimerStore>()(
     });
   };
 
+  // There must be exactly one ticking loop for the active workspace. Every
+  // callback validates ownership before ticking so an orphaned interval from a
+  // workspace switch cannot decrement the newly active timer.
+  const startActiveInterval = () => {
+    const current = getWorkspaceState();
+    if (current.intervalId !== null) return;
+
+    const id = setInterval(() => {
+      const latest = getWorkspaceState();
+      const running = latest.currentState === 'FOCUS_RUNNING' || latest.currentState === 'BREAK_RUNNING';
+      if (latest.intervalId !== id || !running) {
+        clearInterval(id);
+        return;
+      }
+      get().tick();
+    }, 1000);
+
+    setWorkspaceState({ intervalId: id });
+  };
+
+  const clearActiveInterval = () => {
+    const id = getWorkspaceState().intervalId;
+    if (id !== null) clearInterval(id);
+    setWorkspaceState({ intervalId: null });
+  };
+
   return {
     workspaces: {},
     activeWorkspaceId: null,
@@ -165,21 +191,20 @@ export const useTimerStore = create<TimerStore>()(
     },
 
     startFocus: () => {
-      const existing = getWorkspaceState().intervalId;
-      if (existing) clearInterval(existing);
-      const id = setInterval(() => get().tick(), 1000);
+      const current = getWorkspaceState();
+      if (current.currentState === 'FOCUS_RUNNING' && current.intervalId !== null) return;
+      if (current.intervalId !== null) clearActiveInterval();
       const fd = get().getActiveFocusDuration();
       setWorkspaceState({
         currentState: 'FOCUS_RUNNING',
-        intervalId: id,
         timeRemaining: fd,
         sessionMode: 'FOCUS',
       });
+      startActiveInterval();
     },
 
     pauseFocus: (reason: string) => {
-      const id = getWorkspaceState().intervalId;
-      if (id) clearInterval(id);
+      clearActiveInterval();
       
       // Fire distraction alert/notification for any automatic pause (not Manual)
       if (reason !== 'Manual') {
@@ -195,25 +220,25 @@ export const useTimerStore = create<TimerStore>()(
     },
 
     resumeFocus: () => {
-      const id = setInterval(() => get().tick(), 1000);
       const ws = getWorkspaceState();
+      if (ws.currentState === 'FOCUS_RUNNING' && ws.intervalId !== null) return;
+      if (ws.intervalId !== null) clearActiveInterval();
       const nonDistractionReasons = ['Manual', 'manual_pause', 'Navigated away', 'Navigated Away', 'IDLE_DETECTED', 'idle'];
       const isAiDistraction = !!(ws.pauseReason && !nonDistractionReasons.includes(ws.pauseReason));
       const additionalDistractedSeconds = (ws.lastPausedAt && isAiDistraction) ? (Date.now() - ws.lastPausedAt) / 1000 : 0;
       setWorkspaceState({
         currentState: 'FOCUS_RUNNING',
-        intervalId: id,
         pauseReason: null,
         lastPausedAt: null,
         distractedSeconds: (ws.distractedSeconds || 0) + additionalDistractedSeconds,
       });
+      startActiveInterval();
     },
 
     startBreak: () => {
-      const existing = getWorkspaceState().intervalId;
-      if (existing) clearInterval(existing);
-      
       const ws = getWorkspaceState();
+      if (ws.currentState === 'BREAK_RUNNING' && ws.intervalId !== null) return;
+      if (ws.intervalId !== null) clearActiveInterval();
       // If we are already designated for a long break, use that.
       const bd = ws.sessionMode === 'LONG_BREAK' 
         ? get().defaultLongBreakDuration 
@@ -222,27 +247,16 @@ export const useTimerStore = create<TimerStore>()(
       // If time was pre-loaded by completeSession (SESSION_COMPLETED), use it, otherwise use bd.
       const startingTime = ws.currentState === 'SESSION_COMPLETED' ? ws.timeRemaining : bd;
 
-      let lastTick = performance.now();
-      const id = setInterval(() => {
-        const now = performance.now();
-        const elapsed = now - lastTick;
-        lastTick = now;
-        const ticksToProcess = Math.max(1, Math.round(elapsed / 1000));
-        for (let i = 0; i < ticksToProcess; i++) {
-          get().tick();
-        }
-      }, 1000);
       setWorkspaceState({
         currentState: 'BREAK_RUNNING',
-        intervalId: id,
         timeRemaining: startingTime,
         sessionMode: ws.sessionMode === 'FOCUS' ? 'SHORT_BREAK' : ws.sessionMode, // fallback if they manually start break
       });
+      startActiveInterval();
     },
 
     pauseBreak: () => {
-      const id = getWorkspaceState().intervalId;
-      if (id) clearInterval(id);
+      clearActiveInterval();
       setWorkspaceState({
         currentState: 'BREAK_PAUSED',
         intervalId: null,
@@ -250,20 +264,13 @@ export const useTimerStore = create<TimerStore>()(
     },
 
     resumeBreak: () => {
-      let lastTick = performance.now();
-      const id = setInterval(() => {
-        const now = performance.now();
-        const elapsed = now - lastTick;
-        lastTick = now;
-        const ticksToProcess = Math.max(1, Math.round(elapsed / 1000));
-        for (let i = 0; i < ticksToProcess; i++) {
-          get().tick();
-        }
-      }, 1000);
+      const ws = getWorkspaceState();
+      if (ws.currentState === 'BREAK_RUNNING' && ws.intervalId !== null) return;
+      if (ws.intervalId !== null) clearActiveInterval();
       setWorkspaceState({
         currentState: 'BREAK_RUNNING',
-        intervalId: id,
       });
+      startActiveInterval();
     },
 
     resetTimer: () => {

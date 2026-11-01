@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Date, Boolean, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from datetime import datetime
 
 Base = declarative_base()
@@ -20,15 +20,17 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    workspaces = relationship("Workspace", back_populates="owner")
+    workspaces = relationship("Workspace", back_populates="owner", cascade="all, delete-orphan")
+    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
 
 class Workspace(Base):
     __tablename__ = "workspaces"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, index=True, nullable=False)
-    mode = Column(String, nullable=False) # e.g., "Structured Goal Mode", "Flexible Tracking Mode"
+    description = Column(String, nullable=True)
+    mode = Column(String, nullable=False, default="pomodoro") # e.g., "Structured Goal Mode", "Flexible Tracking Mode"
     category = Column(String, nullable=False, default="mastery") # 'mastery', 'sprint', or 'quick_work'
     target_hours = Column(Float, nullable=True) # For Structured Goal Mode
     deadline = Column(Date, nullable=True) # For Structured Goal Mode
@@ -47,6 +49,9 @@ class Workspace(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    title = synonym("name")
+    daily_target = synonym("daily_target_minutes")
+
     owner = relationship("User", back_populates="workspaces")
     sessions = relationship("Session", back_populates="workspace", cascade="all, delete-orphan")
     chat_history = relationship("WorkspaceChatHistory", back_populates="workspace", cascade="all, delete-orphan")
@@ -55,6 +60,7 @@ class WorkspaceChatHistory(Base):
     __tablename__ = "workspace_chat_history"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Historical metrics may outlive a deleted workspace when keep_metrics=True.
     workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     role = Column(String, nullable=False) # 'user' or 'assistant'
     content = Column(String, nullable=False)
@@ -66,7 +72,7 @@ class WorkspaceMetrics(Base):
     __tablename__ = "workspace_metrics"
 
     id = Column(Integer, primary_key=True, index=True)
-    workspace_id = Column(Integer, nullable=False) # NOT a foreign key
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True)
     workspace_name = Column(String, nullable=False)
     workspace_intent = Column(String, nullable=True)
     session_date = Column(Date, nullable=False)
@@ -81,7 +87,8 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     start_time = Column(DateTime, default=datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
     duration = Column(Integer, nullable=True) # in seconds
@@ -95,15 +102,17 @@ class Session(Base):
     session_index_today = Column(Integer, nullable=False, default=1)
     track_day_number = Column(Integer, nullable=False, default=1)
 
+    user = relationship("User", back_populates="sessions")
     workspace = relationship("Workspace", back_populates="sessions")
-    telemetry_logs = relationship("TelemetryLog", back_populates="session")
+    telemetry_logs = relationship("TelemetryLog", back_populates="session", cascade="all, delete-orphan")
+    activity_logs = relationship("ActivityLog", back_populates="session", cascade="all, delete-orphan")
 
 class TelemetryLog(Base):
     __tablename__ = "telemetry_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
     metric_type = Column(String, nullable=False) # e.g., "PERCLOS", "TAB_SWITCH"
     value = Column(Float, nullable=True) # e.g., PERCLOS score, duration of distraction
@@ -123,13 +132,14 @@ class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True)
+    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     app_name = Column(String, nullable=False)
     window_title = Column(String, nullable=False)
     intent = Column(String, nullable=True)
     is_focused = Column(Integer, nullable=False)  # 1 for focused, 0 for distracted
+    similarity_score = Column(Float, nullable=True, default=0.0)
     reason = Column(String, nullable=True)
     clean_app_name = Column(String, nullable=True)
     platform_name = Column(String, nullable=True)
@@ -142,30 +152,33 @@ class ActivityLog(Base):
     clock_hour = Column(Integer, nullable=True)
 
     workspace = relationship("Workspace")
+    session = relationship("Session", back_populates="activity_logs")
 
 class CoachingInteraction(Base):
     __tablename__ = "coaching_interactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    workspace_id = Column(Integer, nullable=False)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     user_message = Column(String, nullable=False)
     ai_response = Column(String, nullable=False)
     burnout_score_at_time = Column(Float, nullable=False)
     focus_minutes_at_time = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-
 class DailyWorkspaceLog(Base):
     __tablename__ = "daily_workspace_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
     date = Column(Date, nullable=False)
     category = Column(String, nullable=True) # snapshot
     target_minutes_required = Column(Integer, nullable=False, default=0)
     minutes_logged = Column(Integer, nullable=False, default=0)
     intent_score = Column(Float, nullable=False, default=0.0)
     target_met = Column(Boolean, nullable=False, default=False)
+
+    target_minutes = synonym("target_minutes_required")
+    quota_met = synonym("target_met")
 
     __table_args__ = (UniqueConstraint('workspace_id', 'date', name='uq_workspace_date'),)
     workspace = relationship("Workspace")
@@ -177,7 +190,11 @@ class UserStats(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     current_global_streak = Column(Integer, nullable=False, default=0)
     longest_global_streak = Column(Integer, nullable=False, default=0)
+    momentum_score = Column(Float, nullable=False, default=0.0)
+    last_evaluated_date = Column(Date, nullable=True)
     last_global_perfect_date = Column(Date, nullable=True)
+
+    best_global_streak = synonym("longest_global_streak")
 
 class Friendship(Base):
     __tablename__ = "friendships"
@@ -189,7 +206,6 @@ class Friendship(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-
 class FriendMessage(Base):
     __tablename__ = "friend_messages"
 
@@ -198,3 +214,5 @@ class FriendMessage(Base):
     receiver_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     content = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+DirectMessage = FriendMessage

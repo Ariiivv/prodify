@@ -20,12 +20,12 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#18181b] text-[#f4f4f5]">
+    <div className="min-h-screen bg-[#09090b] text-zinc-100">
       {/* ── Desktop Sidebar: Fixed, scannable, Claude warm-charcoal aesthetic ── */}
-      <aside className="hidden md:flex fixed inset-y-0 left-0 w-20 z-50 flex-col items-center py-6 px-3 border-r border-[#27272a] bg-[#18181b]/95 backdrop-blur-md select-none">
+      <aside className="hidden md:flex fixed inset-y-0 left-0 w-20 z-50 flex-col items-center py-6 px-3 border-r border-zinc-800/80 bg-[#09090b]/95 backdrop-blur-md select-none">
         {/* Brand mark */}
         <Link to="/" className="mb-8 flex flex-col items-center group">
-          <div className="w-10 h-10 rounded-xl bg-[#202024] border border-[#27272a] flex items-center justify-center transition-all duration-150 group-hover:border-zinc-700 group-hover:bg-[#27272a] shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex items-center justify-center transition-all duration-150 group-hover:border-zinc-700 group-hover:bg-zinc-800 shadow-sm">
             <Sparkles className="w-[18px] h-[18px] text-zinc-300 group-hover:text-white" />
           </div>
         </Link>
@@ -43,8 +43,8 @@ export default function AppLayout() {
                 <div
                   className={`relative w-11 h-11 flex items-center justify-center transition-all duration-150 rounded-xl ${
                     isActive
-                      ? 'bg-[#27272a] text-[#f4f4f5] shadow-sm border border-[#3f3f46]/40'
-                      : 'text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#202024]'
+                      ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/50'
+                      : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60'
                   }`}
                 >
                   {isActive && (
@@ -58,7 +58,7 @@ export default function AppLayout() {
                 </div>
                 <span
                   className={`text-[11px] font-medium tracking-tight transition-colors ${
-                    isActive ? 'text-[#f4f4f5] font-semibold' : 'text-[#a1a1aa] group-hover:text-zinc-200'
+                    isActive ? 'text-zinc-100 font-semibold' : 'text-zinc-400 group-hover:text-zinc-200'
                   }`}
                 >
                   {label}
@@ -69,16 +69,16 @@ export default function AppLayout() {
         </nav>
 
         {/* User / Sign Out Footer */}
-        <div className="mt-auto flex flex-col items-center gap-4 w-full pt-4 border-t border-[#27272a]/60">
+        <div className="mt-auto flex flex-col items-center gap-4 w-full pt-4 border-t border-zinc-800/80">
           <button
             onClick={handleSignOut}
             className="relative group flex flex-col items-center gap-1 w-full"
             title="Sign Out"
           >
-            <div className="w-11 h-11 flex items-center justify-center text-[#a1a1aa] hover:text-rose-400 hover:bg-[#202024] transition-all duration-150 rounded-xl">
+            <div className="w-11 h-11 flex items-center justify-center text-zinc-400 hover:text-rose-400 hover:bg-zinc-800/60 transition-all duration-150 rounded-xl">
               <LogOut className="w-[18px] h-[18px]" />
             </div>
-            <span className="text-[11px] text-[#a1a1aa] group-hover:text-rose-400 font-medium tracking-tight transition-colors">
+            <span className="text-[11px] text-zinc-400 group-hover:text-rose-400 font-medium tracking-tight transition-colors">
               Sign Out
             </span>
           </button>
@@ -86,7 +86,7 @@ export default function AppLayout() {
       </aside>
 
       {/* ── Mobile Bottom Navigation Bar ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#18181b]/95 border-t border-[#27272a] backdrop-blur-md">
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#09090b]/95 border-t border-zinc-800/80 backdrop-blur-md">
         <nav className="flex justify-around py-2">
           {navItems.map(({ path, icon: Icon, label }) => {
             const isActive = location.pathname === path;
@@ -95,7 +95,7 @@ export default function AppLayout() {
                 key={path}
                 to={path}
                 className={`flex flex-col items-center gap-1 px-3 py-1 transition-colors ${
-                  isActive ? 'text-[#f4f4f5] font-medium' : 'text-[#a1a1aa]'
+                  isActive ? 'text-zinc-100 font-medium' : 'text-zinc-400'
                 }`}
               >
                 <Icon className="w-[18px] h-[18px]" />
@@ -105,7 +105,7 @@ export default function AppLayout() {
           })}
           <button
             onClick={handleSignOut}
-            className="flex flex-col items-center gap-1 px-3 py-1 text-[#a1a1aa] hover:text-rose-400 transition-colors"
+            className="flex flex-col items-center gap-1 px-3 py-1 text-zinc-400 hover:text-rose-400 transition-colors"
           >
             <LogOut className="w-[18px] h-[18px]" />
             <span className="text-[10px]">Sign Out</span>

@@ -430,7 +430,7 @@ export const EditWorkspaceModal: React.FC<EditWorkspaceModalProps> = ({
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center gap-2"
+                className="bg-white hover:bg-zinc-200 text-black font-bold flex items-center gap-2 rounded-xl transition-colors shadow-sm"
               >
                 <Save className="w-4 h-4" />
                 {isSubmitting ? 'Saving...' : 'Save Changes'}

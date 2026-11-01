@@ -82,7 +82,7 @@ class ChatMessageOut(ChatMessagePayload):
 
 class WorkspaceMetricsOut(BaseModel):
     id: int
-    workspace_id: int
+    workspace_id: Optional[int]
     workspace_name: str
     workspace_intent: Optional[str]
     session_date: date
@@ -164,16 +164,16 @@ def delete_workspace(
 ):
     workspace = get_owned_workspace(workspace_id, current_user, db)
     
-    # Clean up raw polling data and logs which are tied to the workspace lifetime
-    db.query(models.ActivityLog).filter(models.ActivityLog.workspace_id == workspace_id).delete(synchronize_session=False)
-    db.query(models.TelemetryLog).filter(models.TelemetryLog.workspace_id == workspace_id).delete(synchronize_session=False)
-    db.query(models.DailyWorkspaceLog).filter(models.DailyWorkspaceLog.workspace_id == workspace_id).delete(synchronize_session=False)
-    db.query(models.CoachingInteraction).filter(models.CoachingInteraction.workspace_id == workspace_id).delete(synchronize_session=False)
+    # Clear intent cache for this workspace
+    from app.services.intent_classifier import clear_intent_cache
+    clear_intent_cache(workspace_id)
     
-    db.delete(workspace)
-    if not keep_metrics:
-        db.query(models.WorkspaceMetrics).filter(models.WorkspaceMetrics.workspace_id == workspace_id).delete(synchronize_session=False)
-    db.commit()
+    # Full hard cascade deletion across all child records and user streak recalculation
+    crud.delete_workspace(
+        db=db,
+        workspace_id=workspace_id,
+        keep_metrics=keep_metrics,
+    )
 
 
 class WorkspaceGoalPatch(BaseModel):

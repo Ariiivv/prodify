@@ -10,76 +10,77 @@ export default {
   theme: {
     extend: {
       colors: {
-        // ── Prodify "Warm Paper, One Lime Highlighter" Palette ──
-        paper: '#F6F5F0',
-        card: '#FFFFFF',
-        ink: '#111110',
-        muted: '#6F6E68',
-        line: '#E5E3DA',
-        lime: '#C8F53C',
-        indigo: '#5B3DF5',
-        amber: '#E8A317',
-        red: '#E5484D',
-
-        // ── Shadcn semantic mappings ──
-        background: 'var(--paper)',
-        foreground: 'var(--ink)',
-        border: 'var(--line)',
-        input: 'var(--line)',
-        ring: 'var(--indigo)',
-        primary: {
-          DEFAULT: '#111110',
-          foreground: '#FFFFFF',
-        },
-        secondary: {
-          DEFAULT: '#E5E3DA',
-          foreground: '#111110',
-        },
-        destructive: {
-          DEFAULT: '#E5484D',
-          foreground: '#FFFFFF',
-        },
-        accent: {
-          DEFAULT: '#C8F53C',
-          foreground: '#111110',
+        // Claude Dark Theme Foundation (Charcoal-Slate)
+        background: '#09090b',
+        foreground: '#f4f4f5',
+        card: {
+          DEFAULT: '#18181b',
+          foreground: '#f4f4f5',
         },
         popover: {
-          DEFAULT: '#FFFFFF',
-          foreground: '#111110',
+          DEFAULT: '#18181b',
+          foreground: '#f4f4f5',
         },
-        // Legacy compatibility aliases
-        'prodify-bg': '#F6F5F0',
-        'prodify-surface': '#FFFFFF',
-        'prodify-surface-alt': '#F0EFEA',
-        'prodify-border': '#E5E3DA',
-        'prodify-muted': '#6F6E68',
+        primary: {
+          DEFAULT: '#ffffff',
+          foreground: '#09090b',
+        },
+        secondary: {
+          DEFAULT: '#27272a',
+          foreground: '#f4f4f5',
+        },
+        muted: {
+          DEFAULT: '#27272a',
+          foreground: '#a1a1aa',
+        },
+        accent: {
+          DEFAULT: '#27272a',
+          foreground: '#f4f4f5',
+        },
+        destructive: {
+          DEFAULT: '#ef4444',
+          foreground: '#ffffff',
+        },
+        border: '#27272a',
+        input: '#27272a',
+        ring: '#3f3f46',
+
+        // Explicit Claude design tokens
+        'prodify-bg': '#09090b',
+        'prodify-surface': '#18181b',
+        'prodify-surface-alt': '#27272a',
+        'prodify-border': '#27272a',
+        'prodify-muted': '#a1a1aa',
+        'prodify-accent': '#ffffff',
+        'prodify-success': '#10b981',
+        'prodify-warning': '#f59e0b',
+        'prodify-danger': '#ef4444',
+
+        // Fallbacks for any legacy tokens to dark equivalents
+        paper: '#09090b',
+        sidebar: '#121214',
+        well: '#18181b',
+        line: '#27272a',
+        'line-strong': '#3f3f46',
+        ink: '#f4f4f5',
       },
       fontFamily: {
-        display: ['"Bricolage Grotesque Variable"', 'system-ui', 'sans-serif'],
-        body: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
-        sans: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono Variable"', 'monospace'],
-      },
-      letterSpacing: {
-        tightest: '-0.045em',
-        tighter: '-0.03em',
-        tight: '-0.015em',
-      },
-      lineHeight: {
-        display: '0.95',
-        tight: '1.1',
+        heading: ['Inter', 'system-ui', 'sans-serif'],
+        body: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
-        '2xl': '1rem',
-        '3xl': '1.5rem',
-        full: '9999px',
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        lg: '0.75rem',
+        md: '0.5rem',
+        sm: '0.375rem',
       },
       boxShadow: {
-        sm: '0 1px 2px 0 rgba(17, 17, 16, 0.04)',
-        hover: '0 4px 12px 0 rgba(17, 17, 16, 0.06)',
+        sm: '0 1px 2px 0 rgba(0, 0, 0, 0.4)',
+        DEFAULT: '0 1px 3px 0 rgba(0, 0, 0, 0.5), 0 1px 2px -1px rgba(0, 0, 0, 0.5)',
+        md: '0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5)',
+        lg: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
       },
     },
   },

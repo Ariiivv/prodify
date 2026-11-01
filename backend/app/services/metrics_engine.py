@@ -16,21 +16,71 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone, time
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, cast, Date
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.models import schemas as models
 from app.models.crud import compute_total_daily_sessions
+from app.services.metrics_utils import focus_purity_percent
 
 
-def get_local_date(dt=None):
-    """Helper to safely return date object"""
+def get_local_date(dt=None, timezone_name: Optional[str] = None):
+    """Convert a UTC/naive timestamp into the requested IANA local date."""
     if dt is None:
         dt = datetime.utcnow()
-    return dt.date() if hasattr(dt, 'date') else dt
+    if not hasattr(dt, "date"):
+        return dt
+    if not isinstance(dt, datetime):
+        return dt
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        local_tz = ZoneInfo(timezone_name or "UTC")
+    except Exception:
+        local_tz = timezone.utc
+    return dt.astimezone(local_tz).date()
+
+
+def get_local_hour(dt: datetime, timezone_name: Optional[str] = None) -> int:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        local_tz = ZoneInfo(timezone_name or "UTC")
+    except Exception:
+        local_tz = timezone.utc
+    return dt.astimezone(local_tz).hour
+
+
+def _get_user_timezone(db: DBSession, user_id: str) -> str:
+    """Use the most recently recorded session timezone, falling back to UTC."""
+    value = (
+        db.query(models.Session.timezone)
+        .filter(
+            models.Session.user_id == user_id,
+            models.Session.timezone.isnot(None),
+        )
+        .order_by(models.Session.start_time.desc())
+        .first()
+    )
+    return value[0] if value and value[0] else "UTC"
+
+
+def _utc_query_bounds(since: date, until: date, timezone_name: str) -> tuple[datetime, datetime]:
+    """Build UTC-naive bounds for the local date range used by SQLAlchemy."""
+    try:
+        tz = ZoneInfo(timezone_name or "UTC")
+    except Exception:
+        tz = timezone.utc
+    local_start = datetime.combine(since, time.min, tzinfo=tz)
+    local_end = datetime.combine(until + timedelta(days=1), time.min, tzinfo=tz)
+    return (
+        local_start.astimezone(timezone.utc).replace(tzinfo=None),
+        local_end.astimezone(timezone.utc).replace(tzinfo=None),
+    )
 
 logger = logging.getLogger("prodify_metrics_engine")
 
@@ -115,6 +165,7 @@ def _get_workspace_daily_minutes(
     workspace_ids: List[int],
     since: date,
     until: date,
+    timezone_name: str = "UTC",
 ) -> Dict[int, Dict[date, float]]:
     """
     Returns {workspace_id: {date: total_minutes}} for FOCUS sessions.
@@ -122,6 +173,9 @@ def _get_workspace_daily_minutes(
     sessions so no logged focus time is lost or delayed.
     Merges with DailyWorkspaceLog taking the maximum to guarantee real-time accuracy.
     """
+    if not workspace_ids:
+        return {}
+
     result: Dict[int, Dict[date, float]] = defaultdict(dict)
 
     # 1. DailyWorkspaceLog
@@ -131,8 +185,10 @@ def _get_workspace_daily_minutes(
             models.DailyWorkspaceLog.date,
             models.DailyWorkspaceLog.minutes_logged,
         )
+        .join(models.Workspace, models.DailyWorkspaceLog.workspace_id == models.Workspace.id)
         .filter(
             models.DailyWorkspaceLog.workspace_id.in_(workspace_ids),
+            models.DailyWorkspaceLog.workspace_id.isnot(None),
             models.DailyWorkspaceLog.date >= since,
             models.DailyWorkspaceLog.date <= until,
         )
@@ -142,16 +198,20 @@ def _get_workspace_daily_minutes(
         result[ws_id][d] = float(mins)
 
     # 2. Query sessions with buffer for UTC timezone offset conversion
-    buffer_start = datetime.combine(since - timedelta(days=1), datetime.min.time())
-    buffer_end = datetime.combine(until + timedelta(days=1), datetime.max.time())
+    local_start, local_end = _utc_query_bounds(since, until, timezone_name)
+    buffer_start = local_start - timedelta(days=1)
+    buffer_end = local_end + timedelta(days=1)
     session_rows = (
         db.query(
             models.Session.workspace_id,
             models.Session.start_time,
             models.Session.duration,
+            models.Session.timezone,
         )
+        .join(models.Workspace, models.Session.workspace_id == models.Workspace.id)
         .filter(
             models.Session.workspace_id.in_(workspace_ids),
+            models.Session.workspace_id.isnot(None),
             models.Session.session_type == "FOCUS",
             models.Session.status.in_(["COMPLETED", "PARTIAL"]),
             models.Session.start_time >= buffer_start,
@@ -162,10 +222,10 @@ def _get_workspace_daily_minutes(
     )
 
     session_daily: Dict[int, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
-    for ws_id, start_dt, total_secs in session_rows:
+    for ws_id, start_dt, total_secs, session_timezone in session_rows:
         if not start_dt or not total_secs:
             continue
-        local_d = get_local_date(start_dt)
+        local_d = get_local_date(start_dt, session_timezone)
         if since <= local_d <= until:
             session_daily[ws_id][local_d] += (total_secs or 0) / 60.0
 
@@ -182,14 +242,19 @@ def _get_distraction_data(
     workspace_ids: List[int],
     since: date,
     until: date,
+    timezone_name: str = "UTC",
 ) -> Tuple[float, float, int]:
     """
     Returns (total_focus_seconds, actual_distracted_seconds, distraction_count)
     from FOCUS sessions in the given workspace set and date range.
     Includes both COMPLETED and PARTIAL sessions with timezone-aware date mapping.
     """
-    buffer_start = datetime.combine(since - timedelta(days=1), datetime.min.time())
-    buffer_end = datetime.combine(until + timedelta(days=1), datetime.max.time())
+    if not workspace_ids:
+        return 0.0, 0.0, 0
+
+    local_start, local_end = _utc_query_bounds(since, until, timezone_name)
+    buffer_start = local_start - timedelta(days=1)
+    buffer_end = local_end + timedelta(days=1)
 
     sessions = (
         db.query(
@@ -197,9 +262,12 @@ def _get_distraction_data(
             models.Session.duration,
             models.Session.distracted_seconds,
             models.Session.distraction_count,
+            models.Session.timezone,
         )
+        .join(models.Workspace, models.Session.workspace_id == models.Workspace.id)
         .filter(
             models.Session.workspace_id.in_(workspace_ids),
+            models.Session.workspace_id.isnot(None),
             models.Session.session_type == "FOCUS",
             models.Session.status.in_(["COMPLETED", "PARTIAL"]),
             models.Session.start_time >= buffer_start,
@@ -213,10 +281,10 @@ def _get_distraction_data(
     distracted_secs = 0.0
     distraction_cnt = 0
 
-    for start_dt, dur, dist_s, dist_c in sessions:
+    for start_dt, dur, dist_s, dist_c, session_timezone in sessions:
         if not start_dt:
             continue
-        local_d = get_local_date(start_dt)
+        local_d = get_local_date(start_dt, session_timezone)
         if since <= local_d <= until:
             focus_secs += float(dur or 0)
             distracted_secs += float(dist_s or 0)
@@ -224,13 +292,16 @@ def _get_distraction_data(
 
     # Fallback only if distracted_seconds was 0 in Session table but off-task ticks exist
     if distracted_secs == 0 and focus_secs > 0:
+        activity_start, activity_end = _utc_query_bounds(since, until, timezone_name)
         off_task_logs_count = (
             db.query(func.count(models.ActivityLog.id))
+            .join(models.Workspace, models.ActivityLog.workspace_id == models.Workspace.id)
             .filter(
                 models.ActivityLog.workspace_id.in_(workspace_ids),
+                models.ActivityLog.workspace_id.isnot(None),
                 models.ActivityLog.is_focused == 0,
-                cast(models.ActivityLog.timestamp, Date) >= since,
-                cast(models.ActivityLog.timestamp, Date) <= until,
+                models.ActivityLog.timestamp >= activity_start,
+                models.ActivityLog.timestamp < activity_end,
             )
             .scalar()
             or 0
@@ -248,6 +319,7 @@ def _compute_calendar(
     workspaces: List[models.Workspace],
     since: date,
     until: date,
+    timezone_name: str = "UTC",
 ) -> List[dict]:
     """
     Returns [{date: str, status: str|null}] for every day in [since, until].
@@ -262,7 +334,7 @@ def _compute_calendar(
     ws_created = {ws.id: get_local_date(ws.created_at) for ws in workspaces}
     ws_targets = {ws.id: _get_workspace_daily_target(ws, until) for ws in workspaces}
 
-    daily_data = _get_workspace_daily_minutes(db, ws_ids, since, until)
+    daily_data = _get_workspace_daily_minutes(db, ws_ids, since, until, timezone_name)
 
     calendar = []
     current = since
@@ -369,12 +441,13 @@ def _compute_workspace_streaks(
     since: date,
     until: date,
     today: date,
+    timezone_name: str = "UTC",
 ) -> Tuple[int, int]:
     """Streaks scoped to a single workspace."""
-    daily_data = _get_workspace_daily_minutes(db, [workspace.id], since, until)
+    daily_data = _get_workspace_daily_minutes(db, [workspace.id], since, until, timezone_name)
     ws_data = daily_data.get(workspace.id, {})
     target = _get_workspace_daily_target(workspace, until)
-    ws_created = get_local_date(workspace.created_at)
+    ws_created = get_local_date(workspace.created_at, timezone_name)
 
     calendar = []
     current = since
@@ -416,11 +489,7 @@ def compute_deep_flow_ratio(
     if focus_seconds == 0 and distraction_count == 0:
         return 100.0
 
-    raw = (
-        100.0
-        - (distraction_count * 4.5)
-        - (distracted_seconds / max(1.0, focus_seconds) * 100.0)
-    )
+    raw = focus_purity_percent(focus_seconds, distracted_seconds) - (distraction_count * 4.5)
     return max(0.0, min(100.0, round(raw, 1)))
 
 
@@ -442,6 +511,7 @@ def _deep_work_ratio(
     workspace_ids: List[int],
     today: date,
     window_days: int = 7,
+    timezone_name: str = "UTC",
 ) -> Optional[float]:
     """
     Deep Flow / Deep Work Ratio over a trailing window ending today (inclusive).
@@ -450,7 +520,7 @@ def _deep_work_ratio(
     """
     since = today - timedelta(days=window_days - 1)
     focus_secs, distracted_secs, distraction_cnt = _get_distraction_data(
-        db, workspace_ids, since, today
+        db, workspace_ids, since, today, timezone_name
     )
 
     if focus_secs <= 0 and distraction_cnt == 0:
@@ -496,6 +566,7 @@ def _compute_momentum_pace(
     today: date,
     window_days: int = 7,
     scope_workspace_id: Optional[int] = None,
+    timezone_name: str = "UTC",
 ) -> dict:
     """
     Score = average of three equally-weighted sub-scores (0-100):
@@ -523,7 +594,7 @@ def _compute_momentum_pace(
     if actual_days <= 0:
         return {"score": 50.0, "label": "Ready", "consistency": 0, "volume": 0, "quality": 0}
 
-    daily_data = _get_workspace_daily_minutes(db, ws_ids, since, today)
+    daily_data = _get_workspace_daily_minutes(db, ws_ids, since, today, timezone_name)
 
     # --- CONSISTENCY ---
     consistency_scores = []
@@ -560,7 +631,7 @@ def _compute_momentum_pace(
     volume = min(100.0, (total_actual / total_target * 100) if total_target > 0 else 0)
 
     # --- QUALITY = Deep Work Ratio ---
-    quality_raw = _deep_work_ratio(db, ws_ids, today, window_days)
+    quality_raw = _deep_work_ratio(db, ws_ids, today, window_days, timezone_name)
     quality = quality_raw if quality_raw is not None else 0.0
 
     # Day 1 / New Workspace rule:
@@ -603,49 +674,60 @@ def _compute_momentum_pace(
 def _peak_focus_window(
     db: DBSession,
     workspace_ids: List[int],
+    timezone_name: str = "UTC",
 ) -> dict:
     """
     Bucket sessions by hour-of-day started, compute average alignment rate
     (focused_time / total_time) per bucket.
     Minimum data gate: 14+ distinct days of session history.
     """
-    # Check minimum data gate
-    distinct_days = (
-        db.query(func.count(func.distinct(cast(models.Session.start_time, Date))))
-        .filter(
-            models.Session.workspace_id.in_(workspace_ids),
-            models.Session.session_type == "FOCUS",
-            models.Session.status == "COMPLETED",
-        )
-        .scalar()
-    ) or 0
+    if not workspace_ids:
+        return {"insufficient_data": True, "days_collected": 0, "days_needed": 14}
 
-    if distinct_days < 14:
-        return {"insufficient_data": True, "days_collected": distinct_days, "days_needed": 14}
-
-    # Get all completed focus sessions
+    # The model is explicitly a trailing 14-day heuristic, not an all-history aggregate.
+    cutoff = datetime.utcnow() - timedelta(days=14)
     sessions = (
-        db.query(models.Session)
+        db.query(
+            models.Session.start_time,
+            models.Session.duration,
+            models.Session.distracted_seconds,
+            models.Session.timezone,
+        )
+        .join(models.Workspace, models.Session.workspace_id == models.Workspace.id)
         .filter(
             models.Session.workspace_id.in_(workspace_ids),
+            models.Session.workspace_id.isnot(None),
             models.Session.session_type == "FOCUS",
             models.Session.status == "COMPLETED",
             models.Session.duration.isnot(None),
             models.Session.duration > 0,
+            models.Session.start_time >= cutoff,
         )
         .all()
     )
+
+    distinct_days = {
+        get_local_date(start_dt, session_timezone)
+        for start_dt, _, _, session_timezone in sessions
+        if start_dt is not None
+    }
+    if len(distinct_days) < 14:
+        return {"insufficient_data": True, "days_collected": len(distinct_days), "days_needed": 14}
 
     # Bucket by hour
     hour_focus: Dict[int, float] = defaultdict(float)  # total focus seconds
     hour_total: Dict[int, float] = defaultdict(float)  # total duration seconds
 
-    for s in sessions:
-        if s.start_time is None:
+    for start_dt, duration, distracted_seconds, session_timezone in sessions:
+        if start_dt is None:
             continue
-        hour = s.start_time.hour
-        total = float(s.duration or 0)
-        distracted = float(s.distracted_seconds or 0)
+        try:
+            local_tz = ZoneInfo(session_timezone or timezone_name or "UTC")
+        except Exception:
+            local_tz = timezone.utc
+        hour = start_dt.replace(tzinfo=timezone.utc).astimezone(local_tz).hour if start_dt.tzinfo is None else start_dt.astimezone(local_tz).hour
+        total = float(duration or 0)
+        distracted = float(distracted_seconds or 0)
         focused = max(0, total - distracted)
 
         hour_total[hour] += total
@@ -679,7 +761,8 @@ def compute_home_metrics(db: DBSession, user: models.User) -> dict:
     Compute all metrics for the Home dashboard.
     Returns the full payload for GET /api/metrics/home.
     """
-    today = get_local_date(datetime.utcnow())
+    user_timezone = _get_user_timezone(db, user.id)
+    today = get_local_date(datetime.utcnow(), user_timezone)
 
     workspaces = (
         db.query(models.Workspace)
@@ -704,7 +787,7 @@ def compute_home_metrics(db: DBSession, user: models.User) -> dict:
 
     # Calendar: last 90 days
     calendar_since = today - timedelta(days=89)
-    calendar = _compute_calendar(db, workspaces, calendar_since, today)
+    calendar = _compute_calendar(db, workspaces, calendar_since, today, user_timezone)
 
     # Streaks
     current_streak, longest_streak_computed = _compute_streaks(calendar, today)
@@ -724,13 +807,13 @@ def compute_home_metrics(db: DBSession, user: models.User) -> dict:
     longest_streak = max(persisted_longest, longest_streak_computed)
 
     # Momentum
-    momentum = _compute_momentum_pace(db, workspaces, today)
+    momentum = _compute_momentum_pace(db, workspaces, today, timezone_name=user_timezone)
 
     # Deep Work Ratio (aggregate)
-    dwr = _deep_work_ratio(db, ws_ids, today)
+    dwr = _deep_work_ratio(db, ws_ids, today, timezone_name=user_timezone)
 
     # Peak Focus Window
-    peak = _peak_focus_window(db, ws_ids)
+    peak = _peak_focus_window(db, ws_ids, user_timezone)
 
     return {
         "momentum": momentum,
@@ -760,7 +843,8 @@ def compute_workspace_metrics(db: DBSession, user: models.User, workspace_id: in
     if not workspace:
         return None
 
-    today = get_local_date(datetime.utcnow())
+    user_timezone = _get_user_timezone(db, user.id)
+    today = get_local_date(datetime.utcnow(), user_timezone)
 
     # All user workspaces (needed for Pace context)
     all_workspaces = (
@@ -771,10 +855,10 @@ def compute_workspace_metrics(db: DBSession, user: models.User, workspace_id: in
 
     # Calendar: last 90 days, scoped to this workspace
     calendar_since = today - timedelta(days=89)
-    calendar = _compute_calendar(db, [workspace], calendar_since, today)
+    calendar = _compute_calendar(db, [workspace], calendar_since, today, user_timezone)
 
     # Workspace streaks
-    ws_current, ws_longest = _compute_workspace_streaks(db, workspace, calendar_since, today, today)
+    ws_current, ws_longest = _compute_workspace_streaks(db, workspace, calendar_since, today, today, user_timezone)
 
     # Update persisted workspace longest streak
     if ws_longest > (workspace.longest_streak or 0):
@@ -784,32 +868,42 @@ def compute_workspace_metrics(db: DBSession, user: models.User, workspace_id: in
     persisted_longest = max(workspace.longest_streak or 0, ws_longest)
 
     # Pace (Momentum scoped to one workspace)
-    pace = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=workspace_id)
+    pace = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=workspace_id, timezone_name=user_timezone)
 
     # Deep Work Ratio (workspace-scoped)
-    dwr = _deep_work_ratio(db, [workspace_id], today)
+    dwr = _deep_work_ratio(db, [workspace_id], today, timezone_name=user_timezone)
 
     today_target = _get_workspace_daily_target(workspace, today)
-    today_actual_map = _get_workspace_daily_minutes(db, [workspace_id], today, today)
+    today_actual_map = _get_workspace_daily_minutes(db, [workspace_id], today, today, user_timezone)
     today_actual = float(today_actual_map.get(workspace_id, {}).get(today, 0.0))
 
     # Calculate today's completed sessions and distractions for this workspace
+    today_start_utc, today_end_utc = _utc_query_bounds(today, today, user_timezone)
     today_sess = (
         db.query(
             models.Session.start_time,
             models.Session.distraction_count,
+            models.Session.timezone,
         )
+        .join(models.Workspace, models.Session.workspace_id == models.Workspace.id)
         .filter(
             models.Session.workspace_id == workspace_id,
+            models.Session.workspace_id.isnot(None),
             models.Session.session_type == "FOCUS",
             models.Session.status.in_(["COMPLETED", "PARTIAL"]),
-            models.Session.start_time >= datetime.combine(today - timedelta(days=1), datetime.min.time()),
-            models.Session.start_time <= datetime.combine(today + timedelta(days=1), datetime.max.time()),
+            models.Session.start_time >= today_start_utc - timedelta(days=1),
+            models.Session.start_time <= today_end_utc + timedelta(days=1),
         )
         .all()
     )
-    today_sess_distractions = sum(int(s[1] or 0) for s in today_sess if get_local_date(s[0]) == today)
-    today_completed_sessions = sum(1 for s in today_sess if get_local_date(s[0]) == today)
+    today_sess_distractions = sum(
+        int(s[1] or 0)
+        for s in today_sess
+        if get_local_date(s[0], s[2]) == today
+    )
+    today_completed_sessions = sum(
+        1 for s in today_sess if get_local_date(s[0], s[2]) == today
+    )
     today_distractions_count = today_sess_distractions
 
     return {
@@ -838,7 +932,8 @@ def compute_report_analytics(
     """
     from app.services.activity_parser import parse_activity
 
-    today = get_local_date(datetime.utcnow())
+    user_timezone = _get_user_timezone(db, user.id)
+    today = get_local_date(datetime.utcnow(), user_timezone)
     since_date = today - timedelta(days=days - 1)
 
     all_workspaces = (
@@ -891,8 +986,10 @@ def compute_report_analytics(
             func.coalesce(func.avg(models.Session.burnout_score), 0),
             func.count(models.Session.id),
         )
+        .join(models.Workspace, models.Session.workspace_id == models.Workspace.id)
         .filter(
             models.Session.workspace_id.in_(scoped_ws_ids),
+            models.Session.workspace_id.isnot(None),
             models.Session.session_type == "FOCUS",
             models.Session.status.in_(["COMPLETED", "PARTIAL"]),
             models.Session.duration > 0,
@@ -907,36 +1004,36 @@ def compute_report_analytics(
 
     # 1. Summary: Momentum / Pace
     if workspace_id is not None:
-        pace_res = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=workspace_id)
+        pace_res = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=workspace_id, timezone_name=user_timezone)
         if sess_count == 0:
             momentum_or_pace_score = 0.0
             tier_label = "Calibrating"
         else:
             momentum_or_pace_score = pace_res["score"]
             tier_label = pace_res["label"]
-        ws_curr_s, ws_long_s = _compute_workspace_streaks(db, target_workspace, today - timedelta(days=89), today, today)
+        ws_curr_s, ws_long_s = _compute_workspace_streaks(db, target_workspace, today - timedelta(days=89), today, today, user_timezone)
         current_streak = ws_curr_s
         longest_streak = max(target_workspace.longest_streak or 0, ws_long_s)
     else:
-        momentum_res = _compute_momentum_pace(db, all_workspaces, today)
+        momentum_res = _compute_momentum_pace(db, all_workspaces, today, timezone_name=user_timezone)
         if sess_count == 0:
             momentum_or_pace_score = 0.0
             tier_label = "Calibrating"
         else:
             momentum_or_pace_score = momentum_res["score"]
             tier_label = momentum_res["label"]
-        calendar_90 = _compute_calendar(db, all_workspaces, today - timedelta(days=89), today)
+        calendar_90 = _compute_calendar(db, all_workspaces, today - timedelta(days=89), today, user_timezone)
         current_streak, l_streak = _compute_streaks(calendar_90, today)
         user_stats = db.query(models.UserStats).filter(models.UserStats.user_id == user.id).first()
         persisted_longest = user_stats.longest_global_streak if user_stats and user_stats.longest_global_streak else 0
         longest_streak = max(persisted_longest, l_streak)
 
     # 7-day Deep Work Ratio
-    dwr_7d = _deep_work_ratio(db, scoped_ws_ids, today, window_days=7)
+    dwr_7d = _deep_work_ratio(db, scoped_ws_ids, today, window_days=7, timezone_name=user_timezone)
     deep_work_ratio_7d = dwr_7d if dwr_7d is not None else 0.0
 
     # Peak Focus Window
-    peak = _peak_focus_window(db, scoped_ws_ids)
+    peak = _peak_focus_window(db, scoped_ws_ids, user_timezone)
     peak_focus_window = "Not enough data yet" if peak.get("insufficient_data") else peak.get("peak_range", "Not enough data yet")
 
     summary = {
@@ -953,7 +1050,7 @@ def compute_report_analytics(
 
     # 2. 30-Day Daily Series
     buffer_start = since_date - timedelta(days=7)
-    daily_logged_map = _get_workspace_daily_minutes(db, scoped_ws_ids, buffer_start, today)
+    daily_logged_map = _get_workspace_daily_minutes(db, scoped_ws_ids, buffer_start, today, user_timezone)
     
     session_daily_rows = (
         db.query(
@@ -961,22 +1058,25 @@ def compute_report_analytics(
             models.Session.duration,
             models.Session.distracted_seconds,
             models.Session.distraction_count,
+            models.Session.timezone,
         )
+        .join(models.Workspace, models.Session.workspace_id == models.Workspace.id)
         .filter(
             models.Session.workspace_id.in_(scoped_ws_ids),
+            models.Session.workspace_id.isnot(None),
             models.Session.session_type == "FOCUS",
             models.Session.status.in_(["COMPLETED", "PARTIAL"]),
-            models.Session.start_time >= datetime.combine(buffer_start - timedelta(days=1), datetime.min.time()),
-            models.Session.start_time <= datetime.combine(today + timedelta(days=1), datetime.max.time()),
+            models.Session.start_time >= _utc_query_bounds(buffer_start, today, user_timezone)[0] - timedelta(days=1),
+            models.Session.start_time <= _utc_query_bounds(buffer_start, today, user_timezone)[1] + timedelta(days=1),
             models.Session.duration > 0,
         )
         .all()
     )
     session_daily_map: Dict[date, Tuple[float, float, int]] = defaultdict(lambda: (0.0, 0.0, 0))
-    for start_dt, dur_s, dist_s, dist_c in session_daily_rows:
+    for start_dt, dur_s, dist_s, dist_c, session_timezone in session_daily_rows:
         if not start_dt:
             continue
-        ld = get_local_date(start_dt)
+        ld = get_local_date(start_dt, session_timezone)
         prev_f, prev_ds, prev_dc = session_daily_map[ld]
         session_daily_map[ld] = (prev_f + float(dur_s or 0), prev_ds + float(dist_s or 0), prev_dc + int(dist_c or 0))
 
@@ -1024,7 +1124,7 @@ def compute_report_analytics(
             day_dwr = 0.0
 
         rolling_res = _compute_momentum_pace(
-            db, all_workspaces, curr, window_days=7, scope_workspace_id=workspace_id
+            db, all_workspaces, curr, window_days=7, scope_workspace_id=workspace_id, timezone_name=user_timezone
         )
         rolling_score = rolling_res["score"]
 
@@ -1040,15 +1140,17 @@ def compute_report_analytics(
         curr += timedelta(days=1)
 
     # 3. Workspaces Leaderboard Table
-    all_ws_daily_map = _get_workspace_daily_minutes(db, all_ws_ids, today, today)
+    all_ws_daily_map = _get_workspace_daily_minutes(db, all_ws_ids, today, today, user_timezone)
     all_time_totals = (
         db.query(
             models.Session.workspace_id,
             func.coalesce(func.sum(models.Session.duration), 0).label("dur"),
             func.count(models.Session.id).label("cnt"),
         )
+        .join(models.Workspace, models.Session.workspace_id == models.Workspace.id)
         .filter(
             models.Session.workspace_id.in_(all_ws_ids),
+            models.Session.workspace_id.isnot(None),
             models.Session.session_type == "FOCUS",
             models.Session.status == "COMPLETED",
         )
@@ -1060,15 +1162,15 @@ def compute_report_analytics(
 
     workspaces_table = []
     for ws in all_workspaces:
-        w_pace = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=ws.id)
+        w_pace = _compute_momentum_pace(db, all_workspaces, today, scope_workspace_id=ws.id, timezone_name=user_timezone)
         has_sessions = all_time_ws_cnt.get(ws.id, 0) > 0
         p_label = w_pace["label"] if has_sessions else "Calibrating"
         p_score = w_pace["score"] if has_sessions else 0.0
 
-        w_dwr = _deep_work_ratio(db, [ws.id], today, window_days=7)
+        w_dwr = _deep_work_ratio(db, [ws.id], today, window_days=7, timezone_name=user_timezone)
         dwr_val = w_dwr if w_dwr is not None else 0.0
 
-        w_c_streak, w_l_streak = _compute_workspace_streaks(db, ws, today - timedelta(days=89), today, today)
+        w_c_streak, w_l_streak = _compute_workspace_streaks(db, ws, today - timedelta(days=89), today, today, user_timezone)
         w_longest = max(ws.longest_streak or 0, w_l_streak)
 
         workspaces_table.append({
@@ -1143,7 +1245,7 @@ def compute_report_analytics(
         platform_counts[display_platform]["count"] += 1
 
         if log.timestamp:
-            h = log.timestamp.hour
+            h = get_local_hour(log.timestamp, user_timezone)
             hour_distribution[h] += 1
 
         item_key = (display_platform, (title or "Untitled").strip())
@@ -1160,7 +1262,7 @@ def compute_report_analytics(
             }
         content_items_map[item_key]["count"] += 1
         if log.timestamp:
-            content_items_map[item_key]["hour_counts"][log.timestamp.hour] += 1
+            content_items_map[item_key]["hour_counts"][get_local_hour(log.timestamp, user_timezone)] += 1
 
     total_distraction_events = sum(p["count"] for p in platform_counts.values())
 

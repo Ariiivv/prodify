@@ -62,43 +62,55 @@ export function getDayStatusVisual(
 ) {
   if (!inMonth) {
     return {
-      cell: 'text-transparent bg-transparent border border-transparent pointer-events-none',
+      cell: 'text-transparent bg-[#09090b] pointer-events-none cursor-default',
       label: '',
+      status: null,
     };
   }
 
   // Pre-creation dates: workspace did not exist yet -> neutral, never red
   if (isPreCreation) {
     return {
-      cell: 'text-zinc-600 bg-transparent border border-transparent hover:border-zinc-800 opacity-40',
+      cell: 'bg-[#0d0d10] text-zinc-600 opacity-40',
       label: 'Pre-creation (Prior to workspace)',
+      status: 'pre-creation',
     };
   }
 
   const actual = dayData?.actual_minutes ?? 0;
   const target = dayData?.target_minutes ?? 0;
 
-  // 1. Golden (>= 1.5x target)
+  // 1. Golden (>= 1.5x target exceeded)
   if (dayData?.status === 'golden' || (target > 0 && actual >= 1.5 * target)) {
     return {
-      cell: 'bg-amber-400/30 text-amber-200 border border-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.35)]',
-      label: 'Exceeded Goal (>=1.5x)',
+      cell: 'bg-amber-400 text-zinc-950 font-bold hover:bg-amber-300',
+      label: 'Exceeded Goal (1.5x+)',
+      status: 'golden',
     };
   }
 
-  // 2. Green (1.0x to < 1.5x target)
+  // 2. Green (1.0x to < 1.5x target met)
   if (dayData?.status === 'green' || (target > 0 && actual >= target)) {
     return {
-      cell: 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]',
-      label: 'Goal Met',
+      cell: 'bg-emerald-500 text-zinc-950 font-semibold hover:bg-emerald-400',
+      label: 'Goal Met (1.0x–1.5x)',
+      status: 'green',
     };
   }
 
-  // 3. TODAY: If not yet met, render Blue/Indigo Pulsing Border - NEVER RED before the day ends!
+  // 3. TODAY: If not yet met, render clean matte cell with high-contrast text - NEVER RED before the day ends!
   if (isToday) {
+    if (target > 0 && actual >= 0.5 * target) {
+      return {
+        cell: 'bg-amber-500/25 text-amber-100 hover:bg-amber-500/35 font-semibold',
+        label: `In Progress Today (${formatMinutes(actual)} / ${formatMinutes(target)})`,
+        status: 'yellow',
+      };
+    }
     return {
-      cell: 'bg-blue-500/15 text-blue-200 border-2 border-blue-500/80 animate-pulse shadow-[0_0_12px_rgba(59,130,246,0.35)] font-bold',
+      cell: 'bg-zinc-900/90 text-white font-semibold hover:bg-zinc-800/90',
       label: actual > 0 ? `In Progress Today (${formatMinutes(actual)} / ${formatMinutes(target)})` : 'In Progress Today',
+      status: 'today',
     };
   }
 
@@ -106,13 +118,15 @@ export function getDayStatusVisual(
   if (isFuture) {
     if (inSprintTrack) {
       return {
-        cell: 'bg-zinc-800/90 border border-zinc-600/50 text-zinc-200 font-semibold shadow-sm',
+        cell: 'bg-zinc-800/60 text-zinc-300 font-medium hover:bg-zinc-800/80',
         label: 'Sprint Window Track (Upcoming)',
+        status: 'sprint',
       };
     }
     return {
-      cell: 'text-zinc-600 bg-transparent border border-transparent hover:border-zinc-800',
+      cell: 'bg-[#0d0d10] text-zinc-400 hover:bg-zinc-900',
       label: 'Upcoming',
+      status: 'future',
     };
   }
 
@@ -120,23 +134,26 @@ export function getDayStatusVisual(
   // 5. Yellow (0.5x to < 1.0x target)
   if (dayData?.status === 'yellow' || (target > 0 && actual >= 0.5 * target)) {
     return {
-      cell: 'bg-amber-500/20 text-amber-300 border border-amber-500/40',
-      label: 'Partial (0.5x–1.0x)',
+      cell: 'bg-amber-500/25 text-amber-100 hover:bg-amber-500/35 font-medium',
+      label: 'Partial Effort (0.5x–1.0x)',
+      status: 'yellow',
     };
   }
 
-  // 6. Red (< 0.5x target with actual > 0)
+  // 6. Red (< 0.5x target with actual > 0, or status === 'red')
   if (dayData?.status === 'red' || (actual > 0 && target > 0 && actual < 0.5 * target)) {
     return {
-      cell: 'bg-rose-500/20 text-rose-300 border border-rose-500/40',
+      cell: 'bg-rose-950/70 text-rose-200 hover:bg-rose-900/80 font-medium',
       label: 'Under Target (<0.5x)',
+      status: 'red',
     };
   }
 
   // 7. Inactive / 0 minutes logged
   return {
-    cell: 'bg-[#181818] text-zinc-500 border border-[#262626]',
+    cell: 'bg-[#0d0d10] text-zinc-400 hover:bg-zinc-900',
     label: 'Inactive (0m logged)',
+    status: 'inactive',
   };
 }
 
@@ -198,14 +215,14 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
 
   if (loading) {
     return (
-      <div className="w-full h-48 bg-[#202024] border border-[#27272a] rounded-xl animate-pulse my-4" />
+      <div className="w-full h-48 bg-zinc-900/60 border border-zinc-800/80 rounded-xl animate-pulse my-4" />
     );
   }
 
   return (
     <div className="w-full flex flex-col my-4">
       <div className="flex items-center justify-between mb-2">
-        <button onClick={prevMonth} aria-label="Previous month" className="text-[#a1a1aa] hover:text-[#f4f4f5] transition-colors p-1">
+        <button onClick={prevMonth} aria-label="Previous month" className="text-zinc-400 hover:text-zinc-100 transition-colors p-1">
           <ChevronLeft className="w-4 h-4" />
         </button>
         <span className="flex items-center gap-1.5 text-[10px] text-prodify-muted uppercase tracking-wider font-bold">
@@ -216,22 +233,24 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
                 <button
                   type="button"
                   aria-label="What do the calendar colors mean?"
-                  className="text-zinc-500 hover:text-[#f4f4f5] transition-colors pointer-events-auto"
+                  className="text-zinc-500 hover:text-zinc-100 transition-colors pointer-events-auto"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Info className="w-3.5 h-3.5" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top" className="bg-[#202024] border-[#27272a] text-xs max-w-[260px] text-[#f4f4f5]">
-                <p className="font-bold text-[#f4f4f5] mb-1.5">Daily goal progress</p>
-                <div className="space-y-1.5 text-[#a1a1aa]">
-                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-500/30 border border-sky-500" /> Today — In progress</p>
-                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#27272a] border border-zinc-600" /> Sprint window track</p>
-                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#18181b] border border-[#27272a]" /> Inactive — 0m logged</p>
-                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500/30 border border-amber-500/60" /> Partial effort — under target</p>
-                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500/30 border border-emerald-500/60" /> Goal Met — reached daily target</p>
+              <TooltipContent side="top" className="bg-zinc-900 border border-zinc-700 text-xs max-w-[260px] text-zinc-100 shadow-2xl">
+                <p className="font-bold text-zinc-100 mb-1.5">Daily goal progress</p>
+                <div className="space-y-1.5 text-zinc-400">
+                  <p className="flex items-center gap-2"><span className="inline-flex items-center justify-center w-2.5 h-2.5 rounded-sm bg-zinc-900 border border-zinc-700"><span className="w-1.5 h-0.5 rounded-full bg-zinc-300" /></span> Today — In progress</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-zinc-800/60 border border-zinc-700" /> Sprint window track</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#0d0d10] border border-zinc-800" /> Inactive — 0m logged</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-950/70 border border-rose-800/80" /> Under target (&lt;0.5x)</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500/25 border border-amber-500/50" /> Partial effort (0.5–1x)</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 border border-emerald-400" /> Goal Met (1–1.5x)</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400 border border-amber-300" /> Exceeded Goal (1.5x+)</p>
                 </div>
-                <p className="text-[#a1a1aa]/80 mt-1.5 text-[11px]">Click any date to inspect breakdown.</p>
+                <p className="text-zinc-400/80 mt-1.5 text-[11px]">Click any date to inspect breakdown.</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -240,20 +259,20 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
           onClick={nextMonth}
           aria-label="Next month"
           disabled={!isAfter(startOfMonth(today), startOfMonth(viewAnchor))}
-          className="text-[#a1a1aa] hover:text-[#f4f4f5] transition-colors p-1 disabled:opacity-30 disabled:pointer-events-none"
+          className="text-zinc-400 hover:text-zinc-100 transition-colors p-1 disabled:opacity-30 disabled:pointer-events-none"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
-      <div className="w-full bg-[#202024]/80 border border-[#27272a] p-4 shadow-sm rounded-xl backdrop-blur-md">
-        <div className="grid grid-cols-7 gap-1 mb-2">
+      <div className="w-full bg-zinc-900/60 border border-zinc-800/80 p-4 shadow-sm rounded-xl backdrop-blur-md">
+        <div className="grid grid-cols-7 mb-2">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
-            <div key={label} className="text-center text-[10px] font-bold uppercase tracking-wider text-[#888]">
+            <div key={label} className="text-center text-[10px] font-bold uppercase tracking-wider text-zinc-500">
               {label}
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-px bg-zinc-800 border border-zinc-800 rounded-lg overflow-hidden">
           {days.map((day) => {
             const dateStr = format(day, 'yyyy-MM-dd');
             const inMonth = isSameMonth(day, viewAnchor);
@@ -289,16 +308,32 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
                       type="button"
                       disabled={!inMonth}
                       onClick={() => inMonth && onSelectDate?.(dateStr, dayData)}
-                      className={`aspect-square flex items-center justify-center text-[11px] font-mono font-bold rounded-[3px] transition-all ${visual.cell} ${isTodayCell && inMonth ? 'ring-1 ring-blue-400' : ''} ${isSelected && inMonth ? 'ring-2 ring-blue-500 ring-offset-1 ring-offset-zinc-950 font-extrabold scale-105 z-10' : ''} ${inMonth ? 'cursor-pointer hover:border-zinc-500' : 'cursor-default'}`}
+                      className={`w-full min-h-[52px] p-2.5 flex flex-col items-center justify-center relative transition-colors ${
+                        !inMonth
+                          ? 'bg-[#09090b] text-zinc-700/30 cursor-default pointer-events-none'
+                          : `${visual.cell} cursor-pointer`
+                      } ${isSelected ? 'ring-2 ring-inset ring-white z-10' : ''}`}
                     >
-                      {inMonth ? format(day, 'd') : ''}
+                      <span className="text-xs font-mono font-medium">
+                        {inMonth ? format(day, 'd') : ''}
+                      </span>
+                      {/* Clean Today indicator: subtle matte bar */}
+                      {inMonth && isTodayCell && (
+                        <span
+                          className={`absolute bottom-1.5 w-1.5 h-0.5 rounded-full ${
+                            visual.status === 'green' || visual.status === 'golden'
+                              ? 'bg-zinc-950/80'
+                              : 'bg-zinc-300'
+                          }`}
+                        />
+                      )}
                     </button>
                   </TooltipTrigger>
                   {inMonth && (
-                    <TooltipContent side="top" className="bg-zinc-900 border-zinc-700 text-xs">
+                    <TooltipContent side="top" className="bg-zinc-900 border border-zinc-700 text-xs shadow-2xl">
                       <p className="font-bold text-white">{visual.label}</p>
-                      <p className="text-[#bbb]">{detail}</p>
-                      <p className="text-[#888]">{format(parseISO(dateStr), 'MMM d, yyyy')}</p>
+                      <p className="text-zinc-300">{detail}</p>
+                      <p className="text-zinc-500">{format(parseISO(dateStr), 'MMM d, yyyy')}</p>
                     </TooltipContent>
                   )}
                 </Tooltip>
@@ -310,31 +345,33 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
       {showLegend && (
         <div className="flex flex-wrap items-center justify-center gap-3 mt-3 text-[11px] text-zinc-400">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full border border-blue-400 bg-blue-500/20 animate-pulse" />
+            <span className="inline-flex items-center justify-center w-2.5 h-2.5 rounded-sm bg-zinc-900 border border-zinc-700">
+              <span className="w-1.5 h-0.5 rounded-full bg-zinc-300" />
+            </span>
             Today (In Progress)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-zinc-800 border border-zinc-600" />
+            <span className="w-2.5 h-2.5 rounded-sm bg-zinc-800/60 border border-zinc-700" />
             Sprint Track
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#181818] border border-[#262626]" />
+            <span className="w-2.5 h-2.5 rounded-sm bg-[#0d0d10] border border-zinc-800" />
             Inactive
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-rose-500/40 border border-rose-500" />
+            <span className="w-2.5 h-2.5 rounded-sm bg-rose-950/70 border border-rose-800/80" />
             &lt;0.5x (Red)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-500/40 border border-amber-500" />
+            <span className="w-2.5 h-2.5 rounded-sm bg-amber-500/25 border border-amber-500/50" />
             0.5–1x (Yellow)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500/40 border border-emerald-500" />
+            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 border border-emerald-400" />
             1–1.5x (Green)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)] border border-amber-400" />
+            <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 border border-amber-300" />
             1.5x+ (Golden)
           </span>
         </div>

@@ -73,7 +73,7 @@ export const MetricInfoPopover: React.FC<MetricInfoPopoverProps> = ({
         sideOffset={8}
         collisionPadding={16}
         avoidCollisions={true}
-        className="w-80 max-w-[calc(100vw-32px)] bg-zinc-950/95 border border-zinc-800 text-zinc-200 p-4 rounded-xl shadow-2xl backdrop-blur-xl z-[9999]"
+        className="w-80 max-w-[calc(100vw-32px)] bg-zinc-900 border border-zinc-700 text-zinc-100 p-4 rounded-xl shadow-2xl backdrop-blur-xl z-[9999]"
       >
         <div className="space-y-2.5 text-xs">
           <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-2">

@@ -1,6 +1,6 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart3,
   Clock,
@@ -13,6 +13,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Target,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useCacheStore } from '@/store/cacheStore';
@@ -134,28 +136,27 @@ export default function Report() {
   }, []);
 
   // Fetch global report data (standardized on 30-day window)
-  useEffect(() => {
-    let isMounted = true;
-    const fetchReport = async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`${API_BASE}/api/analytics/report?days=30`, {
-          headers: getAuthHeaders(),
-          cache: 'no-store',
-        });
-        if (res.ok && isMounted) {
-          const data = await res.json();
-          setReportData(data);
-        }
-      } catch (err) {
-        console.error('Error fetching analytics report:', err);
-      } finally {
-        if (isMounted) setIsLoading(false);
+  const fetchReport = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/analytics/report?days=30`, {
+        headers: getAuthHeaders(),
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReportData(data);
       }
-    };
-    fetchReport();
-    return () => { isMounted = false; };
+    } catch (err) {
+      console.error('Error fetching analytics report:', err);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchReport();
+  }, [fetchReport, cachedDash.lastFetched]);
 
   const earliestCreatedDate = useMemo(() => {
     if (!workspaces || workspaces.length === 0) return '';
@@ -277,16 +278,16 @@ export default function Report() {
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#27272a] pb-6"
+        className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6"
       >
         <div>
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[10px] font-mono font-semibold text-[#f4f4f5] bg-[#27272a] px-2 py-0.5 rounded tracking-[0.2em] uppercase border border-zinc-700/60">Global Analytics</span>
+            <span className="text-[10px] font-mono font-semibold text-zinc-100 bg-zinc-800 px-2 py-0.5 rounded tracking-[0.2em] uppercase border border-zinc-700/60">Global Analytics</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-heading font-bold text-[#f4f4f5] tracking-tight">
+          <h1 className="text-2xl md:text-3xl font-heading font-bold text-zinc-100 tracking-tight">
             Focus & Performance Report
           </h1>
-          <p className="text-sm text-[#a1a1aa] mt-1 font-body">
+          <p className="text-sm text-zinc-400 mt-1 font-body">
             30-day aggregated focus volume, consistency momentum, deep work purity, and distraction intelligence.
           </p>
         </div>
@@ -295,7 +296,7 @@ export default function Report() {
       {isLoading && !reportData ? (
         <div className="flex flex-col items-center justify-center py-24 space-y-3">
           <div className="w-8 h-8 border-2 border-zinc-600 border-t-zinc-200 rounded-full animate-spin" />
-          <p className="text-xs text-[#a1a1aa] font-mono">Loading telemetry and behavior analytics...</p>
+          <p className="text-xs text-zinc-400 font-mono">Loading telemetry and behavior analytics...</p>
         </div>
       ) : reportData ? (
         <>
@@ -304,22 +305,22 @@ export default function Report() {
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative overflow-hidden rounded-2xl border border-[#27272a] bg-[#202024]/80 p-5 backdrop-blur-md shadow-sm"
+              className="relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-5 backdrop-blur-md shadow-sm"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#27272a] border border-zinc-700/40 flex items-center justify-center text-base shrink-0 shadow-inner">
+                <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700/40 flex items-center justify-center text-base shrink-0 shadow-inner">
                   {heroInsight.icon}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[11px] font-mono font-semibold tracking-wider text-[#a1a1aa] uppercase">
+                    <span className="text-[11px] font-mono font-semibold tracking-wider text-zinc-400 uppercase">
                       AI Performance Verdict
                     </span>
                     <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${heroInsight.badgeClass}`}>
                       {heroInsight.badge}
                     </span>
                   </div>
-                  <p className="text-xs sm:text-sm text-[#f4f4f5] leading-relaxed font-body font-medium">
+                  <p className="text-xs sm:text-sm text-zinc-100 leading-relaxed font-body font-medium">
                     {heroInsight.sentence}
                   </p>
                 </div>
@@ -335,10 +336,10 @@ export default function Report() {
             className="grid grid-cols-2 lg:grid-cols-4 gap-4"
           >
             {/* Card 1: 7D Momentum */}
-            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
                     7D Consistency
                   </span>
                   <MetricInfoPopover
@@ -351,27 +352,27 @@ export default function Report() {
                 <Activity className="w-4 h-4 text-zinc-300" />
               </div>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-[#f4f4f5]">
+                <span className="text-2xl font-bold font-mono text-zinc-100">
                   {reportData.summary.momentum_or_pace_score}%
                 </span>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getTierBadgeClass(reportData.summary.tier_label)}`}>
                   {reportData.summary.tier_label}
                 </span>
               </div>
-              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
                 <div 
                   className="bg-zinc-300 h-full rounded-full transition-all duration-300" 
                   style={{ width: `${Math.min(100, Math.max(0, reportData.summary.momentum_or_pace_score))}%` }}
                 />
               </div>
-              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">Rolling consistency score</span>
+              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">Rolling consistency score</span>
             </div>
 
             {/* Card 2: Deep Work Ratio */}
-            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
                     Focus Purity
                   </span>
                   <MetricInfoPopover
@@ -399,20 +400,20 @@ export default function Report() {
                   </span>
                 )}
               </div>
-              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
                 <div 
                   className="bg-emerald-500 h-full rounded-full transition-all duration-300" 
                   style={{ width: `${reportData.summary.total_focus_hours > 0.05 ? reportData.summary.deep_work_ratio_7d : 0}%` }}
                 />
               </div>
-              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">Focus vs. distraction purity</span>
+              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">Focus vs. distraction purity</span>
             </div>
 
             {/* Card 3: Active Streak */}
-            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
                     Active Streak
                   </span>
                   <MetricInfoPopover
@@ -426,27 +427,27 @@ export default function Report() {
                 <Flame className="w-4 h-4 text-amber-400" />
               </div>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-[#f4f4f5]">
+                <span className="text-2xl font-bold font-mono text-zinc-100">
                   {reportData.summary.current_streak}d
                 </span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                   Best: {reportData.summary.longest_streak}d
                 </span>
               </div>
-              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
                 <div 
                   className="bg-amber-500 h-full rounded-full transition-all duration-300" 
                   style={{ width: `${Math.min(100, (reportData.summary.current_streak / Math.max(1, reportData.summary.longest_streak || 7)) * 100)}%` }}
                 />
               </div>
-              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">Consecutive quota days</span>
+              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">Consecutive quota days</span>
             </div>
 
             {/* Card 4: Goal Execution / Completed Sessions */}
-            <div className="bg-[#202024]/80 border border-[#27272a] hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[#a1a1aa] font-semibold uppercase tracking-wider font-mono">
+                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
                     Goal Execution
                   </span>
                   <MetricInfoPopover
@@ -460,20 +461,20 @@ export default function Report() {
                 <CheckCircle2 className="w-4 h-4 text-zinc-300" />
               </div>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-[#f4f4f5]">
+                <span className="text-2xl font-bold font-mono text-zinc-100">
                   {reportData.summary.total_focus_hours}h
                 </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#27272a] text-zinc-200 border border-zinc-700/50">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-200 border border-zinc-700/50">
                   {reportData.summary.total_sessions ?? sessions.length} Sessions
                 </span>
               </div>
-              <div className="w-full bg-[#27272a] rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
                 <div 
                   className="bg-zinc-200 h-full rounded-full transition-all duration-300" 
                   style={{ width: `${Math.min(100, (reportData.summary.total_focus_hours / 60) * 100)}%` }}
                 />
               </div>
-              <span className="text-[10px] text-[#a1a1aa] font-mono mt-1.5">
+              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">
                 {Math.round((reportData.summary.total_focus_hours * 60) / 30)}m/day avg focus velocity
               </span>
             </div>
@@ -484,15 +485,15 @@ export default function Report() {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="rounded-2xl border border-[#27272a] bg-[#202024]/80 shadow-sm p-6 backdrop-blur-md"
+            className="rounded-2xl border border-zinc-800/80 bg-zinc-900/60 shadow-sm p-6 backdrop-blur-md"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6 border-b border-[#27272a] pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6 border-b border-zinc-800/80 pb-4">
               <div>
-                <h3 className="text-base font-semibold text-[#f4f4f5] tracking-tight flex items-center gap-2">
+                <h3 className="text-base font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
                   <CalendarIcon className="w-4 h-4 text-zinc-300" />
                   <span>Structured Goal Calendar</span>
                 </h3>
-                <p className="text-xs text-[#a1a1aa] mt-0.5">
+                <p className="text-xs text-zinc-400 mt-0.5">
                   Color-coded daily quota completion. Click any date to inspect exact minutes logged and workspace contributions.
                 </p>
               </div>
@@ -512,11 +513,11 @@ export default function Report() {
               </div>
 
               {/* Right: Interactive Day Inspector Panel */}
-              <div className="lg:col-span-6 xl:col-span-7 bg-[#121214] border border-[#262626] rounded-2xl p-5 sm:p-6 shadow-inner flex flex-col justify-between min-h-[360px]">
+              <div className="lg:col-span-6 xl:col-span-7 bg-zinc-950/70 border border-zinc-800/80 rounded-2xl p-5 sm:p-6 shadow-inner flex flex-col justify-between min-h-[360px]">
                 {selectedDayInfo && (
                   <div className="space-y-5">
                     {/* Date Header + Status Badge */}
-                    <div className="flex items-center justify-between gap-3 border-b border-[#262626] pb-3">
+                    <div className="flex items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
                       <div className="flex items-center gap-2">
                         <CalendarIcon className="w-4 h-4 text-zinc-400" />
                         <h4 className="text-sm sm:text-base font-bold text-white tracking-tight font-mono">
@@ -524,30 +525,34 @@ export default function Report() {
                         </h4>
                       </div>
                       {selectedDayInfo.dayStatus === 'golden' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-400/20 text-amber-200 border border-amber-400 flex items-center gap-1.5 shadow-[0_0_10px_rgba(251,191,36,0.3)]">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" /> Exceeded Goal (1.5x+)
+                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-md bg-amber-400 text-zinc-950 flex items-center gap-1.5 shadow-sm">
+                          <span className="w-2 h-2 rounded-xs bg-zinc-950" /> Exceeded Goal (1.5x+)
                         </span>
                       ) : selectedDayInfo.dayStatus === 'green' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Goal Met
+                        <span className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-emerald-500 text-zinc-950 flex items-center gap-1.5 shadow-sm">
+                          <span className="w-2 h-2 rounded-xs bg-zinc-950" /> Goal Met
                         </span>
                       ) : selectedDayInfo.dayStatus === 'yellow' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Partial Effort (0.5–1x)
+                        <span className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-500/25 text-amber-100 border border-amber-500/40 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-xs bg-amber-400" /> Partial Effort (0.5–1x)
+                        </span>
+                      ) : selectedDayInfo.date === format(new Date(), 'yyyy-MM-dd') ? (
+                        <span className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-zinc-900 text-zinc-200 border border-zinc-700 flex items-center gap-1.5">
+                          <span className="w-2 h-0.5 rounded-full bg-zinc-300" /> Today (In Progress)
                         </span>
                       ) : selectedDayInfo.dayStatus === 'red' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" /> Under Target (&lt;0.5x)
+                        <span className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-rose-950/70 text-rose-200 border border-rose-800/80 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-xs bg-rose-500" /> Under Target (&lt;0.5x)
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-[#181818] text-zinc-500 border border-[#262626]">
+                        <span className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-zinc-950 text-zinc-500 border border-zinc-800/80">
                           Inactive (0m logged)
                         </span>
                       )}
                     </div>
 
                     {/* Total Focus Time vs Target */}
-                    <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-4">
+                    <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-4">
                       <div className="flex items-baseline justify-between mb-2">
                         <span className="text-xs uppercase tracking-wider font-semibold text-zinc-400 font-mono">
                           Focus Time vs Target
@@ -567,9 +572,9 @@ export default function Report() {
                         <div 
                           className={`h-full transition-all duration-500 rounded-full ${
                             selectedDayInfo.dayStatus === 'golden'
-                              ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]'
+                              ? 'bg-amber-400'
                               : selectedDayInfo.dayStatus === 'green'
-                                ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' 
+                                ? 'bg-emerald-500' 
                                 : selectedDayInfo.dayStatus === 'yellow'
                                   ? 'bg-amber-400' 
                                   : selectedDayInfo.dayStatus === 'red'
@@ -599,7 +604,7 @@ export default function Report() {
                       {selectedDayInfo.activeWorkspaces.length > 0 ? (
                         <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                           {selectedDayInfo.activeWorkspaces.map((ws, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-3 bg-[#18181b] border border-[#27272a] rounded-xl">
+                            <div key={idx} className="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800/80 rounded-xl">
                               <div className="flex flex-col">
                                 <span className="text-xs font-bold text-zinc-200">{ws.name}</span>
                                 <span className="text-[10px] text-zinc-400 font-mono">{ws.sessionCount} session{ws.sessionCount !== 1 ? 's' : ''} completed</span>
@@ -618,7 +623,7 @@ export default function Report() {
                           ))}
                         </div>
                       ) : (
-                        <div className="text-center py-8 px-4 bg-[#18181b]/50 border border-dashed border-[#27272a] rounded-xl">
+                        <div className="text-center py-8 px-4 bg-zinc-950/40 border border-dashed border-zinc-800/80 rounded-xl">
                           <Clock className="w-5 h-5 text-zinc-600 mx-auto mb-1.5" />
                           <p className="text-xs text-zinc-400 font-medium">No sessions logged for this day</p>
                           <p className="text-[11px] text-zinc-600 mt-0.5">Click any active date on the calendar to view its session breakdown.</p>
@@ -638,16 +643,16 @@ export default function Report() {
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.15 }}
-              className="lg:col-span-6 xl:col-span-7 rounded-2xl border border-[#27272a] bg-[#202024]/80 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
+              className="lg:col-span-6 xl:col-span-7 rounded-2xl border border-zinc-800/80 bg-zinc-900/60 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
             >
               <div>
-                <div className="flex items-center justify-between mb-4 border-b border-[#27272a] pb-3">
+                <div className="flex items-center justify-between mb-4 border-b border-zinc-800/80 pb-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-[#f4f4f5] tracking-tight flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
                       <Layers className="w-4 h-4 text-zinc-300" />
                       <span>Workspace Performance Leaderboard</span>
                     </h3>
-                    <p className="text-[11px] text-[#a1a1aa] mt-0.5">
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
                       Cumulative volume and consistency across your active tracks. Click any row to enter the workspace.
                     </p>
                   </div>
@@ -656,7 +661,7 @@ export default function Report() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs font-mono">
                     <thead>
-                      <tr className="border-b border-[#27272a] text-[#a1a1aa] text-[10px] uppercase tracking-wider">
+                      <tr className="border-b border-zinc-800/80 text-zinc-400 text-[10px] uppercase tracking-wider">
                         <th className="pb-2.5 font-semibold">Workspace</th>
                         <th className="pb-2.5 font-semibold">Track</th>
                         <th className="pb-2.5 font-semibold text-right">Hours</th>
@@ -666,25 +671,25 @@ export default function Report() {
                         <th className="pb-2.5 font-semibold text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#27272a]/60">
+                    <tbody className="divide-y divide-zinc-800/60">
                       {reportData.workspaces_table.map((ws) => (
                         <tr
                           key={ws.id}
                           onClick={() => navigate(`/workspace/${ws.id}`)}
-                          className="transition-colors cursor-pointer group hover:bg-[#27272a]/60"
+                          className="transition-colors cursor-pointer group hover:bg-zinc-800/60"
                           title={`Open ${ws.name}`}
                         >
                           <td className="py-3 pr-2">
-                            <span className="font-semibold text-[#f4f4f5] group-hover:text-white transition-colors">
+                            <span className="font-semibold text-zinc-100 group-hover:text-white transition-colors">
                               {ws.name}
                             </span>
                           </td>
                           <td className="py-3 pr-2">
-                            <span className="px-2 py-0.5 text-[10px] font-sans font-medium rounded-md bg-[#27272a] text-[#a1a1aa] border border-zinc-700/50 uppercase tracking-wider">
+                            <span className="px-2 py-0.5 text-[10px] font-sans font-medium rounded-md bg-zinc-800 text-zinc-400 border border-zinc-700/50 uppercase tracking-wider">
                               {ws.category}
                             </span>
                           </td>
-                          <td className="py-3 text-right font-bold text-[#f4f4f5]">
+                          <td className="py-3 text-right font-bold text-zinc-100">
                             {ws.total_hours}h
                           </td>
                           <td className="py-3 text-right">
@@ -699,7 +704,7 @@ export default function Report() {
                             🔥 {ws.current_streak}d
                           </td>
                           <td className="py-3 text-right">
-                            <span className="text-[11px] text-[#a1a1aa] group-hover:text-[#f4f4f5] transition-colors inline-flex items-center gap-1 font-sans">
+                            <span className="text-[11px] text-zinc-400 group-hover:text-zinc-100 transition-colors inline-flex items-center gap-1 font-sans">
                               Open <ArrowRight className="w-3 h-3" />
                             </span>
                           </td>
@@ -716,16 +721,16 @@ export default function Report() {
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="lg:col-span-6 xl:col-span-5 rounded-2xl border border-[#27272a] bg-[#202024]/80 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
+              className="lg:col-span-6 xl:col-span-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/60 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
             >
               <div>
-                <div className="flex items-center justify-between mb-4 border-b border-[#27272a] pb-3">
+                <div className="flex items-center justify-between mb-4 border-b border-zinc-800/80 pb-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-[#f4f4f5] tracking-tight flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-amber-400" />
                       <span>Distraction Intelligence</span>
                     </h3>
-                    <p className="text-[11px] text-[#a1a1aa] mt-0.5">
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
                       Off-task activity telemetry classified by the semantic engine.
                     </p>
                   </div>
@@ -741,72 +746,112 @@ export default function Report() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* TOP OFF-TASK PLATFORMS - Interactive Grid Button Layout */}
-                    <div className="mb-6">
+                    {/* Top Off-Task Platforms: Interactive Action Buttons (Expandable) */}
+                    <div>
                       <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
                         Top Off-Task Platforms & Apps
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {distractions_breakdown.top_platforms.map((platform, index) => (
-                          <button
-                            key={index}
-                            onClick={() => setSelectedPlatform && setSelectedPlatform(platform.name)}
-                            className="group relative text-left p-4 rounded-xl border bg-zinc-900/60 hover:bg-zinc-900 border-zinc-800/80 hover:border-zinc-700 transition-all duration-200 flex flex-col justify-between shadow-sm"
-                          >
-                            <div className="flex items-center justify-between w-full mb-2">
-                              <span className="font-medium text-zinc-200 group-hover:text-white truncate">
-                                {platform.name}
-                              </span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-mono">
-                                {platform.count} events
-                              </span>
+                      <div className="space-y-2">
+                        {distractions_breakdown.top_platforms.map((platform, index) => {
+                          const isExpanded = selectedPlatform === platform.name;
+
+                          // Match content items for this specific platform
+                          const matchingInterventions = distractions_breakdown.recent_distraction_items.filter(
+                            (item) =>
+                              item.platform_name.toLowerCase() === platform.name.toLowerCase() ||
+                              item.clean_app_name.toLowerCase() === platform.name.toLowerCase() ||
+                              platform.name.toLowerCase().includes(item.platform_name.toLowerCase()) ||
+                              item.platform_name.toLowerCase().includes(platform.name.toLowerCase())
+                          );
+
+                          return (
+                            <div key={index} className="space-y-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPlatform(isExpanded ? null : platform.name)}
+                                className={`w-full flex items-center justify-between p-3.5 rounded-lg border transition-colors cursor-pointer text-left ${
+                                  isExpanded
+                                    ? 'bg-zinc-800/60 border-zinc-700'
+                                    : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/60'
+                                }`}
+                              >
+                                {/* Left: Full Platform Name, Process Name, Thin Proportion Bar */}
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 min-w-0 pr-3">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-medium text-zinc-100 whitespace-nowrap">
+                                      {platform.name}
+                                    </span>
+                                    {platform.clean_app && platform.clean_app.toLowerCase() !== platform.name.toLowerCase() && (
+                                      <span className="text-xs text-zinc-500 whitespace-nowrap">
+                                        ({platform.clean_app})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="w-20 sm:w-28 h-1 bg-zinc-800 rounded-full overflow-hidden shrink-0">
+                                    <div
+                                      className="bg-gradient-to-r from-amber-500 to-rose-500 h-full rounded-full transition-all duration-300"
+                                      style={{ width: `${Math.max(4, platform.pct_of_distractions)}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Right: Monospace badges, Lost Minutes, Chevron Icon */}
+                                <div className="flex items-center gap-2.5 shrink-0">
+                                  <span className="font-mono text-xs px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700/60">
+                                    {platform.count} events
+                                  </span>
+                                  <span className="font-mono text-xs text-zinc-400 hidden sm:inline">
+                                    ~{platform.estimated_minutes}m lost
+                                  </span>
+                                  {isExpanded ? (
+                                    <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
+                                  )}
+                                </div>
+                              </button>
+
+                              {/* Click-to-Expand Interventions Accordion Drawer */}
+                              <AnimatePresence>
+                                {isExpanded && (
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="overflow-hidden pl-1 sm:pl-2 space-y-1 pt-1"
+                                  >
+                                    {matchingInterventions.length > 0 ? (
+                                      matchingInterventions.map((item, idx) => (
+                                        <div
+                                          key={idx}
+                                          className="border-l-2 border-zinc-700 pl-3 py-2 my-1 bg-zinc-950/50 rounded-r-md text-left"
+                                        >
+                                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] font-mono">
+                                            <span className="text-zinc-200 font-medium">
+                                              "{item.content_title || item.platform_name}" — <span className="text-zinc-400">{item.count} slip{item.count !== 1 ? 's' : ''}</span> • <span className="text-zinc-500">Peak: {item.peak_hour}</span>
+                                            </span>
+                                          </div>
+                                          {item.ai_summary && (
+                                            <span className="inline-block text-[10px] font-mono bg-zinc-800/90 text-zinc-300 border border-zinc-700/60 px-2 py-0.5 rounded mt-1.5">
+                                              {item.ai_summary}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className="border-l-2 border-zinc-700 pl-3 py-2 my-1 bg-zinc-950/50 rounded-r-md text-[11px] font-mono text-zinc-400">
+                                        "{platform.name}" — {platform.count} slips • Peak window across telemetry • ~{platform.estimated_minutes}m lost
+                                      </div>
+                                    )}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
                             </div>
-                            <div className="flex items-center justify-between text-xs text-zinc-400 w-full mb-3">
-                              <span className="truncate text-zinc-500">{platform.clean_app}</span>
-                              <span className="font-semibold text-zinc-300">~{platform.estimated_minutes}m lost</span>
-                            </div>
-                            {/* Subtle bottom proportional indicator line */}
-                            <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden">
-                              <div 
-                                className="bg-gradient-to-r from-orange-500 to-red-500 h-full rounded-full transition-all duration-500"
-                                style={{ width: `${platform.pct_of_distractions}%` }}
-                              />
-                            </div>
-                          </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
-
-                    {/* Specific Content Item Highlights */}
-                    {distractions_breakdown.recent_distraction_items.length > 0 && (
-                      <div className="pt-2">
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block mb-2">
-                          Specific Content Interventions
-                        </span>
-                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                          {distractions_breakdown.recent_distraction_items.map((item, idx) => (
-                            <div key={idx} className="bg-zinc-900/40 border border-zinc-800/60 rounded-xl p-2.5 space-y-1">
-                              <div className="flex items-center justify-between text-[11px] font-mono">
-                                <span className="text-blue-400 font-semibold truncate max-w-[200px]">
-                                  {item.platform_name}
-                                </span>
-                                <span className="text-zinc-500 text-[10px]">
-                                  {item.count} slip{item.count !== 1 ? 's' : ''} • Peak: {item.peak_hour}
-                                </span>
-                              </div>
-                              <p className="text-xs font-semibold text-zinc-100 line-clamp-1">
-                                "{item.content_title}"
-                              </p>
-                              {item.ai_summary && (
-                                <span className="inline-block text-[10px] font-mono bg-rose-500/10 text-rose-300 border border-rose-500/20 px-2 py-0.5 rounded-md">
-                                  {item.ai_summary}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

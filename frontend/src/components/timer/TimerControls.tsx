@@ -62,7 +62,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
           <Button
             onClick={handleStartFocus}
             size="lg"
-            className="bg-primary hover:bg-primary/90 text-black px-8 py-6 text-base font-semibold rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:scale-[1.02] active:scale-[0.98]"
+            className="bg-white hover:bg-zinc-200 text-black px-8 py-6 text-base font-bold rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
           >
             <Play className="w-5 h-5 mr-2" />
             Start Focus
@@ -95,7 +95,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={handleStartFocus}
               size="lg"
-              className="bg-primary hover:bg-primary/90 text-black px-8 py-6 rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-white hover:bg-zinc-200 text-black px-8 py-6 rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Play className="w-5 h-5 mr-2" />
               Resume
@@ -116,7 +116,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={() => handleAction(startBreak)}
               size="lg"
-              className="bg-primary hover:bg-primary/90 text-black px-8 py-6 rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-white hover:bg-zinc-200 text-black px-8 py-6 rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Coffee className="w-5 h-5 mr-2" />
               Start Break
@@ -159,7 +159,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={() => handleAction(resumeBreak)}
               size="lg"
-              className="bg-primary hover:bg-primary/90 text-black px-8 py-6 rounded-2xl shadow-lg shadow-primary/25 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-white hover:bg-zinc-200 text-black px-8 py-6 rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Play className="w-5 h-5 mr-2" />
               Resume Break

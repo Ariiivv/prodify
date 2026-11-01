@@ -34,7 +34,7 @@ export default function RecentActivity({ sessions, workspaces }: RecentActivityP
   };
 
   return (
-    <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/60 backdrop-blur-xl p-5 shadow-sm">
+    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/60 backdrop-blur-md p-5 shadow-sm">
       {recentSessions.length === 0 ? (
         <p className="text-xs text-zinc-500 text-center py-8 font-mono">
           No focus sessions logged yet. Start a session in any workspace to record live flow telemetry!

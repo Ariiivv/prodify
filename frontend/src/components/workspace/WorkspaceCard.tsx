@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { Layers, ArrowRight, MoreVertical, Pencil, Trash2, Flame } from 'lucide-react';
 import { format, subDays, parseISO, isSameDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toLocalISODate, getTodayLocalISODate } from '@/lib/dateUtils';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useCacheStore } from '@/store/cacheStore';
@@ -131,7 +130,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
             } else if (day.status === 'cleared') {
               className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]";
             } else if (isToday) {
-              className += "border border-blue-400 bg-blue-500/20 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]";
+              className += "border border-zinc-600 bg-zinc-800";
             } else if (day.status === 'missed') {
               className += "bg-rose-500/80";
             } else {
@@ -169,7 +168,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
       return (
         <div className="flex items-center gap-1">
           {Array.from({length: 7}).map((_, i) => (
-             <div key={i} className="w-2.5 h-2.5 rounded-full border border-[#333333] bg-transparent animate-pulse" />
+             <div key={i} className="w-2.5 h-2.5 rounded-full border border-zinc-800 bg-transparent animate-pulse" />
           ))}
         </div>
       );
@@ -192,7 +191,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
           } else if (dayLog?.status === 'golden' || dayLog?.status === 'green' || isClearedToday) {
             className += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]";
           } else if (isToday) {
-            className += "border border-blue-400 bg-blue-500/20 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]";
+            className += "border border-zinc-600 bg-zinc-800";
           } else if (dayLog?.status === 'red') {
             className += "bg-rose-500/80";
           } else {
@@ -225,15 +224,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
 
   const confirmDelete = async (keepMetrics: boolean) => {
     try {
-      const response = await fetch(`${API_BASE}/workspaces/${workspace.id}?keep_metrics=${keepMetrics}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        console.error(err);
-        throw new Error(err.detail || `HTTP ${response.status}`);
-      }
+      await useCacheStore.getState().deleteWorkspace(workspace.id, keepMetrics);
       onDeleted?.(workspace.id);
     } catch (err) {
       console.error('Failed to delete workspace:', err);
@@ -271,18 +262,18 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
         transition={{ delay: index * 0.04 }}
         whileHover={{ y: -2, transition: { duration: 0.15 } }}
         onClick={() => navigate(`/workspace/${workspace.id}`)}
-        className="relative flex flex-col rounded-xl border border-[#27272a] bg-[#202024]/90 hover:bg-[#202024] hover:border-zinc-700/80 p-5 cursor-pointer overflow-hidden group h-full shadow-sm transition-all duration-150"
+        className="relative flex flex-col rounded-xl border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-900/80 hover:border-zinc-700/80 backdrop-blur-md p-5 cursor-pointer overflow-hidden group h-full shadow-sm transition-all duration-150"
       >
         <div className="relative z-10 flex flex-col h-full flex-grow">
           <div className="flex items-center justify-between mb-4">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#27272a] border border-zinc-700/50 text-[#f4f4f5] shadow-inner">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-800 border border-zinc-700/50 text-zinc-100 shadow-inner">
               <Layers className="w-4 h-4 text-zinc-200" />
             </div>
             <div className="flex items-center gap-1">
-              <ArrowRight className="w-4 h-4 text-[#a1a1aa] opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ArrowRight className="w-4 h-4 text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity" />
               <button
                 onClick={handleDeleteClick}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#a1a1aa] hover:text-rose-400 hover:bg-[#27272a] transition-all opacity-0 group-hover:opacity-100"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-all opacity-0 group-hover:opacity-100"
                 title="Delete workspace"
               >
                 <Trash2 className="w-4 h-4" />
@@ -290,17 +281,17 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                   <button
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-[#a1a1aa] hover:text-white hover:bg-[#27272a] transition-all"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all"
                   >
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl border-[#27272a] bg-[#202024] shadow-xl text-[#f4f4f5]">
-                  <DropdownMenuItem onClick={handleEdit} className="cursor-pointer rounded-lg hover:bg-[#27272a] focus:bg-[#27272a] focus:text-white">
+                <DropdownMenuContent align="end" className="rounded-xl border border-zinc-700/80 bg-zinc-900 shadow-xl text-zinc-100">
+                  <DropdownMenuItem onClick={handleEdit} className="cursor-pointer rounded-lg hover:bg-zinc-800 focus:bg-zinc-800 focus:text-white">
                     <Pencil className="w-4 h-4 mr-2" />
                     Edit
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDeleteClick} className="cursor-pointer rounded-lg text-rose-400 hover:text-rose-300 focus:text-rose-300 hover:bg-[#27272a] focus:bg-[#27272a]">
+                  <DropdownMenuItem onClick={handleDeleteClick} className="cursor-pointer rounded-lg text-rose-400 hover:text-rose-300 focus:text-rose-300 hover:bg-zinc-800 focus:bg-zinc-800">
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
@@ -310,7 +301,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
           </div>
           
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-sm font-semibold text-[#f4f4f5] tracking-tight">{workspace.name}</h3>
+            <h3 className="text-sm font-semibold text-zinc-100 tracking-tight">{workspace.name}</h3>
             {currentStreak > 0 && (
               <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20 flex items-center gap-1">
                 <Flame className="w-3 h-3 text-amber-400" /> {currentStreak}d
@@ -318,7 +309,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
             )}
           </div>
 
-          <p className="text-xs text-[#a1a1aa] line-clamp-2 mb-5 flex-grow">
+          <p className="text-xs text-zinc-400 line-clamp-2 mb-5 flex-grow">
             {workspace.focus_keywords || workspace.description || `${workspace.mode || 'structured'} track`}
           </p>
           
@@ -328,25 +319,25 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
               
               <div className="space-y-3">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-[#a1a1aa] uppercase tracking-wider text-[10px] font-mono font-semibold">Total Logged</span>
-                <span className="text-[#f4f4f5] font-mono font-bold">{totalHoursLogged}h</span>
+                <span className="text-zinc-400 uppercase tracking-wider text-[10px] font-mono font-semibold">Total Logged</span>
+                <span className="text-zinc-100 font-mono font-bold">{totalHoursLogged}h</span>
               </div>
               
               {/* Today's Quota Progress */}
-              <div className="bg-[#18181b]/70 border border-[#27272a] rounded-xl p-3 space-y-1.5">
+              <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-xl p-3 space-y-1.5">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-[10px] text-[#a1a1aa] uppercase tracking-wider font-mono font-semibold">Today's Quota</span>
+                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono font-semibold">Today's Quota</span>
                   <span className={`text-[11px] font-mono font-bold ${
                     statusTone === 'success' || statusTone === 'green' ? 'text-emerald-400' :
                     statusTone === 'progress' || statusTone === 'amber' || statusTone === 'blue' ? 'text-amber-400' :
-                    statusTone === 'danger' || statusTone === 'red' ? 'text-rose-400' : 'text-[#a1a1aa]'
+                    statusTone === 'danger' || statusTone === 'red' ? 'text-rose-400' : 'text-zinc-400'
                   }`}>
                     {statusLabel}
                   </span>
                 </div>
                 {dailyTarget > 0 ? (
                   <>
-                    <div className="w-full bg-[#27272a] h-1.5 rounded-full overflow-hidden">
+                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
                       <div 
                         className={`h-full rounded-full transition-all duration-300 ${
                           todayCleared ? 'bg-emerald-400' :
@@ -355,19 +346,19 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
                         style={{ width: `${Math.min(100, Math.round((todayLogged / dailyTarget) * 100))}%` }}
                       />
                     </div>
-                    <div className="flex justify-between items-center text-[10px] text-[#a1a1aa] font-mono">
+                    <div className="flex justify-between items-center text-[10px] text-zinc-400 font-mono">
                       <span>{todayLogged}m / {dailyTarget}m Today</span>
                       <span>{Math.round((todayLogged / dailyTarget) * 100)}%</span>
                     </div>
                   </>
                 ) : (
-                  <div className="text-[10px] text-[#a1a1aa] font-mono">
+                  <div className="text-[10px] text-zinc-400 font-mono">
                     <span>{todayLogged > 0 ? `${todayLogged}m logged today` : 'Flexible flow'}</span>
                   </div>
                 )}
               </div>
               
-              <div className="flex items-center justify-between mt-2 pt-3 border-t border-[#27272a]">
+              <div className="flex items-center justify-between mt-2 pt-3 border-t border-zinc-800/80">
                 <div className="flex items-center gap-1.5">
                   <span className={`${
                     isSprint ? 'text-amber-300 bg-amber-500/10 border-amber-500/20' :
@@ -383,7 +374,7 @@ const WorkspaceCard = React.memo(function WorkspaceCard({
                   )}
                 </div>
                 
-                <button className="text-[11px] font-medium text-[#a1a1aa] group-hover:text-[#f4f4f5] transition-colors flex items-center gap-1">
+                <button className="text-[11px] font-medium text-zinc-400 group-hover:text-zinc-100 transition-colors flex items-center gap-1">
                   Continue <ArrowRight className="w-3 h-3" />
                 </button>
               </div>

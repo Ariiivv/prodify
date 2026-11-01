@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from datetime import datetime, timedelta, date
 from typing import Optional
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
@@ -27,6 +27,13 @@ client = AsyncOpenAI(
 
 router = APIRouter()
 logger = logging.getLogger("prodify_telemetry")
+
+
+def _safe_rollback(db: Session) -> None:
+    try:
+        db.rollback()
+    except Exception as rollback_exc:
+        logger.warning("[OFFLINE] Database rollback also failed; discarding broken session: %s", rollback_exc)
 
 # Tracker instance (set from main.py on startup)
 _tracker = None
@@ -56,6 +63,9 @@ class ActivityClassification(BaseModel):
     clean_app_name: Optional[str] = None
     platform_name: Optional[str] = None
     content_title: Optional[str] = None
+    is_focused: bool
+    similarity_score: float
+    local_rule_match: str
 
 
 class SessionResponse(BaseModel):
@@ -182,14 +192,27 @@ def create_completed_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    workspace = require_owned_workspace(payload.workspace_id, current_user.id, db)
+    try:
+        workspace = require_owned_workspace(payload.workspace_id, current_user.id, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _safe_rollback(db)
+        logger.warning("[OFFLINE] Session workspace lookup failed; continuing locally: %s", exc)
+        workspace = None
     end_time = datetime.utcnow()
     duration_secs = max(0, payload.duration_minutes) * 60
     start_time = end_time - timedelta(seconds=duration_secs)
 
-    coords = _compute_telemetry_coordinates(db, payload.workspace_id, start_time)
+    try:
+        coords = _compute_telemetry_coordinates(db, payload.workspace_id, start_time)
+    except Exception as exc:
+        _safe_rollback(db)
+        logger.warning("[OFFLINE] Session coordinates unavailable; using safe defaults: %s", exc)
+        coords = {"track_day_number": 1, "session_index_today": 1}
 
     session = models.Session(
+        user_id=current_user.id,
         workspace_id=payload.workspace_id,
         start_time=start_time,
         end_time=end_time,
@@ -203,9 +226,21 @@ def create_completed_session(
         track_day_number=coords["track_day_number"],
         session_index_today=coords["session_index_today"],
     )
-    db.add(session)
-    db.commit()
-    db.refresh(session)
+    try:
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+    except Exception as exc:
+        _safe_rollback(db)
+        logger.warning("[OFFLINE] Session persistence skipped; returning local success: %s", exc)
+        return SessionResponse(
+            id=0,
+            workspace_id=payload.workspace_id,
+            duration_minutes=payload.duration_minutes,
+            distraction_count=payload.distraction_count,
+            burnout_score=max(0.0, min(1.0, payload.burnout_score)),
+            created_date=start_time.strftime("%Y-%m-%d %H:%M"),
+        )
 
     # Immediately sync DailyWorkspaceLog & streak calculation
     try:
@@ -221,6 +256,7 @@ def create_completed_session(
         )
         evaluate_global_streak(db=db, user_id=current_user.id, log_date=local_session_date)
     except Exception as log_ex:
+        _safe_rollback(db)
         logger.warning(f"[TELEMETRY] Failed to sync daily log for workspace {payload.workspace_id}: {log_ex}")
 
     # Persist the distraction count as a summary TelemetryLog so it survives
@@ -238,11 +274,15 @@ def create_completed_session(
             clock_hour=end_time.hour,
             minute_into_session=float(payload.duration_minutes),
         )
-        db.add(summary_log)
-        db.commit()
+        try:
+            db.add(summary_log)
+            db.commit()
+        except Exception as exc:
+            _safe_rollback(db)
+            logger.warning("[OFFLINE] Session summary telemetry was not persisted: %s", exc)
 
     # Sprint Auto-Completion Check
-    if workspace.category == "sprint" and workspace.target_hours:
+    if workspace is not None and workspace.category == "sprint" and workspace.target_hours:
         total_focus_secs = (
             db.query(func.sum(models.Session.duration))
             .filter(
@@ -257,7 +297,11 @@ def create_completed_session(
         if total_focus_secs >= target_secs or past_deadline:
             workspace.status = "completed"
             workspace.daily_target_minutes = 0
-            db.commit()
+            try:
+                db.commit()
+            except Exception as exc:
+                _safe_rollback(db)
+                logger.warning("[OFFLINE] Sprint status update was not persisted: %s", exc)
 
     return SessionResponse(
         id=session.id,
@@ -275,13 +319,24 @@ def log_distraction(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    require_owned_workspace(payload.workspace_id, current_user.id, db)
+    try:
+        require_owned_workspace(payload.workspace_id, current_user.id, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _safe_rollback(db)
+        logger.warning("[OFFLINE] Distraction workspace lookup failed; continuing locally: %s", exc)
     try:
         event_time = datetime.fromisoformat(payload.timestamp)
     except Exception:
         event_time = datetime.utcnow()
 
-    coords = _compute_telemetry_coordinates(db, payload.workspace_id, event_time, payload.minute_into_session)
+    try:
+        coords = _compute_telemetry_coordinates(db, payload.workspace_id, event_time, payload.minute_into_session)
+    except Exception as exc:
+        _safe_rollback(db)
+        logger.warning("[OFFLINE] Distraction coordinates unavailable; using safe defaults: %s", exc)
+        coords = {"track_day_number": 1, "session_index_today": 1, "minute_into_session": payload.minute_into_session or 0.0, "clock_hour": event_time.hour}
 
     log = models.TelemetryLog(
         workspace_id=payload.workspace_id,
@@ -294,10 +349,15 @@ def log_distraction(
         clock_hour=coords["clock_hour"],
         trigger_app=payload.trigger_app,
     )
-    db.add(log)
-    db.commit()
-    db.refresh(log)
-    return {"success": True, "log_id": log.id}
+    try:
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+        return {"success": True, "log_id": log.id}
+    except Exception as exc:
+        _safe_rollback(db)
+        logger.warning("[OFFLINE] Distraction event was not persisted; continuing: %s", exc)
+        return {"success": True, "log_id": None}
 
 
 class TotalSessionsResponse(BaseModel):
@@ -445,12 +505,18 @@ async def log_activity(
     """
     coords = None
     if payload.workspace_id is not None:
-        require_owned_workspace(payload.workspace_id, current_user.id, db)
-        coords = _compute_telemetry_coordinates(
-            db, payload.workspace_id, datetime.utcnow(), payload.minute_into_session
-        )
+        try:
+            require_owned_workspace(payload.workspace_id, current_user.id, db)
+            coords = _compute_telemetry_coordinates(
+                db, payload.workspace_id, datetime.utcnow(), payload.minute_into_session
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _safe_rollback(db)
+            logger.warning("[OFFLINE] Telemetry metadata unavailable; returning local classification: %s", exc)
 
-    status, reason, summary = await classify_with_intent(
+    status, reason, summary, similarity_score, local_rule_match = await classify_with_intent(
         window_title=payload.window_title,
         app_name=payload.app_name,
         intent=payload.intent,
@@ -482,6 +548,7 @@ async def log_activity(
         content_title=content_title,
         ai_summary=summary,
         ai_reason=reason,
+        similarity_score=similarity_score,
         track_day_number=coords["track_day_number"] if coords else None,
         session_index_today=coords["session_index_today"] if coords else None,
         minute_into_session=coords["minute_into_session"] if coords else None,
@@ -505,7 +572,8 @@ async def log_activity(
             db.add(distraction_log)
             db.commit()
         except Exception as ex:
-            logger.error(f"Failed to record granular window distraction telemetry: {ex}")
+            _safe_rollback(db)
+            logger.warning("[OFFLINE] Distraction telemetry was not persisted; continuing polling: %s", ex)
 
     return ActivityClassification(
         status=status,
@@ -516,6 +584,9 @@ async def log_activity(
         clean_app_name=clean_app_name,
         platform_name=platform_name,
         content_title=content_title,
+        is_focused=status == "focused",
+        similarity_score=similarity_score,
+        local_rule_match=local_rule_match,
     )
 
 

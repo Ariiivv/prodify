@@ -59,7 +59,7 @@ export default function TrackingConsentModal() {
             <h2 className="text-2xl font-bold text-white tracking-tight">Privacy & Tracking Consent</h2>
           </div>
 
-          <p className="text-[#a1a1aa] text-sm mb-8 leading-relaxed">
+          <p className="text-zinc-400 text-sm mb-8 leading-relaxed">
             To act as your intelligent AI focus coach, Prodify needs to observe your work environment. We take your privacy seriously and require your explicit consent for the following operations:
           </p>
 
@@ -68,7 +68,7 @@ export default function TrackingConsentModal() {
               <Eye className="w-5 h-5 text-white shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-bold text-white mb-1">Active Window Monitoring</h3>
-                <p className="text-xs text-[#a1a1aa] leading-relaxed">
+                <p className="text-xs text-zinc-400 leading-relaxed">
                   Prodify reads the titles of your currently active applications to detect distractions.
                 </p>
               </div>
@@ -78,7 +78,7 @@ export default function TrackingConsentModal() {
               <Brain className="w-5 h-5 text-white shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-bold text-white mb-1">AI Context Processing</h3>
-                <p className="text-xs text-[#a1a1aa] leading-relaxed">
+                <p className="text-xs text-zinc-400 leading-relaxed">
                   Window titles are securely sent to our Large Language Models (LLMs) to semantically determine if they align with your current goals.
                 </p>
               </div>
@@ -88,7 +88,7 @@ export default function TrackingConsentModal() {
               <Lock className="w-5 h-5 text-white shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-bold text-white mb-1">Strict Data Isolation</h3>
-                <p className="text-xs text-[#a1a1aa] leading-relaxed">
+                <p className="text-xs text-zinc-400 leading-relaxed">
                   Your telemetry is solely used for your analytics and real-time coaching. It is never sold or used for cross-platform advertising.
                 </p>
               </div>
@@ -105,7 +105,7 @@ export default function TrackingConsentModal() {
             </Button>
             <Button
               onClick={handleAgree}
-              className="flex-1 bg-blue-500 hover:bg-blue-500/90 text-black font-bold rounded-xl"
+              className="flex-1 bg-white hover:bg-zinc-200 text-black font-bold rounded-xl transition-colors shadow-sm"
             >
               I Agree & Continue
             </Button>

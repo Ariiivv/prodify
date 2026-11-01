@@ -25,10 +25,10 @@ export const Chip: React.FC<ChipProps> = ({
   ...props
 }) => {
   const variantStyles = {
-    neutral: 'bg-black/5 text-ink border border-black/5',
-    lime: 'bg-lime text-black font-semibold border border-black/10',
-    muted: 'bg-line/60 text-muted border border-line',
-    outline: 'bg-white text-ink border border-line',
+    neutral: 'bg-zinc-800 text-zinc-100 border border-zinc-700',
+    lime: 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30',
+    muted: 'bg-zinc-900 text-zinc-400 border border-zinc-800',
+    outline: 'bg-zinc-900 text-zinc-100 border border-zinc-800',
   }[variant];
 
   return (
