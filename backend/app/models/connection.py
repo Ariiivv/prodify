@@ -17,6 +17,10 @@ SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 if not SQLALCHEMY_DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is not set")
 
+# Normalize postgres:// to postgresql:// for SQLAlchemy compatibility
+if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 # PostgreSQL connection pool protection and offline SQLite fallback
 if SQLALCHEMY_DATABASE_URL.startswith("postgresql"):
     engine_kwargs = {
@@ -71,8 +75,8 @@ def create_db_and_tables():
         ("users", "avatar_url", "VARCHAR"),
         ("users", "google_id", "VARCHAR"),
         ("users", "auth_provider", "VARCHAR DEFAULT 'email'"),
-        ("users", "created_at", "DATETIME"),
-        ("users", "updated_at", "DATETIME"),
+        ("users", "created_at", "TIMESTAMP"),
+        ("users", "updated_at", "TIMESTAMP"),
         # Workspace columns
         ("workspaces", "description", "VARCHAR"),
         ("workspaces", "mode", "VARCHAR DEFAULT 'pomodoro'"),
@@ -108,7 +112,7 @@ def create_db_and_tables():
         ("daily_workspace_logs", "target_minutes_required", "INTEGER NOT NULL DEFAULT 0"),
         ("daily_workspace_logs", "minutes_logged", "INTEGER NOT NULL DEFAULT 0"),
         ("daily_workspace_logs", "intent_score", "FLOAT NOT NULL DEFAULT 0.0"),
-        ("daily_workspace_logs", "target_met", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("daily_workspace_logs", "target_met", "BOOLEAN NOT NULL DEFAULT FALSE"),
         # ActivityLog columns
         ("activity_logs", "clean_app_name", "VARCHAR"),
         ("activity_logs", "platform_name", "VARCHAR"),
@@ -147,6 +151,7 @@ def create_db_and_tables():
                         conn.commit()
                         logger.info(f"Verified/added column {col} to {table} table.")
                     except Exception as col_err:
+                        conn.rollback()
                         logger.debug(f"Column {col} on {table} check note: {col_err}")
             logger.info("Database tables and new columns verified/created via metadata.")
             return
