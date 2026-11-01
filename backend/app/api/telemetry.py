@@ -539,6 +539,15 @@ async def log_activity(
         payload.window_title, payload.app_name
     )
 
+    logger.info(
+        "[TELEMETRY CLASSIFICATION] App: '%s' | Title: '%s' | Status: %s | Score: %.2f | Reason: %s",
+        clean_app_name or payload.app_name,
+        content_title[:50] if content_title else payload.window_title[:50],
+        status.upper(),
+        similarity_score,
+        reason,
+    )
+
     background_tasks.add_task(
         crud.log_activity_record_async,
         app_name=payload.app_name,

@@ -2,8 +2,10 @@ import logging
 import time
 import hashlib
 import threading
+import re
 from collections import OrderedDict
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Tuple
 from app.services.activity_parser import parse_activity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -11,10 +13,189 @@ from sklearn.metrics.pairwise import cosine_similarity
 logger = logging.getLogger("prodify_telemetry")
 ClassificationResult = tuple[bool, str, str, float, str, str, int]
 
+_STOPWORDS = {
+    "a", "an", "the", "and", "or", "in", "on", "at", "to", "for", "with",
+    "of", "by", "from", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "this", "that", "these", "those",
+    "it", "its", "my", "your", "his", "her", "their", "our", "you", "we", "they",
+    "i", "me", "us", "him", "them", "how", "what", "why", "when", "where", "which"
+}
+
+# Domain ontology mapping tech and academic subjects to expanded domain concepts
+DOMAIN_ONTOLOGY: dict[str, set[str]] = {
+    "cpp": {
+        "c++", "cpp", "cplusplus", "pointer", "pointers", "memory", "compiler", "gcc", "clang", "g++",
+        "template", "templates", "stl", "vector", "std", "header", "include", "oop", "class", "classes",
+        "struct", "destructor", "constructor", "reference", "references", "syntax", "algorithm",
+        "data structure", "concurrency", "thread", "programming", "code", "coding", "tutorial", "learn"
+    },
+    "c": {
+        "c programming", "c language", "pointer", "pointers", "malloc", "free", "memory", "gcc",
+        "header", "struct", "syntax", "algorithm", "code", "coding", "tutorial"
+    },
+    "csharp": {
+        "c#", "csharp", "dotnet", ".net", "unity", "linq", "async", "await", "clr", "programming", "code", "coding"
+    },
+    "python": {
+        "python", "py", "pip", "django", "fastapi", "flask", "numpy", "pandas", "matplotlib",
+        "scikit", "pytorch", "tensorflow", "jupyter", "notebook", "dataframe", "programming", "code", "coding"
+    },
+    "web_dev": {
+        "javascript", "typescript", "js", "ts", "react", "nextjs", "vue", "angular", "node", "nodejs",
+        "npm", "frontend", "backend", "web", "css", "html", "dom", "tailwind", "api", "programming", "code", "coding"
+    },
+    "rust": {
+        "rust", "cargo", "crate", "borrow", "lifetime", "trait", "ownership", "programming", "code", "coding"
+    },
+    "java": {
+        "java", "jvm", "spring", "maven", "gradle", "jdk", "oop", "programming", "code", "coding"
+    },
+    "math": {
+        "math", "mathematics", "calculus", "linear algebra", "algebra", "matrix", "vector", "eigenvalue",
+        "eigenvector", "derivative", "integral", "theorem", "proof", "statistics", "probability"
+    },
+    "chemistry": {
+        "chemistry", "organic", "reaction", "molecule", "mechanism", "synthesis", "acid", "base", "orbital", "chemical"
+    },
+    "biology": {
+        "biology", "biological", "cell", "cellular", "genetics", "dna", "rna", "protein", "anatomy", "medical", "physiology"
+    },
+    "design": {
+        "design", "ui", "ux", "figma", "blender", "photoshop", "art", "drawing", "illustration", "palette", "typography", "3d"
+    },
+    "video_editing": {
+        "video", "editing", "davinci", "premiere", "cut", "timeline", "color grade", "keyframes", "render"
+    },
+    "general_programming": {
+        "programming", "program", "code", "coding", "developer", "development", "software", "terminal",
+        "debug", "debugging", "algorithm", "git", "github", "tutorial", "docs", "documentation", "api"
+    }
+}
+
+
+@dataclass
+class IntentProfile:
+    raw_intent: str
+    core_subject: str
+    core_tokens: set[str] = field(default_factory=set)
+    declared_channels: set[str] = field(default_factory=set)
+    domain_concepts: set[str] = field(default_factory=set)
+    is_broad: bool = False
+
+
+def _normalize_tech_text(text: str) -> str:
+    """
+    Normalizes technical abbreviations and phrases so punctuation like '+' in C++
+    and '#' in C# isn't stripped by standard tokenizers.
+    """
+    t = text.lower()
+    t = re.sub(r"\bc\+\+\b", "cpp cplusplus", t)
+    t = re.sub(r"\bc\s*\+\s*\+", "cpp cplusplus", t)
+    t = re.sub(r"\bc#\b", "csharp", t)
+    t = re.sub(r"\bc\s*#", "csharp", t)
+    t = re.sub(r"\b\.net\b", "dotnet", t)
+    t = re.sub(r"\bvs\s*code[d]?\b|\bvscode\b|\bvisual\s+studio\s+code\b", "vscode code_editor", t)
+    t = re.sub(r"\byt\b|\byoutube\b", "youtube video_tutorial", t)
+    t = re.sub(r"\bai\b|\bchatgpt\b|\bclaude\b|\bgemini\b|\bperplexity\b|\bllm\b", "ai_assistant llm_tool", t)
+    t = re.sub(r"\bnode\.?js\b", "nodejs", t)
+    t = re.sub(r"\breact\.?js\b", "reactjs", t)
+    t = re.sub(r"\bvue\.?js\b", "vuejs", t)
+    return t
+
+
+def parse_intent_profile(raw_intent: str) -> IntentProfile:
+    """
+    True Semantic Intent Parser:
+    Extracts core objective subject (e.g. 'c++') and declared auxiliary modalities
+    (video learning, code editors, AI tools, documentation) from natural language goals.
+    """
+    intent_clean = (raw_intent or "").strip()
+    if not intent_clean or intent_clean.lower() in ["general", "none", "work", "focus", "deep work"]:
+        return IntentProfile(
+            raw_intent=raw_intent or "General Productivity",
+            core_subject="general productivity",
+            core_tokens={"productivity", "work", "focus"},
+            declared_channels={"general"},
+            domain_concepts={"productivity", "work", "study", "research"},
+            is_broad=True,
+        )
+
+    norm = _normalize_tech_text(intent_clean)
+
+    # 1. Detect declared channels / auxiliary contexts
+    channels: set[str] = set()
+    if re.search(r"\b(youtube|video_tutorial|video|videos|course|courses|lecture|lectures|tutorial|tutorials|udemy|coursera|khan\s*academy|stream|watch|watching)\b", norm):
+        channels.add("video_learning")
+    if re.search(r"\b(ai_assistant|llm_tool|ai|chatgpt|claude|gemini|perplexity|copilot|llm|assistant|gpt|artificial\s*intelligence)\b", norm):
+        channels.add("ai_tools")
+    if re.search(r"\b(vscode|code_editor|editor|ide|terminal|cursor|pycharm|intellij|vim|neovim|sublime|code|coding)\b", norm):
+        channels.add("code_editor")
+    if re.search(r"\b(docs|documentation|reference|manual|api|specs|specification|stackoverflow|stack\s*overflow|github|arxiv|paper|papers|book|books|reading|textbook|pdf)\b", norm):
+        channels.add("documentation")
+    if re.search(r"\b(figma|blender|photoshop|premiere|davinci|resolve|illustrator|canva|design|drawing|paint|painting|3d|sculpt|animation|render)\b", norm):
+        channels.add("creative_media")
+    if re.search(r"\b(google\s*docs|notion|obsidian|word|notes|write|writing|essay|draft|journal)\b", norm):
+        channels.add("writing_notes")
+
+    # 2. Extract Core Subject by stripping boilerplate connectors and tool declarations
+    subject_text = intent_clean.lower()
+    strip_patterns = [
+        r"\b(i'll\s*be|ill\s*be|i\s*will\s*be|i\s*would\s*be|i'm\s*going\s*to|im\s*going\s*to|i\s*am\s*going\s*to|i\s*want\s*to|i\s*am|im)\b",
+        r"\b(learning|studying|practicing|working\s*on|doing|building|creating|exploring|preparing|focusing\s*on)\b",
+        r"\b(using|used|uses|with|through|via|by|in|on|at|for|to|from|of|and|or)\b",
+        r"\b(related\s*to\s*it|related\s*to|related|it|its|my|the|a|an)\b",
+        r"\b(vs\s*code[d]?|vscode|visual\s*studio\s*code|code\s*editor|editor|ide|terminal)\b",
+        r"\b(ai|chatgpt|claude|gemini|perplexity|copilot|llm|assistant)\b",
+        r"\b(yt|youtube|video|videos|course|courses|tutorial|tutorials|lectures?)\b",
+        r"\b(documentation|docs|reference|stackoverflow|google|browser)\b",
+    ]
+    for pat in strip_patterns:
+        subject_text = re.sub(pat, " ", subject_text, flags=re.IGNORECASE)
+
+    # Clean residual punctuation except + and #
+    subject_cleaned = re.sub(r"[^\w\s+#.]", " ", subject_text).strip()
+    subject_cleaned = re.sub(r"\s+", " ", subject_cleaned).strip()
+
+    if not subject_cleaned:
+        tokens = [w for w in re.sub(r"[^\w\s+#.]", " ", intent_clean.lower()).split() if w not in _STOPWORDS]
+        core_subject = " ".join(tokens) if tokens else intent_clean
+    else:
+        core_subject = subject_cleaned
+
+    # 3. Core tokens
+    core_tokens = {w for w in re.sub(r"[^\w\s+#.]", " ", core_subject.lower()).split() if len(w) > 0 and w not in _STOPWORDS}
+    if "c++" in intent_clean.lower() or "cpp" in core_tokens or "c++" in core_tokens:
+        core_tokens.update({"c++", "cpp", "cplusplus"})
+    if "c#" in intent_clean.lower() or "csharp" in core_tokens:
+        core_tokens.update({"c#", "csharp"})
+
+    # 4. Domain concept expansion
+    domain_concepts: set[str] = set()
+    for key, terms in DOMAIN_ONTOLOGY.items():
+        if core_tokens & terms or any(t in core_subject.lower() for t in terms):
+            domain_concepts.update(terms)
+
+    if not domain_concepts:
+        domain_concepts.update(core_tokens)
+
+    if "code_editor" in channels or "cpp" in core_tokens or "python" in core_tokens or "rust" in core_tokens:
+        domain_concepts.update(DOMAIN_ONTOLOGY["general_programming"])
+
+    is_broad = len(core_tokens) <= 2 and any(t in core_tokens for t in ["study", "work", "focus", "project", "research", "learning"])
+
+    return IntentProfile(
+        raw_intent=raw_intent,
+        core_subject=core_subject,
+        core_tokens=core_tokens,
+        declared_channels=channels,
+        domain_concepts=domain_concepts,
+        is_broad=is_broad,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Semantic Cache — bounded local-only classification cache.
 # ---------------------------------------------------------------------------
-
 
 class SemanticCache:
     _MAX_SIZE = 512
@@ -65,7 +246,7 @@ class SemanticCache:
             self._data.clear()
 
 
-# Cache & State Machine singletons (start clean on module reload)
+# Cache & State Machine singletons
 _semantic_cache = SemanticCache()
 _intent_cache = _semantic_cache
 _workspace_states: dict[int, dict] = {}
@@ -134,12 +315,7 @@ def clear_semantic_cache():
 
 
 def clear_intent_cache(workspace_id: Optional[int] = None):
-    """
-    Clears the semantic evaluation cache and resets the workspace focus state machine.
-    If workspace_id is provided, resets focus state for that workspace.
-    If workspace_id is None, clears all workspace states.
-    Always flushes cached LLM verdicts so stale classifications never persist across intent changes.
-    """
+    """Clears semantic evaluation cache and resets workspace focus state machine."""
     _semantic_cache.clear()
     with _state_lock:
         if workspace_id is not None:
@@ -151,215 +327,218 @@ def clear_intent_cache(workspace_id: Optional[int] = None):
     logger.info(f"[CACHE] Intent cache and focus states cleared (workspace_id={workspace_id}).")
 
 
-# ---------------------------------------------------------------------------
-# Dynamic Domain Concept Clusters for Semantic Alignment
-# Covers modern creative, technical, research, academic, and business workflows
-# without hardcoding any specific executable names or tool whitelists.
-# ---------------------------------------------------------------------------
-_DOMAIN_CONCEPT_CLUSTERS = [
-    # Visual Art, Illustration & 3D Design
-    {"art", "design", "drawing", "draw", "painting", "paint", "sketch", "illustration", "illustrate", "render", "rendering", "animation", "animate", "3d", "model", "modeling", "sculpt", "sculpting", "anatomy", "pose", "lighting", "color", "texture", "palette", "concept", "character", "composition", "blender", "photoshop", "figma", "procreate", "maya", "zbrush"},
-    # Music Production & Audio Engineering
-    {"music", "audio", "sound", "synthesis", "synth", "mixing", "mastering", "track", "daw", "instrument", "beat", "production", "vocals", "arrangement", "sample", "plugin", "reverb", "equalizer", "compression", "tempo", "ableton", "logic", "fl studio", "reaper"},
-    # Software Engineering & Dev
-    {"software", "code", "coding", "dev", "development", "developer", "programming", "program", "backend", "frontend", "web", "app", "api", "database", "db", "bug", "debug", "terminal", "algorithm", "tutorial", "docs", "documentation", "repository", "commit", "server", "architecture", "github", "stack", "react", "python", "fastapi"},
-    # Science, Mathematics & Medical Research
-    {"science", "study", "studying", "math", "mathematics", "physics", "chemistry", "biology", "medical", "medicine", "research", "experiment", "lab", "paper", "data", "analysis", "statistics", "clinical", "thesis", "proof", "derivation", "journal", "pubmed"},
-    # History, Social Sciences & Humanities
-    {"history", "documentary", "historical", "empire", "war", "civilization", "archaeology", "ancient", "archive", "period", "century", "monarchy", "culture", "philosophy", "sociology", "anthropology", "geopolitics", "law", "statute"},
-    # Writing, Journalism & Literature
-    {"writing", "writer", "write", "draft", "article", "essay", "novel", "book", "blog", "copywriting", "manuscript", "literature", "chapter", "script", "screenplay", "prose", "poetry", "publishing"},
-    # Marketing, Growth & Business Management
-    {"marketing", "brand", "branding", "growth", "advertising", "ad", "ads", "campaign", "trends", "audience", "social", "media", "content", "creator", "influencer", "seo", "analytics", "funnel", "customer", "sales", "strategy", "pr"},
-    # General Productivity, Planning & Administration
-    {"productivity", "planning", "plan", "budget", "finance", "schedule", "calendar", "organize", "notes", "tasks", "roadmap", "sheet", "sheets", "doc", "docs", "workspace", "workflow", "management", "project", "presentation", "meeting", "deck"},
-]
-
-_STOPWORDS = {
-    "a", "an", "the", "and", "or", "in", "on", "at", "to", "for", "with",
-    "of", "by", "from", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "this", "that", "these", "those",
-    "it", "its", "my", "your", "his", "her", "their", "our", "you", "we", "they",
-    "i", "me", "us", "him", "them", "how", "what", "why", "when", "where", "which"
-}
-
-
-def _extract_semantic_tokens(text: str) -> set[str]:
-    import string
-    clean = text.lower().translate(str.maketrans("", "", string.punctuation))
-    return {t for t in clean.split() if len(t) > 2 and t not in _STOPWORDS}
-
-
 def determine_engagement_mode(
     app_name: str,
     window_title: str,
     intent: str,
 ) -> tuple[str, int]:
     """
-    Classify active window into engagement_mode ('passive', 'mixed', 'interactive')
-    and idle_allowance_seconds: passive ~900, mixed ~300, interactive ~120.
-    Clamped server-side to 60-1200 seconds without hardcoding app or site names.
+    Classifies active window into engagement_mode ('passive', 'mixed', 'interactive')
+    and idle_allowance_seconds: passive ~900s, mixed ~300s, interactive ~120s.
     """
     clean_app, platform, content_title = parse_activity(window_title, app_name)
     combined = f"{clean_app} {platform} {content_title} {window_title} {intent}".lower()
 
-    # Passive activities: video/lecture, reading, listening, studying, research docs
-    passive_terms = {
-        "video", "lecture", "course", "watch", "watching", "listen", "listening",
-        "read", "reading", "reader", "paper", "book", "article", "pdf", "docs",
-        "documentation", "reference", "tutorial", "slides", "presentation",
-        "webinar", "podcast", "stream", "documentary", "study", "studying"
-    }
-
-    # Interactive activities: coding, writing, editing, designing, terminal
-    interactive_terms = {
-        "code", "coding", "develop", "developer", "ide", "editor", "edit", "editing",
-        "terminal", "bash", "cmd", "powershell", "git", "commit", "debug", "debugging",
-        "write", "writing", "draft", "drafting", "author", "type", "typing",
-        "design", "designing", "draw", "drawing", "paint", "painting", "sketch",
-        "model", "modeling", "sculpt", "sculpting", "cad", "figma", "blender"
-    }
-
-    words = set(combined.replace("-", " ").replace("_", " ").split())
-    is_passive = bool(words & passive_terms) or any(t in combined for t in passive_terms)
-    is_interactive = bool(words & interactive_terms) or any(t in combined for t in interactive_terms)
-
-    if is_passive and not is_interactive:
-        mode = "passive"
-        allowance = 900
-    elif is_interactive and not is_passive:
-        mode = "interactive"
-        allowance = 120
-    else:
-        mode = "mixed"
-        allowance = 300
-
-    clamped_allowance = max(60, min(1200, allowance))
-    return mode, clamped_allowance
+    if platform == "YouTube" or any(t in combined for t in ["video", "lecture", "course", "reading", "pdf", "article", "stream"]):
+        return "passive", 900
+    if clean_app in ["VS Code", "Cursor", "Terminal", "PyCharm", "Command Prompt", "IntelliJ"] or any(t in combined for t in ["code", "coding", "typing", "editor"]):
+        return "interactive", 120
+    return "mixed", 300
 
 
 def evaluate_semantics_offline(
     app_name: str, window_title: str, intent: str
 ) -> ClassificationResult:
     """
-    Pure Dynamic Semantic Intent Matching Engine (Offline):
-    - Strictly avoids application/executable whitelists or tool blacklists.
-    - Evaluates 100% on dynamic semantic similarity between stated goal and window title.
-    - Context-aware flexibility: recognizes multi-app fluid workflows across all professional/creative/academic domains.
-    - Never flags an application purely based on executable name (e.g. browser.exe, code.exe, vlc.exe).
+    Pure Dynamic Semantic Intent Matching Engine:
+    - Strictly avoids hardcoded application/executable blacklists.
+    - Parses both the core objective (e.g. 'C++') and declared auxiliary learning channels.
+    - Evaluates via multi-scale TF-IDF and character n-gram cosine vector similarity.
+    - Produces transparent, human-readable semantic explanations for each verdict.
     """
     clean_app, platform, content_title = parse_activity(window_title, app_name)
-    intent_clean = (intent or "").strip().lower()
-    if not intent_clean or intent_clean in ["general", "none", "work", "focus"]:
-        intent_clean = "general productivity and professional focus"
+    title_clean = (content_title or window_title or "").strip()
+    profile = parse_intent_profile(intent)
 
-    content_clean = (content_title or window_title or "").strip().lower()
-    full_context = f"{clean_app} {platform} {content_clean} {window_title}".strip().lower()
-
-    intent_tokens = _extract_semantic_tokens(intent_clean)
-    context_tokens = _extract_semantic_tokens(full_context)
+    app_lower = (app_name or "").lower().strip()
+    title_lower = (window_title or "").lower().strip()
+    content_lower = title_clean.lower()
+    full_context = f"{clean_app} {platform} {title_clean} {window_title}".lower()
 
     engagement_mode, idle_allowance_seconds = determine_engagement_mode(
         app_name=app_name,
         window_title=window_title,
-        intent=intent_clean,
+        intent=intent,
     )
 
-    # 1. True Recreational Diversion Detection (Semantic Content Only)
-    # Only trigger if the actual content title/subject represents an explicit entertainment diversion
-    # AND the user's declared goal does not cover that domain.
-    recreational_diversions = {
-        "gameplay", "walkthrough", "speedrun", "esports", "streamer",
-        "roblox", "minecraft", "fortnite", "valorant", "gta 5", "gta v", "gta",
+    # 1. Explicit Entertainment / Gaming Distractions Check
+    # Catches recreational streams, gaming, comedy compilations, and music videos
+    entertainment_markers = [
+        "gameplay", "walkthrough", "speedrun", "esports", "streamer", "twitch",
+        "roblox", "minecraft", "fortnite", "valorant", "gta 5", "gta v", "gta", "cs:go", "call of duty", "warzone",
         "funny moments", "prank", "cringe compilation", "meme compilation",
-        "celebrity gossip", "reaction video", "shorts feed", "reels feed"
-    }
+        "music video", "official video", "lyric video", "album", "top hits",
+        "celebrity gossip", "shorts feed", "reels feed"
+    ]
+    is_entertainment = any(m in full_context for m in entertainment_markers)
+    intent_allows_entertainment = any(t in profile.domain_concepts for t in ["game", "gaming", "music", "entertainment"])
 
-    matched_diversion = [t for t in recreational_diversions if t in content_clean or t in full_context]
-    intent_allows_diversion = any(t in intent_clean for t in matched_diversion) or any(
-        term in intent_clean for term in ["game", "gaming", "stream", "entertainment", "social media", "content creation", "video editing"]
-    )
+    # 2. Priority 1: Code Editor & Development Tools Check
+    if clean_app in ["VS Code", "Cursor", "Terminal", "Command Prompt", "PyCharm", "IntelliJ", "Sublime Text", "Vim"]:
+        if "code_editor" in profile.declared_channels or "general_programming" in profile.domain_concepts:
+            reason = f"Active code editor '{clean_app}' ({title_clean[:40]}) directly serves your declared '{profile.core_subject}' programming goal."
+            logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: ALIGNED ({reason})")
+            return (
+                True,
+                reason,
+                "Aligned Code Editor",
+                0.95,
+                "declared_code_editor_match",
+                engagement_mode,
+                idle_allowance_seconds,
+            )
 
-    if matched_diversion and not intent_allows_diversion:
-        return (
-            False,
-            f"Content '{content_title[:45] or window_title[:45]}' represents an off-task entertainment diversion from your declared goal.",
-            "Off-task Diversion",
-            0.85,
-            "recreational_diversion_rule",
-            engagement_mode,
-            idle_allowance_seconds,
-        )
+    # 3. Direct Core Subject Match (e.g. "c++" in "C++ in One Shot")
+    subject_matched = False
+    for tok in profile.core_tokens:
+        if len(tok) < 2 and tok not in ["c", "r"]:
+            continue
+        if tok in ["c++", "cpp", "cplusplus"]:
+            if re.search(r"\b(c\+\+|cpp|cplusplus)\b", content_lower) or re.search(r"\b(c\+\+|cpp|cplusplus)\b", full_context):
+                subject_matched = True
+                break
+        elif tok in ["c#", "csharp"]:
+            if re.search(r"\b(c#|csharp)\b", content_lower):
+                subject_matched = True
+                break
+        else:
+            if re.search(rf"\b{re.escape(tok)}\b", content_lower) or re.search(rf"\b{re.escape(tok)}\b", full_context):
+                subject_matched = True
+                break
 
-    # 2. General / Broad Intent Handling
-    is_broad_intent = any(
-        kw in intent_clean for kw in [
-            "general productivity", "deep work", "focus", "study", "learning", "research", "project", "work"
-        ]
-    ) and len(intent_tokens) <= 4
+    if subject_matched and not (is_entertainment and not intent_allows_entertainment):
+        if platform == "YouTube" or "video_learning" in profile.declared_channels or "video" in content_lower:
+            reason = f"Content '{title_clean[:45]}' semantically aligns with your declared goal '{profile.core_subject}'."
+            logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: ALIGNED ({reason})")
+            return (
+                True,
+                reason,
+                "Aligned Video Tutorial",
+                0.95,
+                "semantic_subject_video_match",
+                engagement_mode,
+                idle_allowance_seconds,
+            )
+        else:
+            reason = f"Content '{title_clean[:45]}' directly matches your declared objective '{profile.core_subject}'."
+            logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: ALIGNED ({reason})")
+            return (
+                True,
+                reason,
+                "Aligned Subject Activity",
+                0.90,
+                "semantic_subject_direct_match",
+                engagement_mode,
+                idle_allowance_seconds,
+            )
 
-    # 3. Dynamic Multi-Scale Semantic Similarity
-    # A. Word-level TF-IDF n-grams (1-3 words)
+    # 4. Declared Tool / Auxiliary Channel Matching
+    # A. AI Assistant
+    if "ai_tools" in profile.declared_channels or platform == "AI Assistant":
+        if platform == "AI Assistant" or clean_app == "AI Assistant":
+            if not is_entertainment:
+                reason = f"AI assistant research ({title_clean[:40]}) directly supports your declared learning workflow."
+                logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: ALIGNED ({reason})")
+                return (
+                    True,
+                    reason,
+                    "Aligned AI Assistant",
+                    0.88,
+                    "declared_ai_assistant_match",
+                    engagement_mode,
+                    idle_allowance_seconds,
+                )
+
+    # B. Documentation / Reference
+    if "documentation" in profile.declared_channels or "general_programming" in profile.domain_concepts:
+        if platform in ["GitHub", "Stack Overflow", "Google Docs"] or "reference" in content_lower or "docs" in content_lower:
+            if not is_entertainment:
+                reason = f"Technical reference '{platform}' ({title_clean[:40]}) aligns with your declared learning workflow."
+                logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: ALIGNED ({reason})")
+                return (
+                    True,
+                    reason,
+                    "Aligned Documentation",
+                    0.85,
+                    "declared_documentation_match",
+                    engagement_mode,
+                    idle_allowance_seconds,
+                )
+
+    # 5. Multi-Scale TF-IDF & Character N-Gram Vector Cosine Similarity
+    norm_intent = _normalize_tech_text(f"{intent} {' '.join(list(profile.domain_concepts)[:25])}")
+    norm_context = _normalize_tech_text(f"{clean_app} {platform} {title_clean} {window_title}")
+
     try:
         word_vec = TfidfVectorizer(ngram_range=(1, 3), stop_words="english", sublinear_tf=True)
-        word_tfidf = word_vec.fit_transform([intent_clean, full_context])
+        word_tfidf = word_vec.fit_transform([norm_intent, norm_context])
         word_sim = float(cosine_similarity(word_tfidf[0:1], word_tfidf[1:2])[0][0])
     except Exception:
         word_sim = 0.0
 
-    # B. Character n-gram similarity (morphological roots, compounding, abbreviations)
     try:
         char_vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True)
-        char_tfidf = char_vec.fit_transform([intent_clean, full_context])
+        char_tfidf = char_vec.fit_transform([norm_intent, norm_context])
         char_sim = float(cosine_similarity(char_tfidf[0:1], char_tfidf[1:2])[0][0])
     except Exception:
         char_sim = 0.0
 
-    # C. Direct Token Overlap & Morphological Stems
-    overlap = len(intent_tokens & context_tokens)
-    stem_matches = sum(1 for it in intent_tokens if any(it in ct or ct in it for ct in context_tokens))
+    domain_hits = sum(1 for term in profile.domain_concepts if term in content_lower or term in full_context)
+    domain_score = min(1.0, domain_hits * 0.25)
 
-    # D. Domain Concept Cluster Alignment
-    shared_domains = 0
-    for cluster in _DOMAIN_CONCEPT_CLUSTERS:
-        if bool(intent_tokens & cluster) and bool(context_tokens & cluster):
-            shared_domains += 1
+    composite_score = (0.40 * word_sim) + (0.35 * char_sim) + (0.25 * domain_score)
 
-    domain_boost = 0.30 if shared_domains > 0 else 0.0
-    composite_score = (0.35 * word_sim) + (0.25 * char_sim) + (0.20 * (1.0 if stem_matches > 0 else 0.0)) + (0.20 * domain_boost)
-
-    # 4. Pure Semantic Decision:
-    # High direct similarity, shared domain, or stem overlap -> ALIGNED
-    if composite_score >= 0.12 or overlap >= 1 or stem_matches >= 1 or shared_domains >= 1:
+    # 6. Semantic Threshold Evaluation
+    if not is_entertainment and (composite_score >= 0.12 or domain_hits >= 1):
+        reason = f"Content '{title_clean[:45]}' semantically aligns with your declared goal '{profile.core_subject or intent[:35]}'."
+        logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: ALIGNED ({reason})")
         return (
             True,
-            f"'{content_title[:45] or window_title[:45]}' dynamically aligns with your declared objective.",
-            "Aligned Activity",
+            reason,
+            "Aligned Semantic Workflow",
             round(max(composite_score, 0.75), 2),
-            "tfidf_cosine_domain_alignment",
+            "tfidf_domain_semantic_alignment",
             engagement_mode,
             idle_allowance_seconds,
         )
 
-    # Broad intent with no diversion signals -> ALIGNED
-    if is_broad_intent:
+    # 7. Broad Focus Handling
+    if profile.is_broad and not is_entertainment:
+        reason = f"Active tool/content logically supports your general focus session."
+        logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: ALIGNED ({reason})")
         return (
             True,
-            f"Active tool/content logically supports your general focus session.",
-            "Aligned Workflow",
+            reason,
+            "Aligned Focus Session",
             0.70,
-            "broad_productivity_rule",
+            "broad_productivity_match",
             engagement_mode,
             idle_allowance_seconds,
         )
 
-    # Divergent from stated specific goal
+    # 8. Definite Distraction / Semantic Divergence
+    if is_entertainment and not intent_allows_entertainment:
+        divergence_reason = f"Window '{title_clean[:45]}' represents an off-task entertainment distraction from declared goal '{profile.core_subject or intent[:35]}'."
+    else:
+        divergence_reason = f"Window '{title_clean[:45]}' diverges from your declared goal: '{intent[:40]}' (zero semantic overlap with '{profile.core_subject or intent[:35]}')."
+
+    logger.info(f"[INTENT EVAL] Target: '{clean_app}' | Title: '{title_clean[:50]}' | Goal: '{intent[:40]}' | Verdict: DISTRACTED ({divergence_reason})")
     return (
         False,
-        f"Window '{content_title[:45] or window_title[:45]}' diverges from your declared goal: '{intent[:40]}'.",
+        divergence_reason,
         "Divergent Activity",
-        round(1.0 - composite_score, 2),
-        "tfidf_cosine_domain_divergence",
+        round(max(0.0, 1.0 - composite_score), 2),
+        "semantic_domain_divergence",
         engagement_mode,
         idle_allowance_seconds,
     )
@@ -376,8 +555,8 @@ def update_focus_state(
 ) -> tuple[str, str]:
     """
     Deterministically manages workspace state machine transitions.
-    Prevents stale reason leakage by binding reasons strictly to the active target
-    and clearing history whenever the user returns to an aligned state.
+    Prevents stale reason leakage by binding reasons strictly to active targets
+    and resetting immediately back to ALIGNED whenever the user returns to work.
     """
     if not workspace_id:
         return ("focused" if is_focused else "distracted"), reason
@@ -434,9 +613,8 @@ def _update_focus_state_locked(
         active_reason = state.get("active_distraction_reason") or "Prodify window"
         return ("distracted" if state["status"] == "DISTRACTED" else "focused"), active_reason
 
-    # Identify transient OS utility flickers (only known OS shell processes)
+    # Identify transient OS utility flickers
     _OS_SHELLS = {"explorer.exe", "shellexperiencehost.exe"}
-    
     is_transient = (
         (app_lower in _OS_SHELLS and (
             "task switch" in title_lower 
@@ -448,7 +626,6 @@ def _update_focus_state_locked(
     )
 
     if is_focused:
-        # If transient utility flicker happens while penalized, keep state but do not overwrite reason
         if is_transient and state["status"] in ["PENDING", "DISTRACTED"]:
             active_reason = state.get("active_distraction_reason") or reason
             return ("distracted" if state["status"] == "DISTRACTED" else "focused"), active_reason
@@ -468,7 +645,6 @@ def _update_focus_state_locked(
             active_reason = state.get("active_distraction_reason") or reason
             return ("distracted" if state["status"] == "DISTRACTED" else "focused"), active_reason
 
-        # If already distracted, keep distracted and update active reason
         if state["status"] == "DISTRACTED":
             state["active_distraction_target"] = current_target
             state["active_distraction_reason"] = reason
@@ -502,8 +678,6 @@ def _update_focus_state_locked(
             state["active_distraction_reason"] = reason
             logger.info(f"[STATE] -> DISTRACTED (Strike 2 confirmed) on '{current_target}'")
             return "distracted", state["active_distraction_reason"]
-
-    return "focused", reason
 
 
 def reset_workspace_focus_state(workspace_id: int):
@@ -547,7 +721,6 @@ async def classify_with_intent(
         logger.info(f"[INTENT] No intent set - defaulting to general productivity for '{window_title[:60]}'")
         intent = "General productivity work"
 
-    # 1. Host Self-Awareness (Ignore Prodify's own window as transient/neutral)
     app_lower = app_name.lower().strip()
     title_lower = window_title.lower().strip()
     if (
@@ -557,16 +730,15 @@ async def classify_with_intent(
     ):
         return "focused", "Prodify session controller is intrinsically aligned", "Prodify app", 1.0, "prodify_system_rule", "mixed", 300
 
-    # 2. Whitelist OS System Utilities (Neutral system transitions)
+    # Whitelist OS System Utilities (Neutral system transitions)
     if app_lower in OS_SYSTEM_UTILITIES:
         with _state_lock:
             state = dict(_workspace_states.get(workspace_id or 0, {}))
         if state and state.get("status") == "DISTRACTED":
-            # Keep distracted but never overwrite active_distraction_reason or trigger new strikes
             return "distracted", state.get("active_distraction_reason") or "Session paused", "System Utility", 0.0, "system_utility_latch", "mixed", 300
         return "focused", "System utility transition", "System Utility", 1.0, "system_utility_rule", "mixed", 300
 
-    # 2.5. Per-Workspace Session Override Whitelist (User explicitly marked window as relevant)
+    # Per-Workspace Session Override Whitelist (User explicitly marked window as relevant)
     with _state_lock:
         workspace_overrides = set(_session_overrides.get(workspace_id or 0, set()))
     if workspace_id and workspace_overrides:
@@ -602,7 +774,7 @@ async def classify_with_intent(
         with _state_lock:
             _workspace_states.setdefault(workspace_id, {})["last_goal"] = intent
 
-    # 3. Semantic Cache
+    # Semantic Cache
     cached = _semantic_cache.get(app_name, window_title, intent)
     if cached is not None:
         if len(cached) == 7:
