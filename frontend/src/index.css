@@ -7,41 +7,42 @@
 
 @layer base {
   :root {
-    /* ── Claude Dark Theme Foundation ── */
-    --background: 240 10% 3.9%;   /* #09090b */
-    --foreground: 0 0% 96%;        /* #f4f4f5 */
-    --card: 240 5.9% 10%;          /* #18181b */
-    --card-foreground: 0 0% 96%;
-    --popover: 240 5.9% 10%;       /* #18181b */
-    --popover-foreground: 0 0% 96%;
-    --primary: 0 0% 100%;          /* #ffffff */
-    --primary-foreground: 240 10% 3.9%; /* #09090b */
-    --secondary: 240 3.7% 15.9%;   /* #27272a */
-    --secondary-foreground: 0 0% 96%;
-    --muted: 240 3.7% 15.9%;       /* #27272a */
-    --muted-foreground: 240 5% 64.9%; /* #a1a1aa */
-    --accent: 240 3.7% 15.9%;      /* #27272a */
-    --accent-foreground: 0 0% 96%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;      /* #27272a */
-    --input: 240 3.7% 15.9%;
-    --ring: 240 5% 64.9%;
+    /* ── Dark Warm Charcoal Foundation ── */
+    --background: 28 3% 12%;       /* #1f1e1d */
+    --foreground: 40 20% 97%;      /* #faf9f5 */
+    --card: 30 2% 15%;             /* #262624 */
+    --card-foreground: 40 20% 97%;
+    --popover: 30 2% 15%;          /* #262624 */
+    --popover-foreground: 40 20% 97%;
+    --primary: 14 62% 60%;         /* #d97757 - Terracotta */
+    --primary-foreground: 40 20% 97%;
+    --secondary: 30 2% 19%;        /* #30302e */
+    --secondary-foreground: 40 20% 97%;
+    --muted: 30 2% 19%;            /* #30302e */
+    --muted-foreground: 45 4% 63%; /* #a3a299 */
+    --accent: 14 62% 60%;          /* #d97757 */
+    --accent-foreground: 40 20% 97%;
+    --destructive: 6 48% 58%;      /* #c96a5f */
+    --destructive-foreground: 40 20% 97%;
+    --border: 30 2% 24%;           /* #3d3d3a */
+    --input: 30 2% 24%;
+    --ring: 14 62% 60%;
     --radius: 0.75rem;
 
     --font-heading: 'Inter Variable', Inter, system-ui, sans-serif;
     --font-body: 'Inter Variable', Inter, system-ui, sans-serif;
     --font-sans: 'Inter Variable', Inter, system-ui, sans-serif;
+    --font-serif: Georgia, Cambria, 'Times New Roman', Times, serif;
     --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', monospace;
   }
 
   * {
-    border-color: #27272a;
+    border-color: #3d3d3a;
   }
 
   body {
-    background-color: #09090b;
-    color: #f4f4f5;
+    background-color: #1f1e1d;
+    color: #faf9f5;
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -50,12 +51,12 @@
   }
 
   ::selection {
-    background-color: #27272a;
-    color: #ffffff;
+    background-color: #30302e;
+    color: #faf9f5;
   }
 
   :focus-visible {
-    outline: 2px solid #3f3f46;
+    outline: 2px solid #d97757;
     outline-offset: 2px;
   }
 }
@@ -77,10 +78,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Claude Dark Charcoal Scrollbar ── */
+/* ── Dark Warm Charcoal Scrollbar ── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #27272a #09090b;
+  scrollbar-color: #3d3d3a #1f1e1d;
 }
 
 *::-webkit-scrollbar {
@@ -89,14 +90,14 @@
 }
 
 *::-webkit-scrollbar-track {
-  background: #09090b;
+  background: #1f1e1d;
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: #3d3d3a;
   border-radius: 9999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: #d97757;
 }

@@ -215,13 +215,13 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
 
   if (loading) {
     return (
-      <div className="w-full h-48 bg-zinc-900/60 border border-zinc-800/80 rounded-xl animate-pulse my-4" />
+      <div className="w-full h-40 bg-zinc-900/60 border border-zinc-800/80 rounded-xl animate-pulse my-2" />
     );
   }
 
   return (
-    <div className="w-full flex flex-col my-4">
-      <div className="flex items-center justify-between mb-2">
+    <div className="w-full flex flex-col mt-2 mb-0">
+      <div className="flex items-center justify-between mb-1.5">
         <button onClick={prevMonth} aria-label="Previous month" className="text-zinc-400 hover:text-zinc-100 transition-colors p-1">
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -264,15 +264,15 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
-      <div className="w-full bg-zinc-900/60 border border-zinc-800/80 p-4 shadow-sm rounded-xl backdrop-blur-md">
-        <div className="grid grid-cols-7 mb-2">
+      <div className="w-full bg-zinc-900/60 border border-zinc-800/80 p-3 shadow-sm rounded-xl backdrop-blur-md">
+        <div className="grid grid-cols-7 gap-1 mb-1.5 text-center">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
             <div key={label} className="text-center text-[10px] font-bold uppercase tracking-wider text-zinc-500">
               {label}
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-px bg-zinc-800 border border-zinc-800 rounded-lg overflow-hidden">
+        <div className="grid grid-cols-7 gap-1 bg-transparent rounded-lg">
           {days.map((day) => {
             const dateStr = format(day, 'yyyy-MM-dd');
             const inMonth = isSameMonth(day, viewAnchor);
@@ -308,9 +308,9 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
                       type="button"
                       disabled={!inMonth}
                       onClick={() => inMonth && onSelectDate?.(dateStr, dayData)}
-                      className={`w-full min-h-[52px] p-2.5 flex flex-col items-center justify-center relative transition-colors ${
+                      className={`w-full aspect-square flex items-center justify-center relative transition-colors rounded-md ${
                         !inMonth
-                          ? 'bg-[#09090b] text-zinc-700/30 cursor-default pointer-events-none'
+                          ? 'bg-[#09090b] text-transparent cursor-default pointer-events-none'
                           : `${visual.cell} cursor-pointer`
                       } ${isSelected ? 'ring-2 ring-inset ring-white z-10' : ''}`}
                     >
@@ -320,7 +320,7 @@ export const StructuredGoalCalendar: React.FC<StructuredGoalCalendarProps> = ({
                       {/* Clean Today indicator: subtle matte bar */}
                       {inMonth && isTodayCell && (
                         <span
-                          className={`absolute bottom-1.5 w-1.5 h-0.5 rounded-full ${
+                          className={`absolute bottom-1 w-2 h-0.5 rounded-full ${
                             visual.status === 'green' || visual.status === 'golden'
                               ? 'bg-zinc-950/80'
                               : 'bg-zinc-300'

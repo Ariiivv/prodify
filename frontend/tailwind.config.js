@@ -10,77 +10,95 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Claude Dark Theme Foundation (Charcoal-Slate)
-        background: '#09090b',
-        foreground: '#f4f4f5',
+        // Claude Dark Warm Charcoal Foundation
+        background: '#1f1e1d',
+        foreground: '#faf9f5',
+        surface: {
+          DEFAULT: '#262624',
+          foreground: '#faf9f5',
+        },
+        raised: {
+          DEFAULT: '#30302e',
+          foreground: '#faf9f5',
+        },
         card: {
-          DEFAULT: '#18181b',
-          foreground: '#f4f4f5',
+          DEFAULT: '#262624',
+          foreground: '#faf9f5',
         },
         popover: {
-          DEFAULT: '#18181b',
-          foreground: '#f4f4f5',
+          DEFAULT: '#262624',
+          foreground: '#faf9f5',
         },
         primary: {
-          DEFAULT: '#ffffff',
-          foreground: '#09090b',
+          DEFAULT: '#d97757', // Terracotta single accent
+          foreground: '#faf9f5',
         },
         secondary: {
-          DEFAULT: '#27272a',
-          foreground: '#f4f4f5',
+          DEFAULT: '#30302e',
+          foreground: '#faf9f5',
         },
         muted: {
-          DEFAULT: '#27272a',
-          foreground: '#a1a1aa',
+          DEFAULT: '#30302e',
+          foreground: '#a3a299',
         },
         accent: {
-          DEFAULT: '#27272a',
-          foreground: '#f4f4f5',
+          DEFAULT: '#d97757',
+          foreground: '#faf9f5',
         },
+        terracotta: '#d97757',
+        border: '#3d3d3a',
+        input: '#3d3d3a',
+        ring: '#d97757',
+
+        // Semantic Muted Colors
+        good: '#7fa37a', // Sage
+        warn: '#d4a24c',
+        bad: '#c96a5f',
         destructive: {
-          DEFAULT: '#ef4444',
-          foreground: '#ffffff',
+          DEFAULT: '#c96a5f',
+          foreground: '#faf9f5',
         },
-        border: '#27272a',
-        input: '#27272a',
-        ring: '#3f3f46',
 
-        // Explicit Claude design tokens
-        'prodify-bg': '#09090b',
-        'prodify-surface': '#18181b',
-        'prodify-surface-alt': '#27272a',
-        'prodify-border': '#27272a',
-        'prodify-muted': '#a1a1aa',
-        'prodify-accent': '#ffffff',
-        'prodify-success': '#10b981',
-        'prodify-warning': '#f59e0b',
-        'prodify-danger': '#ef4444',
+        // Named design tokens for Prodify
+        'prodify-bg': '#1f1e1d',
+        'prodify-surface': '#262624',
+        'prodify-raised': '#30302e',
+        'prodify-border': '#3d3d3a',
+        'prodify-text': '#faf9f5',
+        'prodify-muted': '#a3a299',
+        'prodify-accent': '#d97757',
+        'prodify-good': '#7fa37a',
+        'prodify-warn': '#d4a24c',
+        'prodify-bad': '#c96a5f',
 
-        // Fallbacks for any legacy tokens to dark equivalents
-        paper: '#09090b',
-        sidebar: '#121214',
-        well: '#18181b',
-        line: '#27272a',
-        'line-strong': '#3f3f46',
-        ink: '#f4f4f5',
+        // Fallbacks for any legacy tokens
+        paper: '#1f1e1d',
+        sidebar: '#1f1e1d',
+        well: '#262624',
+        line: '#3d3d3a',
+        'line-strong': '#3d3d3a',
+        ink: '#faf9f5',
       },
       fontFamily: {
-        heading: ['Inter', 'system-ui', 'sans-serif'],
-        body: ['Inter', 'system-ui', 'sans-serif'],
-        display: ['Inter', 'system-ui', 'sans-serif'],
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        heading: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        body: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        serif: ['Georgia', 'Cambria', '"Times New Roman"', 'Times', 'serif'],
         mono: ['"JetBrains Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
+        '2xl': '1rem', // 16px
+        xl: '0.75rem', // 12px
         lg: '0.75rem',
         md: '0.5rem',
         sm: '0.375rem',
       },
       boxShadow: {
-        sm: '0 1px 2px 0 rgba(0, 0, 0, 0.4)',
-        DEFAULT: '0 1px 3px 0 rgba(0, 0, 0, 0.5), 0 1px 2px -1px rgba(0, 0, 0, 0.5)',
-        md: '0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5)',
-        lg: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5)',
+        sm: 'none',
+        DEFAULT: 'none',
+        md: 'none',
+        lg: 'none',
+        none: 'none',
       },
     },
   },

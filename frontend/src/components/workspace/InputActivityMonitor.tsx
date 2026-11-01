@@ -1,28 +1,19 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { Activity, Clock3, Keyboard, MousePointer2, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useIdleDetection } from '@/hooks/useIdleDetection';
 
 interface InputActivityMonitorProps {
   isActive: boolean;
-  category?: string;
   workspaceId?: number | null;
   windowTitle?: string;
   appName?: string;
   intent?: string;
-  isContextAligned: boolean;
+  idleAllowanceSeconds?: number;
+  isClassifying?: boolean;
+  isPausedForInactivity?: boolean;
+  isDistracted?: boolean;
   onInactivityDetected?: (reason: string) => void;
 }
-
-const BASE_THRESHOLDS: Record<string, number> = {
-  mastery: 120,
-  sprint: 90,
-  quick_work: 180,
-  casual: 180,
-  quick_flow: 180,
-};
-
-const PASSIVE_TERMS = ['video', 'lecture', 'course', 'documentation', 'docs', 'research', 'paper', 'reader', 'reading', 'tutorial', 'reference', 'presentation'];
 
 function formatIdle(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -32,39 +23,62 @@ function formatIdle(seconds: number): string {
 
 export default function InputActivityMonitor({
   isActive,
-  category = 'mastery',
   workspaceId,
   windowTitle = '',
   appName = '',
   intent = '',
-  isContextAligned,
+  idleAllowanceSeconds = 300,
+  isClassifying = false,
+  isPausedForInactivity = false,
+  isDistracted = false,
   onInactivityDetected,
 }: InputActivityMonitorProps) {
   const reportedIdleRef = useRef(false);
   const lastSentAtRef = useRef(0);
 
-  const passiveContext = useMemo(() => {
-    const context = `${windowTitle} ${appName}`.toLowerCase();
-    return isContextAligned && PASSIVE_TERMS.some(term => context.includes(term));
-  }, [appName, isContextAligned, windowTitle]);
+  const thresholdSeconds = Math.max(60, Math.min(1200, idleAllowanceSeconds));
 
-  const thresholdSeconds = (BASE_THRESHOLDS[category.toLowerCase()] ?? BASE_THRESHOLDS.mastery) * (passiveContext ? 3 : 1);
   const { idleTime, keystrokes, clicks } = useIdleDetection({
     enabled: isActive,
     idleTimeout: thresholdSeconds * 1000,
   });
+
   const idleSeconds = isActive ? Math.floor(idleTime / 1000) : 0;
-  const inputState = !isActive ? 'Standby' : idleSeconds >= thresholdSeconds ? 'Needs attention' : idleSeconds >= 10 ? 'Reading / thinking' : 'Active';
+
+  // Single source of truth: monitor and banner can never contradict
+  let statusText = 'Standby';
+  let dotColor = 'bg-[#3d3d3a]';
+
+  if (isPausedForInactivity) {
+    statusText = 'Paused (idle)';
+    dotColor = 'bg-[#d4a24c]'; // warm warning
+  } else if (isDistracted) {
+    statusText = 'Attention shifted';
+    dotColor = 'bg-[#c96a5f]'; // bad
+  } else if (!isActive) {
+    statusText = 'Standby';
+    dotColor = 'bg-[#3d3d3a]';
+  } else if (isClassifying) {
+    statusText = 'Analyzing';
+    dotColor = 'bg-[#a3a299]';
+  } else if (idleSeconds >= 25) {
+    statusText = 'Reading';
+    dotColor = 'bg-[#7fa37a]'; // sage
+  } else {
+    statusText = 'Active';
+    dotColor = 'bg-[#7fa37a]'; // sage
+  }
 
   useEffect(() => {
     if (!isActive) reportedIdleRef.current = false;
   }, [isActive]);
 
+  // NEVER pause while classification is pending. Only pause when idle time exceeds resolved allowance.
   useEffect(() => {
-    if (!isActive || idleSeconds < thresholdSeconds || reportedIdleRef.current) return;
+    if (isClassifying || !isActive || idleSeconds < thresholdSeconds || reportedIdleRef.current) return;
     reportedIdleRef.current = true;
-    onInactivityDetected?.(`User inactive for ${formatIdle(idleSeconds)} — input activity threshold exceeded`);
-  }, [idleSeconds, isActive, onInactivityDetected, thresholdSeconds]);
+    onInactivityDetected?.(`User inactive for ${formatIdle(idleSeconds)} — allowance exceeded`);
+  }, [idleSeconds, isActive, isClassifying, onInactivityDetected, thresholdSeconds]);
 
   useEffect(() => {
     const currentTime = Date.now();
@@ -86,22 +100,37 @@ export default function InputActivityMonitor({
   }, [appName, clicks, idleSeconds, intent, isActive, keystrokes, windowTitle, workspaceId]);
 
   return (
-    <div className="space-y-4 py-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className={`inline-flex h-2.5 w-2.5 rounded-full ${inputState === 'Needs attention' ? 'bg-amber-400' : isActive ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} />
-          <span className="text-sm font-medium text-zinc-100">{inputState}</span>
+    <div className="flex items-center justify-between text-xs bg-[#262624] border border-[#3d3d3a] rounded-xl px-3 py-2 w-full overflow-hidden">
+      {/* State & live idle counter */}
+      <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+        <span className={`h-2 w-2 rounded-full ${dotColor} shrink-0`} />
+        <span className="font-medium text-[#faf9f5] truncate text-xs">{statusText}</span>
+        {isActive && idleSeconds > 0 && (
+          <span className="text-[#a3a299] tabular-nums font-sans text-[11px]">
+            ({formatIdle(idleSeconds)})
+          </span>
+        )}
+      </div>
+
+      {/* Compact row: Keys, Clicks, Limit with auto tag */}
+      <div className="flex items-center gap-2 text-[11px] text-[#a3a299] tabular-nums font-sans shrink-0">
+        <div className="flex items-center gap-1">
+          <span>Keys</span>
+          <span className="font-medium text-[#faf9f5]">{keystrokes}</span>
         </div>
-        <span className="font-mono text-xs text-zinc-400">Idle {formatIdle(idleSeconds)}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-xs">
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2"><Keyboard className="mb-1 h-3.5 w-3.5 text-sky-400" /><span className="text-zinc-400">Keys </span><span className="text-zinc-100">{keystrokes}</span></div>
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2"><MousePointer2 className="mb-1 h-3.5 w-3.5 text-violet-400" /><span className="text-zinc-400">Clicks </span><span className="text-zinc-100">{clicks}</span></div>
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2"><Clock3 className="mb-1 h-3.5 w-3.5 text-amber-400" /><span className="text-zinc-400">Limit </span><span className="text-zinc-100">{formatIdle(thresholdSeconds)}</span></div>
-      </div>
-      <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-        {passiveContext ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" /> : <Activity className="h-3.5 w-3.5 text-sky-400" />}
-        <span>{passiveContext ? 'Passive aligned activity allowance active' : isContextAligned ? 'Window aligns with your intent' : 'Waiting for an aligned window'}</span>
+        <span className="text-[#3d3d3a]">·</span>
+        <div className="flex items-center gap-1">
+          <span>Clicks</span>
+          <span className="font-medium text-[#faf9f5]">{clicks}</span>
+        </div>
+        <span className="text-[#3d3d3a]">·</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span>Limit</span>
+          <span className="font-medium text-[#faf9f5]">{formatIdle(thresholdSeconds)}</span>
+          <span className="text-[9px] uppercase font-sans text-[#a3a299] bg-[#30302e] border border-[#3d3d3a] px-1 py-0.5 rounded leading-none shrink-0 inline-block">
+            auto
+          </span>
+        </div>
       </div>
     </div>
   );

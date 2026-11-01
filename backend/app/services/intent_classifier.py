@@ -9,7 +9,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 logger = logging.getLogger("prodify_telemetry")
-ClassificationResult = tuple[bool, str, str, float, str]
+ClassificationResult = tuple[bool, str, str, float, str, str, int]
 
 # ---------------------------------------------------------------------------
 # Semantic Cache — bounded local-only classification cache.
@@ -42,6 +42,8 @@ class SemanticCache:
             if result is None:
                 self._data.pop(key, None)
                 return None
+            if len(result) == 5:
+                result = (*result, "mixed", 300)
             return result
 
     def set(self, app_name: str, window_title: str, intent: str, result: Optional[ClassificationResult]):
@@ -118,9 +120,9 @@ def allow_window_for_session(workspace_id: int, app_name: str, window_title: str
         if content_key:
             overrides.add(content_key)
         current_goal = _workspace_states.get(workspace_id, {}).get("last_goal", "")
-    _semantic_cache.set(app_name, window_title, current_goal, (True, "Marked as relevant by user for this session", "User Whitelisted", 1.0, "session_override_rule"))
+    _semantic_cache.set(app_name, window_title, current_goal, (True, "Marked as relevant by user for this session", "User Whitelisted", 1.0, "session_override_rule", "mixed", 300))
     if current_goal != "":
-        _semantic_cache.set(app_name, window_title, "", (True, "Marked as relevant by user for this session", "User Whitelisted", 1.0, "session_override_rule"))
+        _semantic_cache.set(app_name, window_title, "", (True, "Marked as relevant by user for this session", "User Whitelisted", 1.0, "session_override_rule", "mixed", 300))
 
     reset_workspace_focus_state(workspace_id)
     logger.info(f"[SESSION OVERRIDE] Whitelisted window '{window_title[:40]}' on '{app_name}' for workspace {workspace_id}")
@@ -188,6 +190,54 @@ def _extract_semantic_tokens(text: str) -> set[str]:
     return {t for t in clean.split() if len(t) > 2 and t not in _STOPWORDS}
 
 
+def determine_engagement_mode(
+    app_name: str,
+    window_title: str,
+    intent: str,
+) -> tuple[str, int]:
+    """
+    Classify active window into engagement_mode ('passive', 'mixed', 'interactive')
+    and idle_allowance_seconds: passive ~900, mixed ~300, interactive ~120.
+    Clamped server-side to 60-1200 seconds without hardcoding app or site names.
+    """
+    clean_app, platform, content_title = parse_activity(window_title, app_name)
+    combined = f"{clean_app} {platform} {content_title} {window_title} {intent}".lower()
+
+    # Passive activities: video/lecture, reading, listening, studying, research docs
+    passive_terms = {
+        "video", "lecture", "course", "watch", "watching", "listen", "listening",
+        "read", "reading", "reader", "paper", "book", "article", "pdf", "docs",
+        "documentation", "reference", "tutorial", "slides", "presentation",
+        "webinar", "podcast", "stream", "documentary", "study", "studying"
+    }
+
+    # Interactive activities: coding, writing, editing, designing, terminal
+    interactive_terms = {
+        "code", "coding", "develop", "developer", "ide", "editor", "edit", "editing",
+        "terminal", "bash", "cmd", "powershell", "git", "commit", "debug", "debugging",
+        "write", "writing", "draft", "drafting", "author", "type", "typing",
+        "design", "designing", "draw", "drawing", "paint", "painting", "sketch",
+        "model", "modeling", "sculpt", "sculpting", "cad", "figma", "blender"
+    }
+
+    words = set(combined.replace("-", " ").replace("_", " ").split())
+    is_passive = bool(words & passive_terms) or any(t in combined for t in passive_terms)
+    is_interactive = bool(words & interactive_terms) or any(t in combined for t in interactive_terms)
+
+    if is_passive and not is_interactive:
+        mode = "passive"
+        allowance = 900
+    elif is_interactive and not is_passive:
+        mode = "interactive"
+        allowance = 120
+    else:
+        mode = "mixed"
+        allowance = 300
+
+    clamped_allowance = max(60, min(1200, allowance))
+    return mode, clamped_allowance
+
+
 def evaluate_semantics_offline(
     app_name: str, window_title: str, intent: str
 ) -> ClassificationResult:
@@ -208,6 +258,12 @@ def evaluate_semantics_offline(
 
     intent_tokens = _extract_semantic_tokens(intent_clean)
     context_tokens = _extract_semantic_tokens(full_context)
+
+    engagement_mode, idle_allowance_seconds = determine_engagement_mode(
+        app_name=app_name,
+        window_title=window_title,
+        intent=intent_clean,
+    )
 
     # 1. True Recreational Diversion Detection (Semantic Content Only)
     # Only trigger if the actual content title/subject represents an explicit entertainment diversion
@@ -231,6 +287,8 @@ def evaluate_semantics_offline(
             "Off-task Diversion",
             0.85,
             "recreational_diversion_rule",
+            engagement_mode,
+            idle_allowance_seconds,
         )
 
     # 2. General / Broad Intent Handling
@@ -279,6 +337,8 @@ def evaluate_semantics_offline(
             "Aligned Activity",
             round(max(composite_score, 0.75), 2),
             "tfidf_cosine_domain_alignment",
+            engagement_mode,
+            idle_allowance_seconds,
         )
 
     # Broad intent with no diversion signals -> ALIGNED
@@ -289,6 +349,8 @@ def evaluate_semantics_offline(
             "Aligned Workflow",
             0.70,
             "broad_productivity_rule",
+            engagement_mode,
+            idle_allowance_seconds,
         )
 
     # Divergent from stated specific goal
@@ -298,6 +360,8 @@ def evaluate_semantics_offline(
         "Divergent Activity",
         round(1.0 - composite_score, 2),
         "tfidf_cosine_domain_divergence",
+        engagement_mode,
+        idle_allowance_seconds,
     )
 
 
@@ -360,6 +424,15 @@ def _update_focus_state_locked(
     app_lower = app_name.lower().strip()
     title_lower = window_title.lower().strip()
     current_target = f"{app_lower}:{title_lower[:40]}"
+
+    is_prodify = (
+        title_lower == "prodify"
+        or title_lower.startswith("prodify")
+        or app_lower in ["prodify.exe", "prodify", "app.exe"]
+    )
+    if is_prodify:
+        active_reason = state.get("active_distraction_reason") or "Prodify window"
+        return ("distracted" if state["status"] == "DISTRACTED" else "focused"), active_reason
 
     # Identify transient OS utility flickers (only known OS shell processes)
     _OS_SHELLS = {"explorer.exe", "shellexperiencehost.exe"}
@@ -469,15 +542,20 @@ async def classify_with_intent(
     app_name: str,
     intent: str,
     workspace_id: Optional[int] = None,
-) -> tuple[str, str, str, float, str]:
+) -> tuple[str, str, str, float, str, str, int]:
     if not intent.strip():
         logger.info(f"[INTENT] No intent set - defaulting to general productivity for '{window_title[:60]}'")
         intent = "General productivity work"
 
-    # 1. Host Self-Awareness (Strict Process Name Check)
+    # 1. Host Self-Awareness (Ignore Prodify's own window as transient/neutral)
     app_lower = app_name.lower().strip()
-    if app_lower in ["prodify.exe", "prodify", "app.exe"]:
-        return "focused", "Prodify session controller is intrinsically aligned", "Prodify app", 1.0, "prodify_system_rule"
+    title_lower = window_title.lower().strip()
+    if (
+        title_lower == "prodify"
+        or title_lower.startswith("prodify")
+        or app_lower in ["prodify.exe", "prodify", "app.exe"]
+    ):
+        return "focused", "Prodify session controller is intrinsically aligned", "Prodify app", 1.0, "prodify_system_rule", "mixed", 300
 
     # 2. Whitelist OS System Utilities (Neutral system transitions)
     if app_lower in OS_SYSTEM_UTILITIES:
@@ -485,8 +563,8 @@ async def classify_with_intent(
             state = dict(_workspace_states.get(workspace_id or 0, {}))
         if state and state.get("status") == "DISTRACTED":
             # Keep distracted but never overwrite active_distraction_reason or trigger new strikes
-            return "distracted", state.get("active_distraction_reason") or "Session paused", "System Utility", 0.0, "system_utility_latch"
-        return "focused", "System utility transition", "System Utility", 1.0, "system_utility_rule"
+            return "distracted", state.get("active_distraction_reason") or "Session paused", "System Utility", 0.0, "system_utility_latch", "mixed", 300
+        return "focused", "System utility transition", "System Utility", 1.0, "system_utility_rule", "mixed", 300
 
     # 2.5. Per-Workspace Session Override Whitelist (User explicitly marked window as relevant)
     with _state_lock:
@@ -507,13 +585,16 @@ async def classify_with_intent(
                 reason="Marked as relevant for this session by user",
                 is_cache_hit=True,
             )
-            return status, reason, "User Whitelisted", 1.0, "session_override_rule"
+            mode, allowance = determine_engagement_mode(app_name, window_title, intent)
+            return status, reason, "User Whitelisted", 1.0, "session_override_rule", mode, allowance
 
     is_focused = True
     reason = ""
     summary = ""
     similarity_score = 0.0
     local_rule_match = ""
+    engagement_mode = "mixed"
+    idle_allowance_seconds = 300
     is_cache_hit = False
     current_target = f"{app_name.lower().strip()}:{window_title.lower().strip()[:40]}"
     generation = begin_classification(workspace_id or 0, current_target)
@@ -524,9 +605,13 @@ async def classify_with_intent(
     # 3. Semantic Cache
     cached = _semantic_cache.get(app_name, window_title, intent)
     if cached is not None:
-        is_focused, reason, summary, similarity_score, local_rule_match = cached
+        if len(cached) == 7:
+            is_focused, reason, summary, similarity_score, local_rule_match, engagement_mode, idle_allowance_seconds = cached
+        else:
+            is_focused, reason, summary, similarity_score, local_rule_match = cached[:5]
+            engagement_mode, idle_allowance_seconds = determine_engagement_mode(app_name, window_title, intent)
         is_cache_hit = True
-        logger.info(f"[INTENT] Cache HIT - {'focused' if is_focused else 'distracted'} (title='{window_title[:60]}')")
+        logger.info(f"[INTENT] Cache HIT - {'focused' if is_focused else 'distracted'} (mode={engagement_mode}, allowance={idle_allowance_seconds}s, title='{window_title[:60]}')")
     else:
         logger.info(f"[INTENT] Local cache MISS - evaluating offline for title='{window_title[:60]}'")
         result = evaluate_semantics_offline(
@@ -536,13 +621,13 @@ async def classify_with_intent(
         )
         if not is_current_classification(workspace_id or 0, generation, current_target):
             logger.info(f"[INTENT] Discarding stale verdict for '{window_title[:60]}'")
-            return "focused", "Superseded by newer window", "Superseded", 0.0, "superseded"
-        is_focused, reason, summary, similarity_score, local_rule_match = result
+            return "focused", "Superseded by newer window", "Superseded", 0.0, "superseded", "mixed", 300
+        is_focused, reason, summary, similarity_score, local_rule_match, engagement_mode, idle_allowance_seconds = result
         _semantic_cache.set(app_name, window_title, intent, result)
 
     if not is_current_classification(workspace_id or 0, generation, current_target):
         logger.info(f"[INTENT] Discarding stale cached verdict for '{window_title[:60]}'")
-        return "focused", "Superseded by newer window", "Superseded", 0.0, "superseded"
+        return "focused", "Superseded by newer window", "Superseded", 0.0, "superseded", "mixed", 300
 
     status, reason = update_focus_state(
         workspace_id=workspace_id or 0,
@@ -553,4 +638,4 @@ async def classify_with_intent(
         reason=reason,
         is_cache_hit=is_cache_hit,
     )
-    return status, reason, summary, similarity_score, local_rule_match
+    return status, reason, summary, similarity_score, local_rule_match, engagement_mode, idle_allowance_seconds

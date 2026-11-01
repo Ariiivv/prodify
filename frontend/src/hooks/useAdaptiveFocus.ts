@@ -38,6 +38,8 @@ export interface TelemetryStatusInfo {
   status?: 'focused' | 'distracted' | 'idle';
   contentTitle?: string;
   rawAppName?: string;
+  engagementMode?: 'passive' | 'mixed' | 'interactive';
+  idleAllowanceSeconds?: number;
 }
 
 interface UseAdaptiveFocusResult {
@@ -49,6 +51,8 @@ interface UseAdaptiveFocusResult {
   keywords: string[];
   markAsRelevant: () => void;
   activeTelemetry: TelemetryStatusInfo | null;
+  idleAllowanceSeconds: number;
+  isClassifying: boolean;
 }
 
 export function useAdaptiveFocus({
@@ -62,6 +66,8 @@ export function useAdaptiveFocus({
   const [currentTabTitle, setCurrentTabTitle] = useState('');
   const [focusedState, setFocusedState] = useState(true);
   const [activeTelemetry, setActiveTelemetry] = useState<TelemetryStatusInfo | null>(null);
+  const [idleAllowanceSeconds, setIdleAllowanceSeconds] = useState<number>(300);
+  const [isClassifying, setIsClassifying] = useState<boolean>(false);
   const prevFocusedRef = useRef(true);
   const onDistractedRef = useRef(onDistracted);
   const onFocusedRef = useRef(onFocused);
@@ -178,6 +184,7 @@ export function useAdaptiveFocus({
       return;
     }
     classifyingRef.current = true;
+    setIsClassifying(true);
 
     let currentTitle = initialTitle;
     let currentProcessName = initialProcessName;
@@ -212,7 +219,13 @@ export function useAdaptiveFocus({
             clean_app_name?: string;
             platform_name?: string;
             content_title?: string;
+            engagement_mode?: 'passive' | 'mixed' | 'interactive';
+            idle_allowance_seconds?: number;
           } = await response.json();
+
+          if (data.idle_allowance_seconds && typeof data.idle_allowance_seconds === 'number') {
+            setIdleAllowanceSeconds(data.idle_allowance_seconds);
+          }
             
           // Strict isolation: only apply result if the user is STILL on that window
           const isStillActive = !activeWindowRef.current || 
@@ -227,6 +240,8 @@ export function useAdaptiveFocus({
               status: data.status as any,
               contentTitle: data.content_title || data.window_title,
               rawAppName: data.app_name,
+              engagementMode: data.engagement_mode,
+              idleAllowanceSeconds: data.idle_allowance_seconds,
             });
             checkFocus(currentTitle, data.status === 'focused', data.reason, data.app_name, data.summary, {
               clean_app_name: data.clean_app_name,
@@ -248,6 +263,7 @@ export function useAdaptiveFocus({
         pendingWindowRef.current = null;
       } else {
         classifyingRef.current = false;
+        setIsClassifying(false);
         break;
       }
     }
@@ -281,6 +297,12 @@ export function useAdaptiveFocus({
               } | null>('get_active_window');
 
               if (active) {
+                const titleLower = active.title.trim().toLowerCase();
+                const processLower = active.processName.toLowerCase();
+                if (titleLower === 'prodify' || processLower === 'prodify.exe' || processLower === 'prodify' || processLower === 'app.exe') {
+                  return;
+                }
+
                 const key = `${active.processName}::${active.title}`;
                 activeWindowRef.current = { title: active.title, processName: active.processName };
                 setCurrentTabTitle(active.title);
@@ -310,6 +332,12 @@ export function useAdaptiveFocus({
           }>('window-changed', (event) => {
             if (!isMounted) return;
             const { title, processName } = event.payload;
+            const titleLower = title.trim().toLowerCase();
+            const processLower = processName.toLowerCase();
+            if (titleLower === 'prodify' || processLower === 'prodify.exe' || processLower === 'prodify' || processLower === 'app.exe') {
+              return;
+            }
+
             console.debug(`[useAdaptiveFocus] 🪟 Window changed: "${title}" (${processName})`);
 
             activeWindowRef.current = { title, processName };
@@ -350,5 +378,7 @@ export function useAdaptiveFocus({
     keywords,
     markAsRelevant,
     activeTelemetry,
+    idleAllowanceSeconds,
+    isClassifying,
   };
 }

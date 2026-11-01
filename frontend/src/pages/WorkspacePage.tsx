@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, AlertTriangle, Activity, Brain, Clock, Settings, Target, Pencil, Check, X, ShieldCheck, Trophy, Award, Pause, Play, CheckCircle2, HeartPulse } from 'lucide-react';
+import { ArrowLeft, Activity, Brain, Settings, Pencil, Check, X, ShieldCheck, Trophy, Award, Pause, Play, CheckCircle2, HeartPulse, AlertTriangle } from 'lucide-react';
 import { MetricInfoPopover } from '@/components/ui/MetricInfoPopover';
 import { SpotlightTour } from '@/components/onboarding/SpotlightTour';
 import { useTimerStore, initTimer, useTimer, switchMode } from '@/lib/timerStore';
@@ -18,7 +18,6 @@ import TimerRing from '@/components/timer/TimerRing';
 import TimerControls from '@/components/timer/TimerControls';
 
 import AiCoachPanel from '@/components/chat/AiCoachPanel';
-import CoachInsightPanel from '@/components/dashboard/CoachInsightPanel';
 import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCalendar';
 import { TimerSettingsModal } from '@/components/timer/TimerSettingsModal';
 import { WorkspaceReportModal } from '@/components/workspace/WorkspaceReportModal';
@@ -42,14 +41,14 @@ interface WorkspaceMetrics {
   today_completed_sessions?: number;
 }
 
-function formatHoursLeftToday(targetMinutes: number, actualMinutes: number): string {
+export function formatHoursLeftToday(targetMinutes: number, actualMinutes: number): string {
   const remaining = Math.max(0, Math.round((targetMinutes || 0) - (actualMinutes || 0)));
   if ((targetMinutes || 0) > 0 && remaining <= 0) return 'Target met';
   if ((targetMinutes || 0) <= 0) return actualMinutes > 0 ? `${formatDuration(actualMinutes)} logged` : 'No daily target';
   return `${formatDuration(remaining)} left`;
 }
 
-function formatDuration(totalMinutes: number): string {
+export function formatDuration(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
@@ -170,7 +169,6 @@ interface ActiveDistractionInfo {
     }
   }, [cachedMet]);
   const [isManualOverride, setIsManualOverride] = useState(false);
-  const [lastFocusedWindow, setLastFocusedWindow] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -312,7 +310,14 @@ interface ActiveDistractionInfo {
   }, []);
 
   // --- Adaptive Focus Tracking ---
-  const { currentTabTitle, isFocused: isTabFocused, markAsRelevant, activeTelemetry } = useAdaptiveFocus({
+  const {
+    currentTabTitle,
+    isFocused: isTabFocused,
+    markAsRelevant,
+    activeTelemetry,
+    idleAllowanceSeconds,
+    isClassifying,
+  } = useAdaptiveFocus({
     keywords: workspaceKeywords,
     enabled: isDetectionEnabled,
     sessionIntent,
@@ -446,8 +451,7 @@ interface ActiveDistractionInfo {
     const appName = distraction?.rawAppName || distraction?.cleanAppName || '';
     const windowTitle = distraction?.rawWindowTitle || distraction?.contentTitle || '';
 
-    // Clear the modal and restore the local timer immediately. The server sync
-    // is best-effort and must never block the desktop focus loop.
+    // Clear the modal and restore the local timer immediately.
     markAsRelevant();
     setActiveDistraction(null);
     const store = useTimerStore.getState();
@@ -466,20 +470,10 @@ interface ActiveDistractionInfo {
           }),
         }).catch(() => {});
       }
-      void fetch(`${API_BASE}/api/telemetry/reset-focus`, {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ workspace_id: wsId }),
-      }).catch(() => {});
     }
   }, [markAsRelevant, wsId, activeDistraction]);
 
   const isTabDistracted = !isTabFocused;
-
-  useEffect(() => {
-    if (isTabFocused && currentTabTitle) setLastFocusedWindow(currentTabTitle);
-  }, [currentTabTitle, isTabFocused]);
-
 
   // Fetch workspace (stale-while-revalidate for instantaneous render)
   useEffect(() => {
@@ -753,62 +747,104 @@ interface ActiveDistractionInfo {
     ? 0
     : Math.max(0, Math.floor((timerState.focusDuration - timerState.timeRemaining) / 60));
 
-  
-  const activeColor = timerState.sessionMode === 'SHORT_BREAK' ? '#10b981' : 
-                      timerState.sessionMode === 'LONG_BREAK' ? '#3b82f6' : 
-                      (workspace?.theme_color || '#3b82f6');
-
   const totalDuration = timerState.sessionMode === 'LONG_BREAK' 
     ? timerState.defaultLongBreakDuration 
     : timerState.sessionMode === 'SHORT_BREAK' 
       ? timerState.breakDuration 
       : timerState.focusDuration;
-  if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" /></div>;
-  if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4"><p className="text-muted-foreground">Workspace not found</p><Link to="/" className="text-white hover:underline text-sm">Go back</Link></div>;
+
+  const isPausedForInactivity =
+    timerState.currentState === 'FOCUS_PAUSED' &&
+    !!timerState.pauseReason &&
+    (timerState.pauseReason.toLowerCase().includes('inactive') ||
+      timerState.pauseReason.toLowerCase().includes('idle') ||
+      timerState.pauseReason.toLowerCase().includes('inactivity'));
+
+  const isDistracted =
+    timerState.currentState === 'FOCUS_PAUSED' &&
+    !isPausedForInactivity &&
+    !['Manual', 'manual_pause'].includes(timerState.pauseReason || '');
+
+  if (isLoading) return <div className="flex items-center justify-center min-h-screen bg-[#1f1e1d]"><div className="w-8 h-8 border-2 border-[#3d3d3a] border-t-[#d97757] rounded-full animate-spin" /></div>;
+  if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-[#1f1e1d]"><p className="text-[#a3a299]">Workspace not found</p><Link to="/" className="text-[#faf9f5] hover:underline text-sm">Go back</Link></div>;
 
   return (
     <motion.div
-      className="p-6 md:p-10 max-w-5xl mx-auto text-zinc-100"
+      className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto text-[#faf9f5]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-10">
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <Link to="/" className="w-10 h-10 rounded-xl border border-zinc-800/80 bg-zinc-900/60 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-all">
+          <Link to="/" className="w-10 h-10 rounded-xl border border-[#3d3d3a] bg-[#262624] flex items-center justify-center text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e] transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-zinc-100">{workspace.name}</h1>
-            <p className="text-xs text-zinc-400">
-              {workspace.category === 'casual' ? '⚡ Quick Work' : 
-               workspace.category === 'sprint' ? '🎯 Sprint Track' : 
-               '🌱 Mastery Track'} 
+            <h1 className="font-serif text-2xl font-normal text-[#faf9f5]">{workspace.name}</h1>
+            <p className="text-xs text-[#a3a299]">
+              {workspace.category === 'casual' ? 'Quick Work' : 
+               workspace.category === 'sprint' ? 'Sprint Track' : 
+               'Mastery Track'} 
               {' · '}
               {workspace.work_duration || 45}m Focus
             </p>
+            {/* Small intent text line under the title with an edit icon */}
+            {!isEditingIntent ? (
+              <div className="flex items-center gap-1.5 text-xs text-[#a3a299] mt-1">
+                <span>Goal:</span>
+                <span className="text-[#faf9f5] font-medium truncate max-w-[280px] sm:max-w-md">
+                  {workspace?.current_goal || sessionIntent || 'Set a goal...'}
+                </span>
+                <button
+                  onClick={() => {
+                    setIntentInput(workspace?.current_goal || sessionIntent || '');
+                    setIsEditingIntent(true);
+                  }}
+                  className="text-[#a3a299] hover:text-[#faf9f5] p-0.5 transition-colors cursor-pointer"
+                  title="Edit session goal"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSaveIntent();
+                }}
+                className="flex items-center gap-1.5 mt-1"
+              >
+                <input
+                  type="text"
+                  autoFocus
+                  value={intentInput}
+                  onChange={(e) => setIntentInput(e.target.value)}
+                  placeholder="e.g. VS Code React frontend..."
+                  className="bg-[#262624] border border-[#3d3d3a] text-xs text-[#faf9f5] rounded px-2 py-0.5 focus:outline-none focus:border-[#d97757]"
+                />
+                <button
+                  type="submit"
+                  disabled={isSavingIntent}
+                  className="text-[#d97757] hover:text-[#c86b4c] p-0.5 transition-colors cursor-pointer"
+                  title="Save"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingIntent(false)}
+                  className="text-[#a3a299] hover:text-[#faf9f5] p-0.5 transition-colors cursor-pointer"
+                  title="Cancel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button 
-                  onClick={() => setIsManualOverride(!isManualOverride)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                    isManualOverride ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
-                  }`}
-                >
-                  {isManualOverride ? "Tracking Paused (Manual)" : "Tracking Active"}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[250px] text-center bg-zinc-900/60 border-zinc-800/80 text-zinc-100">
-                Prodify is actively monitoring your window activity and keyboard/mouse input to track your focus.
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
           {workspace?.category === 'sprint' && (
             <TooltipProvider delayDuration={300}>
               <Tooltip>
@@ -816,14 +852,14 @@ interface ActiveDistractionInfo {
                   <button
                     onClick={fetchSprintDebrief}
                     aria-label="Sprint Debrief"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-xs font-mono font-bold transition-all cursor-pointer shadow-sm"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#262624] border border-[#3d3d3a] text-[#d4a24c] hover:bg-[#30302e] text-xs font-medium transition-colors cursor-pointer"
                   >
                     <Trophy className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Debrief</span>
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="bg-zinc-900/60 border-zinc-800/80 text-zinc-100">
-                  AI Coach Sprint Completion Debrief & Memory Review
+                <TooltipContent side="bottom" className="bg-[#30302e] border border-[#3d3d3a] text-[#faf9f5]">
+                  Sprint Completion Debrief & Memory Review
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -835,33 +871,33 @@ interface ActiveDistractionInfo {
                 <button
                   onClick={handleToggleStatus}
                   aria-label="Toggle track status"
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer shadow-sm border ${
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer border border-[#3d3d3a] ${
                     workspace?.status === 'paused'
-                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-400 hover:bg-amber-500/25'
+                      ? 'bg-[#262624] text-[#d4a24c] hover:bg-[#30302e]'
                       : workspace?.status === 'completed'
-                        ? 'bg-sky-500/15 border-sky-500/30 text-sky-400 hover:bg-sky-500/25'
-                        : 'bg-zinc-900/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
+                        ? 'bg-[#262624] text-[#7fa37a] hover:bg-[#30302e]'
+                        : 'bg-[#262624] text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e]'
                   }`}
                 >
                   {workspace?.status === 'paused' ? (
                     <>
-                      <Play className="w-3.5 h-3.5 text-amber-400" />
+                      <Play className="w-3.5 h-3.5 text-[#d4a24c]" />
                       <span className="hidden sm:inline">Resume Track</span>
                     </>
                   ) : workspace?.status === 'completed' ? (
                     <>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#7fa37a]" />
                       <span className="hidden sm:inline">Completed</span>
                     </>
                   ) : (
                     <>
-                      <Pause className="w-3.5 h-3.5 text-zinc-400" />
+                      <Pause className="w-3.5 h-3.5 text-[#a3a299]" />
                       <span className="hidden sm:inline">Pause Track</span>
                     </>
                   )}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="bg-zinc-900/60 border-zinc-800/80 text-zinc-100">
+              <TooltipContent side="bottom" className="bg-[#30302e] border border-[#3d3d3a] text-[#faf9f5]">
                 {workspace?.status === 'paused' ? "Resume this track to reactivate daily quotas" : "Pause this track to temporarily stop daily requirements without breaking streaks"}
               </TooltipContent>
             </Tooltip>
@@ -870,7 +906,7 @@ interface ActiveDistractionInfo {
           <button 
             onClick={() => setIsEditModalOpen(true)}
             aria-label="Edit Workspace Settings"
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900/60 border border-zinc-800/80 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#262624] border border-[#3d3d3a] text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e] transition-colors"
             title="Edit Workspace & Timer Settings"
           >
             <Settings className="w-5 h-5" />
@@ -898,250 +934,108 @@ interface ActiveDistractionInfo {
       />
 
       <motion.div
-        className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+        className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         variants={staggerContainerVariants}
         initial="hidden"
         animate="visible"
       >
         <motion.div variants={columnVariants} className="lg:col-span-2 flex flex-col items-center w-full">
-            {/* 🎯 Interactive Declared Goal / Intent Pill */}
-            <div className="mb-6 flex justify-center w-full">
-              {!isEditingIntent ? (
-                <button
-                  onClick={() => {
-                    setIntentInput(workspace?.current_goal || (typeof workspace?.focus_keywords === 'string' ? workspace.focus_keywords : '') || '');
-                    setIsEditingIntent(true);
-                  }}
-                  className="group flex items-center gap-2.5 px-4 py-2 rounded-full bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800 transition-all cursor-pointer shadow-sm max-w-xl text-left"
-                >
-                  <div className="w-5 h-5 rounded-full bg-sky-500/10 flex items-center justify-center shrink-0">
-                    <Target className="w-3.5 h-3.5 text-sky-400" />
-                  </div>
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 shrink-0 font-semibold">Intent Guard:</span>
-                    <span className="text-xs text-zinc-100 font-medium truncate max-w-[260px] sm:max-w-[340px]">
-                      {workspace?.current_goal || workspace?.focus_keywords || 'Click to declare session goal & allowed tools...'}
-                    </span>
-                  </div>
-                  <Pencil className="w-3 h-3 text-zinc-400 opacity-60 group-hover:opacity-100 group-hover:text-sky-400 transition-all shrink-0 ml-1" />
-                </button>
-              ) : (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSaveIntent();
-                  }}
-                  className="flex items-center gap-2 max-w-xl w-full px-3 py-1.5 bg-zinc-900/60 border border-zinc-700 rounded-full shadow-lg backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
-                >
-                  <Target className="w-4 h-4 text-sky-400 shrink-0 ml-1" />
-                  <input
-                    type="text"
-                    autoFocus
-                    value={intentInput}
-                    onChange={(e) => setIntentInput(e.target.value)}
-                    placeholder="e.g. VS Code React frontend, documentation, Linear tasks..."
-                    className="flex-1 bg-transparent border-none text-xs text-zinc-100 focus:outline-none focus:ring-0 px-2 py-0.5 placeholder:text-zinc-600"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSavingIntent}
-                    className="w-7 h-7 rounded-full bg-sky-500 hover:bg-sky-400 text-black flex items-center justify-center shrink-0 transition-colors cursor-pointer"
-                    title="Save Intent"
-                  >
-                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingIntent(false)}
-                    className="w-7 h-7 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
-                    title="Cancel"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              )}
+          {/* Slim status banner ONLY when something is wrong (paused for idle, or distracted) */}
+          {(isPausedForInactivity || isDistracted) && (
+            <div className="w-full max-w-xl mx-auto mb-6 px-4 py-2.5 rounded-xl bg-[#262624] border border-[#3d3d3a] flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5 text-[#faf9f5] min-w-0">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isDistracted ? 'bg-[#c96a5f]' : 'bg-[#d4a24c]'}`} />
+                <span className="truncate">
+                  {isPausedForInactivity
+                    ? (timerState.pauseReason || 'Paused for inactivity')
+                    : (activeDistraction?.reason || timerState.pauseReason || 'Attention shifted away from goal')}
+                </span>
+              </div>
+              <button
+                onClick={isDistracted ? handleReturnToFocus : () => useTimerStore.getState().resumeFocus()}
+                className="px-3 py-1 bg-[#d97757] hover:bg-[#c86b4c] text-[#faf9f5] text-xs font-medium rounded-lg shrink-0 transition-colors cursor-pointer"
+              >
+                {isDistracted ? 'Return to Focus' : 'Resume Focus'}
+              </button>
+            </div>
+          )}
+
+          <div className="mb-8 flex flex-col items-center w-full">
+            {/* Pomofocus Mode Pills */}
+            <div className="flex items-center gap-1.5 mb-6 bg-[#262624] p-1 rounded-xl border border-[#3d3d3a]">
+              <button 
+                onClick={() => switchMode('FOCUS')} 
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-[#d97757] text-[#faf9f5]' : 'text-[#a3a299] hover:text-[#faf9f5]'}`}
+              >
+                Focus
+              </button>
+              <button 
+                onClick={() => switchMode('SHORT_BREAK')} 
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-[#d97757] text-[#faf9f5]' : 'text-[#a3a299] hover:text-[#faf9f5]'}`}
+              >
+                Short Break
+              </button>
+              <button 
+                onClick={() => switchMode('LONG_BREAK')} 
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-[#d97757] text-[#faf9f5]' : 'text-[#a3a299] hover:text-[#faf9f5]'}`}
+              >
+                Long Break
+              </button>
             </div>
 
-            <div className="mb-8 flex flex-col items-center w-full">
-              {/* Pomofocus Mode Pills */}
-                <div className="flex items-center gap-1.5 mb-6 bg-zinc-900/60 p-1.5 rounded-full border border-zinc-800/80">
-                  <button 
-                    onClick={() => switchMode('FOCUS')} 
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'FOCUS' ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60' : 'text-zinc-400 hover:text-zinc-100'}`}
-                  >
-                    Focus
-                  </button>
-                  <button 
-                    onClick={() => switchMode('SHORT_BREAK')} 
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'SHORT_BREAK' ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60' : 'text-zinc-400 hover:text-zinc-100'}`}
-                  >
-                    Short Break
-                  </button>
-                  <button 
-                    onClick={() => switchMode('LONG_BREAK')} 
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 cursor-pointer ${timerState.sessionMode === 'LONG_BREAK' ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/60' : 'text-zinc-400 hover:text-zinc-100'}`}
-                  >
-                    Long Break
-                  </button>
-                </div>
-
-                {/* Round Indicator */}
-                {workspace?.category !== 'casual' && (
-                  <div className="flex flex-col items-center mb-6">
-                  {(() => {
-                    const isSprint = workspace?.category === 'sprint';
-                    const isMastery = workspace?.category === 'mastery';
-                    let dailyTarget = 60;
-                    if (isMastery) {
-                      const rawTarget = (workspace?.daily_target_minutes && workspace.daily_target_minutes > 0)
-                        ? workspace.daily_target_minutes
-                        : (metrics?.today_target_minutes && metrics.today_target_minutes > 0 ? metrics.today_target_minutes : 60);
-                      // Sanitize: Cap legacy mastery quota at 240m (4h) so 540m targets don't create 22 sessions
-                      dailyTarget = Math.min(240, Math.max(15, rawTarget));
-                    } else if (isSprint) {
-                      if (workspace?.target_hours && workspace?.deadline) {
-                        const now = new Date();
-                        const deadlineDate = new Date(workspace.deadline);
-                        const diffMs = deadlineDate.getTime() - now.getTime();
-                        const daysRemaining = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-                        dailyTarget = Math.min(480, Math.max(15, Math.round((workspace.target_hours * 60) / daysRemaining)));
-                      } else {
-                        dailyTarget = metrics?.today_target_minutes || workspace?.daily_target_minutes || 60;
-                      }
+            {/* Round Indicator */}
+            {workspace?.category !== 'casual' && (
+              <div className="flex flex-col items-center mb-6">
+                {(() => {
+                  const isSprint = workspace?.category === 'sprint';
+                  const isMastery = workspace?.category === 'mastery';
+                  let dailyTarget = 60;
+                  if (isMastery) {
+                    const rawTarget = (workspace?.daily_target_minutes && workspace.daily_target_minutes > 0)
+                      ? workspace.daily_target_minutes
+                      : (metrics?.today_target_minutes && metrics.today_target_minutes > 0 ? metrics.today_target_minutes : 60);
+                    dailyTarget = Math.min(240, Math.max(15, rawTarget));
+                  } else if (isSprint) {
+                    if (workspace?.target_hours && workspace?.deadline) {
+                      const now = new Date();
+                      const deadlineDate = new Date(workspace.deadline);
+                      const diffMs = deadlineDate.getTime() - now.getTime();
+                      const daysRemaining = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+                      dailyTarget = Math.min(480, Math.max(15, Math.round((workspace.target_hours * 60) / daysRemaining)));
                     } else {
                       dailyTarget = metrics?.today_target_minutes || workspace?.daily_target_minutes || 60;
                     }
-                    const sessionDuration = workspace?.work_duration || 25;
-                    const totalSessionsForDay = computeTotalDailySessions(dailyTarget, sessionDuration, workspace?.status || 'active');
-                    const displaySessionNumber = Math.min(timerState.sessionCount + (timerState.sessionMode === 'FOCUS' ? 1 : 0), totalSessionsForDay);
-                    
-                    return (
-                      <>
-                        <span className="text-xs font-mono font-semibold text-zinc-400 tracking-wider uppercase mb-2">
-                          Session {displaySessionNumber} of {totalSessionsForDay} today
-                        </span>
-                        <div className="flex gap-2 flex-wrap justify-center max-w-[280px]">
-                          {Array.from({ length: totalSessionsForDay }).map((_, i) => {
-                            const isCompleted = i < timerState.sessionCount;
-                            return (
-                              <div 
-                                key={i} 
-                                className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-zinc-100' : 'bg-zinc-800'}`} 
-                              />
-                            );
-                          })}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-
-              <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} themeColor={workspace?.theme_color} sessionMode={timerState.sessionMode} />
-
-              {/* 📡 Live Telemetry Status Pill (Under the Timer) */}
-              <div className="mt-6 flex flex-col items-center">
-                {timerState.currentState === 'FOCUS_RUNNING' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full border text-xs shadow-sm backdrop-blur-md transition-all ${
-                      isTabFocused
-                        ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
-                        : 'bg-rose-500/10 border-rose-500/25 text-rose-300'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className="relative flex h-2 w-2">
-                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isTabFocused ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
-                        <span className={`relative inline-flex rounded-full h-2 w-2 ${isTabFocused ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                  } else {
+                    dailyTarget = metrics?.today_target_minutes || workspace?.daily_target_minutes || 60;
+                  }
+                  const sessionDuration = workspace?.work_duration || 25;
+                  const totalSessionsForDay = computeTotalDailySessions(dailyTarget, sessionDuration, workspace?.status || 'active');
+                  const displaySessionNumber = Math.min(timerState.sessionCount + (timerState.sessionMode === 'FOCUS' ? 1 : 0), totalSessionsForDay);
+                  
+                  return (
+                    <>
+                      <span className="text-xs font-medium text-[#a3a299] tabular-nums mb-2">
+                        Session {displaySessionNumber} of {totalSessionsForDay} today
                       </span>
-                      {isTabFocused ? (
-                        <>
-                          <span>Aligned •</span>
-                          <span className="font-semibold text-emerald-200">
-                            {activeTelemetry?.platformName || activeTelemetry?.cleanAppName || activeTelemetry?.rawAppName?.replace(/\.exe$/i, '') || currentTabTitle || 'Flow State'}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <span>Attention Shift •</span>
-                          <span className="font-semibold text-rose-200">
-                            {activeTelemetry?.platformName || activeTelemetry?.cleanAppName || 'External App'}
-                          </span>
-                        </>
-                      )}
-                    </span>
-
-                    {isTabFocused && activeTelemetry?.summary && (
-                      <span className="text-[11px] font-medium text-emerald-300/80 bg-emerald-500/15 border border-emerald-500/20 px-2.5 py-0.5 rounded-full max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap" title={activeTelemetry.summary}>
-                        {activeTelemetry.summary}
-                      </span>
-                    )}
-                    {!isTabFocused && activeTelemetry?.reason && (
-                      <span className="text-[11px] font-medium text-rose-300/80 bg-rose-500/15 border border-rose-500/20 px-2.5 py-0.5 rounded-full max-w-[280px] break-words text-center leading-snug" title={activeTelemetry.reason}>
-                        {activeTelemetry.reason}
-                      </span>
-                    )}
-                  </motion.div>
-                )}
-
-                {timerState.currentState === 'IDLE' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-zinc-900/60 border border-zinc-800/80 text-xs shadow-sm backdrop-blur-md"
-                  >
-                    <span className="flex items-center gap-2 font-medium text-zinc-100">
-                      <span className="inline-flex rounded-full h-2 w-2 bg-zinc-400"></span>
-                      Ready • Intent Guard Armed
-                    </span>
-                    {sessionIntent && (
-                      <span className="text-[11px] font-medium text-zinc-400 bg-zinc-950 px-2.5 py-0.5 rounded-full truncate max-w-[260px] italic border border-zinc-800/80" title={sessionIntent}>
-                        "{sessionIntent}"
-                      </span>
-                    )}
-                  </motion.div>
-                )}
-
-                {timerState.currentState === 'FOCUS_PAUSED' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full border text-xs shadow-sm backdrop-blur-md ${
-                      activeDistraction
-                        ? 'bg-rose-500/10 border-rose-500/25 text-rose-300'
-                        : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className={`inline-flex rounded-full h-2 w-2 ${activeDistraction ? 'bg-rose-400' : 'bg-amber-400'} animate-pulse`}></span>
-                      {activeDistraction
-                        ? `Paused • ${activeDistraction.platformName || activeDistraction.cleanAppName || 'External App'}`
-                        : `Paused • ${timerState.pauseReason || 'Manual'}`}
-                    </span>
-                    {activeDistraction?.reason && (
-                      <span className="text-[11px] font-medium text-rose-300/80 bg-rose-500/15 border border-rose-500/20 px-2.5 py-0.5 rounded-full max-w-[280px] break-words text-center leading-snug" title={activeDistraction.reason}>
-                        {activeDistraction.reason}
-                      </span>
-                    )}
-                  </motion.div>
-                )}
-
-                {(timerState.currentState === 'BREAK_RUNNING' || timerState.currentState === 'BREAK_PAUSED') && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-sky-500/10 border border-sky-500/25 text-xs shadow-sm backdrop-blur-md text-sky-300"
-                  >
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className="inline-flex rounded-full h-2 w-2 bg-sky-400 animate-pulse"></span>
-                      Recharge Break • Stretch & Hydrate
-                    </span>
-                  </motion.div>
-                )}
+                      <div className="flex gap-2 flex-wrap justify-center max-w-[280px]">
+                        {Array.from({ length: totalSessionsForDay }).map((_, i) => {
+                          const isCompleted = i < timerState.sessionCount;
+                          return (
+                            <div 
+                              key={i} 
+                              className={`w-2 h-2 rounded-full transition-colors ${isCompleted ? 'bg-[#faf9f5]' : 'bg-[#3d3d3a]'}`} 
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-            </div>
+            )}
+
+            <TimerRing timeRemaining={timerState.timeRemaining} totalDuration={totalDuration} state={timerState.currentState} themeColor={workspace?.theme_color} sessionMode={timerState.sessionMode} />
+          </div>
 
           <TimerControls 
             state={timerState.currentState} 
@@ -1149,55 +1043,66 @@ interface ActiveDistractionInfo {
             totalDuration={totalDuration} 
           />
 
-          {timerState.currentState === 'FOCUS_PAUSED' && activeDistraction && !['Manual', 'manual_pause'].includes(timerState.pauseReason || '') && (
+          {/* ── Focus Interrupted Modal Dialog ("the box type of thing") ── */}
+          {isDistracted && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.96, y: 8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                className="w-full max-w-lg bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-6 md:p-8 shadow-2xl relative overflow-hidden"
+                className="w-full max-w-lg bg-[#262624] border border-[#3d3d3a] rounded-2xl p-6 md:p-8 shadow-2xl relative overflow-hidden text-[#faf9f5]"
               >
-                {/* Header: Badge + Title + Detected Pill */}
+                {/* Header: Badge + Title + Detected Pill + Close X */}
                 <div className="flex items-center justify-between gap-3 mb-5">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-[#30302e] border border-[#3d3d3a] flex items-center justify-center text-[#c96a5f] shrink-0">
                       <AlertTriangle className="w-4 h-4" />
                     </div>
-                    <h3 className="text-lg font-bold text-zinc-100 tracking-tight">Focus Interrupted</h3>
+                    <h3 className="text-lg font-bold text-[#faf9f5] tracking-tight">Focus Interrupted</h3>
                   </div>
 
-                  {(activeDistraction?.platformName || activeDistraction?.cleanAppName) && (
-                    <span className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 shrink-0">
-                      {activeDistraction.platformName
-                        ? `${activeDistraction.platformName}${activeDistraction.cleanAppName && activeDistraction.cleanAppName !== activeDistraction.platformName ? ` • ${activeDistraction.cleanAppName}` : ''}`
-                        : activeDistraction.cleanAppName}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {(activeDistraction?.platformName || activeDistraction?.cleanAppName || activeDistraction?.rawAppName) && (
+                      <span className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-full bg-[#30302e] border border-[#3d3d3a] text-[#a3a299] shrink-0">
+                        {activeDistraction.platformName
+                          ? `${activeDistraction.platformName}${activeDistraction.cleanAppName && activeDistraction.cleanAppName !== activeDistraction.platformName ? ` • ${activeDistraction.cleanAppName}` : ''}`
+                          : (activeDistraction.cleanAppName || activeDistraction.rawAppName)}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleReturnToFocus}
+                      className="p-1 rounded-lg text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e] transition-colors cursor-pointer"
+                      title="Close"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
                 
                 {/* Detected Activity Title */}
                 <div className="mb-4">
-                  <p className="text-[11px] text-zinc-400 uppercase tracking-wider font-semibold mb-1">Detected Activity</p>
-                  <p className="text-sm font-semibold text-zinc-100 leading-snug break-words">
+                  <p className="text-[11px] text-[#a3a299] uppercase tracking-wider font-semibold mb-1 font-mono">Detected Activity</p>
+                  <p className="text-sm font-semibold text-[#faf9f5] leading-snug break-words">
                     {activeDistraction?.contentTitle || activeDistraction?.rawWindowTitle || currentTabTitle || 'External application'}
                   </p>
                 </div>
                 
-                {/* AI Coach Callout Box: Full semantic reason */}
-                <div className="mb-4 bg-zinc-950 border border-zinc-800/80 rounded-xl p-3.5">
+                {/* AI Coach Callout Box: Full semantic reason / evidence line */}
+                <div className="mb-4 bg-[#1f1e1d] border border-[#3d3d3a] rounded-xl p-3.5">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Brain className="w-4 h-4 text-rose-400" />
-                    <p className="text-xs font-semibold text-rose-300 uppercase tracking-wider">Why Prodify Paused Your Session</p>
+                    <Brain className="w-4 h-4 text-[#d97757]" />
+                    <p className="text-xs font-semibold text-[#faf9f5] uppercase tracking-wider font-mono">Why Prodify Paused Your Session</p>
                   </div>
-                  <p className="text-xs text-zinc-300 leading-relaxed">
+                  <p className="text-xs text-[#a3a299] leading-relaxed">
                     {activeDistraction?.reason || timerState.pauseReason}
                   </p>
                 </div>
 
                 {/* Comparison Box: Declared Goal */}
-                {sessionIntent && (
-                  <div className="mb-6 bg-zinc-950 border border-zinc-800/80 rounded-xl p-3.5">
-                    <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">Your Stated Goal</p>
-                    <p className="text-xs font-medium text-zinc-200 italic">"{sessionIntent}"</p>
+                {(sessionIntent || workspace?.current_goal) && (
+                  <div className="mb-6 bg-[#1f1e1d] border border-[#3d3d3a] rounded-xl p-3.5">
+                    <p className="text-[11px] font-semibold text-[#a3a299] uppercase tracking-wider mb-1 font-mono">Your Stated Goal</p>
+                    <p className="text-xs font-medium text-[#faf9f5] italic font-serif">"{sessionIntent || workspace?.current_goal}"</p>
                   </div>
                 )}
 
@@ -1205,13 +1110,13 @@ interface ActiveDistractionInfo {
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <button 
                     onClick={handleReturnToFocus}
-                    className="flex-1 bg-white hover:bg-zinc-200 text-black font-semibold py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow-sm"
+                    className="flex-1 bg-[#d97757] hover:bg-[#c86b4c] text-[#faf9f5] font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs shadow-sm cursor-pointer"
                   >
-                    Return to Focus
+                    I'm Back on Track
                   </button>
                   <button 
                     onClick={handleAllowForSession}
-                    className="flex-1 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-400 hover:text-zinc-100 font-medium py-2 px-4 rounded-xl transition-all text-xs flex items-center justify-center gap-2"
+                    className="flex-1 bg-[#30302e] hover:bg-[#3d3d3a] border border-[#3d3d3a] text-[#a3a299] hover:text-[#faf9f5] font-medium py-2.5 px-4 rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
                   >
                     Allow for This Session
                   </button>
@@ -1221,222 +1126,184 @@ interface ActiveDistractionInfo {
           )}
         </motion.div>
 
-        <motion.div variants={columnVariants} className="space-y-4">
-          {!isDetectionEnabled && (
-            <div className="rounded-xl border border-zinc-800/80 p-4 bg-zinc-900/60">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
-                  <Activity className="w-4 h-4 text-amber-500" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-zinc-100">Tracking Disabled</p>
-                  <p className="text-[10px] text-zinc-400">
-                    {isManualOverride ? 'Manual override active' : 'Whitelisted site'}
-                  </p>
-                </div>
+        <motion.div variants={columnVariants} className="space-y-2.5">
+          <InputActivityMonitor
+            isActive={timerState.currentState === 'FOCUS_RUNNING' && isDetectionEnabled}
+            category={workspace.category}
+            workspaceId={wsId}
+            windowTitle={currentTabTitle}
+            appName={activeTelemetry?.rawAppName || ''}
+            intent={sessionIntent}
+            idleAllowanceSeconds={idleAllowanceSeconds}
+            isClassifying={isClassifying}
+            isPausedForInactivity={isPausedForInactivity}
+            isDistracted={isDistracted}
+            onInactivityDetected={handleInputInactivity}
+          />
+
+          {/* ── Compact 2×2 Key Metrics Grid ── */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* 1. Pace or Logged Today */}
+            <div className="flex flex-col justify-between bg-[#262624] border border-[#3d3d3a] p-2.5 rounded-xl">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-[#a3a299] uppercase tracking-wider font-semibold font-mono">
+                  {workspace?.category !== 'casual' ? 'Pace' : 'Logged'}
+                </span>
+                <MetricInfoPopover
+                  title="Workspace Pace"
+                  description="Rolling 7-day consistency and volume score for this workspace."
+                  formula="(Consistency + Volume + Quality) / 3"
+                  benchmark=">=80 Strong · 60-79 Solid · <40 Slipping"
+                />
               </div>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-zinc-800/80 overflow-hidden bg-zinc-900/60 backdrop-blur-md">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/80 bg-zinc-950/40">
-              <span className="text-xs font-medium text-zinc-400 flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5" />
-                Input Activity Monitor
-              </span>
-              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
-                timerState.currentState === 'FOCUS_RUNNING'
-                  ? 'bg-emerald-500/15 text-emerald-400'
-                  : 'bg-zinc-800 text-zinc-400'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${timerState.currentState === 'FOCUS_RUNNING' ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} />
-                {timerState.currentState === 'FOCUS_RUNNING' ? 'Live' : 'Standby'}
-              </span>
-            </div>
-            <div className="p-3">
-              <InputActivityMonitor
-                isActive={timerState.currentState === 'FOCUS_RUNNING' && isDetectionEnabled}
-                category={workspace.category}
-                workspaceId={wsId}
-                windowTitle={currentTabTitle}
-                intent={sessionIntent}
-                isContextAligned={isTabFocused}
-                onInactivityDetected={handleInputInactivity}
-              />
-            </div>
-          </div>
-
-          {timerState.currentState === 'FOCUS_RUNNING' && (
-            <CoachInsightPanel
-              engagementState={isTabDistracted ? 'DISTRACTED' : 'ACTIVE_WORK'}
-              isSessionActive={true}
-              currentHour={new Date().getHours()}
-              workspaceName={workspace.name}
-              lastFocusedWindow={lastFocusedWindow || currentTabTitle}
-              lastFocusedApp=""
-            />
-          )}
-            {/* ── Compact 2×2 Key Metrics Grid (Folded Live Stats) ── */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              {/* 1. Pace or Logged Today */}
-              <div className="flex flex-col justify-between bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
-                <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
-                    {workspace?.category !== 'casual' ? 'Pace' : 'Logged'}
-                  </span>
-                  <MetricInfoPopover
-                    title="Workspace Pace"
-                    description="Rolling 7-day consistency and volume score for this workspace."
-                    formula="(Consistency + Volume + Quality) / 3"
-                    benchmark=">=80 Strong · 60-79 Solid · <40 Slipping"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-100 font-mono font-bold text-sm leading-snug">
-                    {workspace?.category !== 'casual' ? (
-                      metrics?.pace ? (
-                        (() => {
-                          const createdDateStr = toLocalISODate(workspace?.created_at);
-                          const todayDateStr = getTodayLocalISODate();
-                          const isCreatedToday = !createdDateStr || createdDateStr >= todayDateStr;
-                          const hasPastWork = metrics?.calendar?.some(d => d.date < todayDateStr && (d.actual_minutes || 0) > 0);
-                          const isDay1 = isCreatedToday || !hasPastWork;
-                          
-                          let effectiveLabel = metrics.pace.label;
-                          if (isDay1 && (effectiveLabel === 'Slipping' || effectiveLabel === 'Shaky')) {
-                            effectiveLabel = metrics.today_actual_minutes > 0 ? 'On Track' : 'Ready';
-                          }
-                          const effectiveScore = (isDay1 && (effectiveLabel === 'Ready' || effectiveLabel === 'On Track')) ? null : metrics.pace.score;
-                          return (
-                            <>
-                              <span className={
-                                effectiveLabel === 'Strong' ? 'text-sky-400' :
-                                effectiveLabel === 'Solid' || effectiveLabel === 'On Track' ? 'text-emerald-400' :
-                                effectiveLabel === 'Ready' ? 'text-sky-400' :
-                                effectiveLabel === 'Shaky' ? 'text-amber-400' : 'text-rose-400'
-                              }>
-                                {effectiveLabel}
-                              </span>
-                              {effectiveScore != null && <span className="text-zinc-400 text-[10px] ml-1">({Math.round(effectiveScore)})</span>}
-                            </>
-                          );
-                        })()
-                      ) : (
-                        <span className="text-zinc-400">—</span>
-                      )
-                    ) : (
-                      metrics ? `${Math.floor(metrics.today_actual_minutes / 60)}h ${Math.round(metrics.today_actual_minutes % 60)}m` : '—'
-                    )}
-                  </span>
-                  <span className="text-[10px] font-mono mt-0.5 text-zinc-400 truncate">
-                    {metrics?.workspace_streak_current ? `${metrics.workspace_streak_current}d streak` : 'Streak active'}
-                  </span>
-                </div>
-              </div>
-
-              {/* 2. Deep Work Ratio (Reflects Cognitive Penalty) */}
-              <div className="flex flex-col justify-between bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
-                <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
-                    Deep Flow
-                  </span>
-                  <MetricInfoPopover
-                    title="Deep Work Ratio"
-                    description="Deep flow purity: percentage of session time spent focused vs distracted."
-                    formula="(Focus Sec / (Focus Sec + Distracted Sec)) × 100"
-                    benchmark="Aim for >85% deep flow"
-                    align="end"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-emerald-400 font-mono font-bold text-sm">
-                    {liveDeepFlowRatio != null ? `${liveDeepFlowRatio}%` : '—'}
-                  </span>
-                  <span className={`text-[10px] font-mono mt-0.5 truncate ${todayDistractions > 0 ? 'text-rose-400 font-medium' : 'text-zinc-400'}`}>
-                    {todayDistractions} distraction{todayDistractions === 1 ? '' : 's'} today
-                  </span>
-                </div>
-              </div>
-
-              {/* 3. Today's Quota / Remaining */}
-              <div className="flex flex-col justify-between bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 transition-colors p-3 rounded-xl shadow-sm">
-                <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
-                    Today's Quota
-                  </span>
-                  <MetricInfoPopover
-                    title="Today's Quota"
-                    description="Calculated daily target quota remaining for today. Dynamically adjusted for sprint deadlines."
-                    formula="Target Minutes Today - Logged Minutes Today"
-                    benchmark="Target: 0m left (Quota Met)"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-100 font-mono font-bold text-sm">
-                    {metrics ? (
+              <div className="flex flex-col">
+                <span className="text-[#faf9f5] font-mono font-bold text-sm leading-snug">
+                  {workspace?.category !== 'casual' ? (
+                    metrics?.pace ? (
                       (() => {
-                        const effectiveTarget = workspace?.category === 'mastery'
-                          ? Math.min(240, Math.max(15, (workspace?.daily_target_minutes && workspace.daily_target_minutes > 0)
-                              ? workspace.daily_target_minutes
-                              : (metrics.today_target_minutes > 0 ? metrics.today_target_minutes : 60)))
-                          : metrics.today_target_minutes;
-                        const totalSessions = computeTotalDailySessions(effectiveTarget, workspace?.work_duration || 25, workspace?.status || 'active');
-                        return `${totalSessions} session${totalSessions !== 1 ? 's' : ''} today`;
+                        const createdDateStr = toLocalISODate(workspace?.created_at);
+                        const todayDateStr = getTodayLocalISODate();
+                        const isCreatedToday = !createdDateStr || createdDateStr >= todayDateStr;
+                        const hasPastWork = metrics?.calendar?.some(d => d.date < todayDateStr && (d.actual_minutes || 0) > 0);
+                        const isDay1 = isCreatedToday || !hasPastWork;
+                        
+                        let effectiveLabel = metrics.pace.label;
+                        if (isDay1 && (effectiveLabel === 'Slipping' || effectiveLabel === 'Shaky')) {
+                          effectiveLabel = metrics.today_actual_minutes > 0 ? 'On Track' : 'Ready';
+                        }
+                        const effectiveScore = (isDay1 && (effectiveLabel === 'Ready' || effectiveLabel === 'On Track')) ? null : metrics.pace.score;
+                        return (
+                          <>
+                            <span className={
+                              effectiveLabel === 'Strong' ? 'text-sky-400' :
+                              effectiveLabel === 'Solid' || effectiveLabel === 'On Track' ? 'text-emerald-400' :
+                              effectiveLabel === 'Ready' ? 'text-sky-400' :
+                              effectiveLabel === 'Shaky' ? 'text-amber-400' : 'text-rose-400'
+                            }>
+                              {effectiveLabel}
+                            </span>
+                            {effectiveScore != null && <span className="text-[#a3a299] text-[10px] ml-1">({Math.round(effectiveScore)})</span>}
+                          </>
+                        );
                       })()
                     ) : (
-                      <span className="text-zinc-400">—</span>
-                    )}
-                  </span>
-                  <span className="text-[10px] font-mono mt-0.5 text-zinc-400 truncate">
-                    {todayCompletedSessions} session{todayCompletedSessions === 1 ? '' : 's'} ({todayLoggedMinutes}m) today
-                  </span>
-                </div>
+                      <span className="text-[#a3a299]">—</span>
+                    )
+                  ) : (
+                    metrics ? `${Math.floor(metrics.today_actual_minutes / 60)}h ${Math.round(metrics.today_actual_minutes % 60)}m` : '—'
+                  )}
+                </span>
+                <span className="text-[10px] font-mono mt-0.5 text-[#a3a299] truncate">
+                  {metrics?.workspace_streak_current ? `${metrics.workspace_streak_current}d streak` : 'Streak active'}
+                </span>
               </div>
+            </div>
 
-              {/* 4. Vitality (Cumulative Focus + Distractions) */}
-              {(() => {
-                const vitalityPct = Math.max(10, Math.round((1 - effectiveBurnoutProb) * 100));
-                const isHighFatigue = effectiveBurnoutProb >= 0.70;
-                const isModFatigue = effectiveBurnoutProb >= 0.35;
-                const iconColor = isHighFatigue ? 'text-rose-400' : isModFatigue ? 'text-amber-400' : 'text-emerald-400';
-                const vitalityColor = isHighFatigue ? 'text-rose-400' : isModFatigue ? 'text-amber-400' : 'text-emerald-400';
-                const tileBorder = isHighFatigue
-                  ? 'bg-rose-500/10 border-rose-500/30'
-                  : isModFatigue
-                    ? 'bg-amber-500/10 border-amber-500/30'
-                    : 'bg-zinc-900/60 border border-zinc-800/80';
-                const fatigueLabel = isHighFatigue
-                  ? 'High Fatigue'
-                  : isModFatigue
-                    ? 'Moderate'
-                    : 'Peak Flow';
-                return (
-                  <div className={`flex flex-col justify-between p-3 rounded-xl border ${tileBorder} hover:border-zinc-700 transition-colors shadow-sm`}>
-                    <div className="flex items-center gap-1 mb-1.5">
+            {/* 2. Deep Work Ratio */}
+            <div className="flex flex-col justify-between bg-[#262624] border border-[#3d3d3a] p-2.5 rounded-xl">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-[#a3a299] uppercase tracking-wider font-semibold font-mono">
+                  Deep Flow
+                </span>
+                <MetricInfoPopover
+                  title="Deep Work Ratio"
+                  description="Deep flow purity: percentage of session time spent focused vs distracted."
+                  formula="(Focus Sec / (Focus Sec + Distracted Sec)) × 100"
+                  benchmark="Aim for >85% deep flow"
+                  align="end"
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-emerald-400 font-mono font-bold text-sm">
+                  {liveDeepFlowRatio != null ? `${liveDeepFlowRatio}%` : '—'}
+                </span>
+                <span className={`text-[10px] font-mono mt-0.5 truncate ${todayDistractions > 0 ? 'text-rose-400 font-medium' : 'text-[#a3a299]'}`}>
+                  {todayDistractions} distraction{todayDistractions === 1 ? '' : 's'} today
+                </span>
+              </div>
+            </div>
+
+            {/* 3. Today's Quota */}
+            <div className="flex flex-col justify-between bg-[#262624] border border-[#3d3d3a] p-2.5 rounded-xl">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-[#a3a299] uppercase tracking-wider font-semibold font-mono">
+                  Today's Quota
+                </span>
+                <MetricInfoPopover
+                  title="Today's Quota"
+                  description="Calculated daily target quota remaining for today. Dynamically adjusted for sprint deadlines."
+                  formula="Target Minutes Today - Logged Minutes Today"
+                  benchmark="Target: 0m left (Quota Met)"
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[#faf9f5] font-mono font-bold text-sm">
+                  {metrics ? (
+                    (() => {
+                      const effectiveTarget = workspace?.category === 'mastery'
+                        ? Math.min(240, Math.max(15, (workspace?.daily_target_minutes && workspace.daily_target_minutes > 0)
+                            ? workspace.daily_target_minutes
+                            : (metrics.today_target_minutes > 0 ? metrics.today_target_minutes : 60)))
+                        : metrics.today_target_minutes;
+                      const totalSessions = computeTotalDailySessions(effectiveTarget, workspace?.work_duration || 25, workspace?.status || 'active');
+                      return `${totalSessions} session${totalSessions !== 1 ? 's' : ''} today`;
+                    })()
+                  ) : (
+                    <span className="text-[#a3a299]">—</span>
+                  )}
+                </span>
+                <span className="text-[10px] font-mono mt-0.5 text-[#a3a299] truncate">
+                  {todayCompletedSessions} session{todayCompletedSessions === 1 ? '' : 's'} ({todayLoggedMinutes}m) today
+                </span>
+              </div>
+            </div>
+
+            {/* 4. Vitality */}
+            {(() => {
+              const vitalityPctVal = Math.max(10, Math.round((1 - effectiveBurnoutProb) * 100));
+              const isHighFatigue = effectiveBurnoutProb >= 0.70;
+              const isModFatigue = effectiveBurnoutProb >= 0.35;
+              const iconColor = isHighFatigue ? 'text-rose-400' : isModFatigue ? 'text-amber-400' : 'text-emerald-400';
+              const vitalityColor = isHighFatigue ? 'text-rose-400' : isModFatigue ? 'text-amber-400' : 'text-emerald-400';
+              const tileBorder = isHighFatigue
+                ? 'bg-rose-500/10 border-rose-500/30'
+                : isModFatigue
+                  ? 'bg-amber-500/10 border-amber-500/30'
+                  : 'bg-[#262624] border border-[#3d3d3a]';
+              const fatigueLabel = isHighFatigue
+                ? 'High Fatigue'
+                : isModFatigue
+                  ? 'Moderate'
+                  : 'Peak Flow';
+              return (
+                <div className={`flex flex-col justify-between p-2.5 rounded-xl border ${tileBorder}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1">
                       <HeartPulse className={`w-3 h-3 ${iconColor}`} />
-                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">
+                      <span className="text-[10px] text-[#a3a299] uppercase tracking-wider font-semibold font-mono">
                         Vitality
                       </span>
-                      <MetricInfoPopover
-                        title="Focus Vitality & Fatigue"
-                        description="Biometric and session pacing model estimating cognitive fatigue based on cumulative focus minutes and context switches."
-                        formula="100% - Burnout Probability"
-                        benchmark="Vitality >70% = Peak Flow"
-                        align="end"
-                      />
                     </div>
-                    <div className="flex flex-col">
-                      <span className={`font-mono font-bold text-sm ${vitalityColor}`}>
-                        {vitalityPct}%
-                      </span>
-                      <span className="text-[10px] font-mono mt-0.5 text-zinc-400 truncate">
-                        {fatigueLabel}
-                      </span>
-                    </div>
+                    <MetricInfoPopover
+                      title="Focus Vitality & Fatigue"
+                      description="Biometric and session pacing model estimating cognitive fatigue based on cumulative focus minutes and context switches."
+                      formula="100% - Burnout Probability"
+                      benchmark="Vitality >70% = Peak Flow"
+                      align="end"
+                    />
                   </div>
-                );
-              })()}
-            </div>
+                  <div className="flex flex-col">
+                    <span className={`font-mono font-bold text-sm ${vitalityColor}`}>
+                      {vitalityPctVal}%
+                    </span>
+                    <span className="text-[10px] font-mono mt-0.5 text-[#a3a299] truncate">
+                      {fatigueLabel}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
 
             {/* ── Structured Goal Calendar ── */}
             {workspace?.id && workspace?.category !== 'casual' && (
@@ -1490,16 +1357,16 @@ interface ActiveDistractionInfo {
       {/* 🏆 Sprint Victory / AI Coach Memory Debrief Modal */}
       <div className="contents">
         {showDebrief && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-none">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-2xl bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-6 sm:p-8 shadow-2xl overflow-hidden"
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="relative w-full max-w-2xl bg-[#262624] border border-[#3d3d3a] rounded-xl p-6 sm:p-8 shadow-none overflow-hidden"
             >
               <button
                 onClick={() => setShowDebrief(false)}
-                className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-zinc-100 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                className="absolute top-4 right-4 p-2 text-[#a3a299] hover:text-[#faf9f5] rounded-lg hover:bg-[#30302e] transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
@@ -1507,8 +1374,8 @@ interface ActiveDistractionInfo {
 
               {debriefLoading ? (
                 <div className="flex flex-col items-center justify-center py-16 space-y-4">
-                  <div className="w-10 h-10 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-                  <p className="text-xs font-mono text-zinc-400 animate-pulse">
+                  <div className="w-8 h-8 rounded-full border-2 border-[#3d3d3a] border-t-[#d97757] animate-spin" />
+                  <p className="text-xs text-[#a3a299]">
                     Synthesizing Sprint Debrief & Reviewing Coach Memory...
                   </p>
                 </div>
@@ -1516,64 +1383,64 @@ interface ActiveDistractionInfo {
                 <div className="space-y-6">
                   {/* Header Badge & Title */}
                   <div className="flex flex-col items-center text-center space-y-2">
-                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                      <Trophy className="w-6 h-6 text-amber-400" />
+                    <div className="w-12 h-12 rounded-xl bg-[#30302e] border border-[#3d3d3a] flex items-center justify-center">
+                      <Trophy className="w-6 h-6 text-[#d4a24c]" />
                     </div>
                     <div>
-                      <span className="text-[11px] font-mono uppercase tracking-[0.2em] font-bold text-amber-400">
+                      <span className="text-xs font-medium text-[#d4a24c]">
                         Mission Debrief
                       </span>
-                      <h2 className="text-xl sm:text-2xl font-bold text-zinc-100 tracking-tight mt-0.5">
+                      <h2 className="font-serif text-2xl font-normal text-[#faf9f5] mt-0.5">
                         {workspace.name}
                       </h2>
                     </div>
                     {debriefData?.tier && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-400/10 border border-amber-400/25 text-amber-300">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[#30302e] border border-[#3d3d3a] text-[#d4a24c]">
                         <Award className="w-3.5 h-3.5" />
-                        {debriefData.tier} Rating • {debriefData.tier_title}
+                        {debriefData.tier} Rating · {debriefData.tier_title}
                       </span>
                     )}
                   </div>
 
                   {/* 4 Stat KPIs */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Focus Hours</span>
-                      <span className="text-base sm:text-lg font-mono font-bold text-zinc-100 mt-0.5">
+                    <div className="bg-[#1f1e1d] border border-[#3d3d3a] p-3 rounded-xl flex flex-col items-center text-center shadow-none">
+                      <span className="text-[11px] text-[#a3a299]">Focus Hours</span>
+                      <span className="text-base sm:text-lg font-medium tabular-nums text-[#faf9f5] mt-0.5">
                         {debriefData?.total_focus_hours ?? 0}h
                       </span>
-                      <span className="text-[10px] text-zinc-400/80">of {debriefData?.target_hours ?? workspace.target_hours ?? 0}h target</span>
+                      <span className="text-[10px] text-[#a3a299]">of {debriefData?.target_hours ?? workspace.target_hours ?? 0}h target</span>
                     </div>
-                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Goal Progress</span>
-                      <span className="text-base sm:text-lg font-mono font-bold text-emerald-400 mt-0.5">
+                    <div className="bg-[#1f1e1d] border border-[#3d3d3a] p-3 rounded-xl flex flex-col items-center text-center shadow-none">
+                      <span className="text-[11px] text-[#a3a299]">Goal Progress</span>
+                      <span className="text-base sm:text-lg font-medium tabular-nums text-[#7fa37a] mt-0.5">
                         {debriefData?.completion_pct ?? 0}%
                       </span>
-                      <span className="text-[10px] text-zinc-400/80">Total volume</span>
+                      <span className="text-[10px] text-[#a3a299]">Total volume</span>
                     </div>
-                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Deep Work Purity</span>
-                      <span className="text-base sm:text-lg font-mono font-bold text-sky-400 mt-0.5">
+                    <div className="bg-[#1f1e1d] border border-[#3d3d3a] p-3 rounded-xl flex flex-col items-center text-center shadow-none">
+                      <span className="text-[11px] text-[#a3a299]">Deep Work Purity</span>
+                      <span className="text-base sm:text-lg font-medium tabular-nums text-[#7fa37a] mt-0.5">
                         {debriefData?.focus_purity ?? 0}%
                       </span>
-                      <span className="text-[10px] text-zinc-400/80">Flow purity</span>
+                      <span className="text-[10px] text-[#a3a299]">Flow purity</span>
                     </div>
-                    <div className="bg-zinc-950 border border-zinc-800/80 p-3 rounded-xl flex flex-col items-center text-center shadow-sm">
-                      <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold font-mono">Sessions</span>
-                      <span className="text-base sm:text-lg font-mono font-bold text-zinc-100 mt-0.5">
+                    <div className="bg-[#1f1e1d] border border-[#3d3d3a] p-3 rounded-xl flex flex-col items-center text-center shadow-none">
+                      <span className="text-[11px] text-[#a3a299]">Sessions</span>
+                      <span className="text-base sm:text-lg font-medium tabular-nums text-[#faf9f5] mt-0.5">
                         {debriefData?.session_count ?? 0}
                       </span>
-                      <span className="text-[10px] text-zinc-400/80">Completed</span>
+                      <span className="text-[10px] text-[#a3a299]">Completed</span>
                     </div>
                   </div>
 
                   {/* AI Coach Memory Debrief Bubble */}
-                  <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-4 sm:p-5 relative">
-                    <div className="flex items-center gap-2 mb-2 text-xs font-mono font-semibold text-sky-400">
+                  <div className="bg-[#1f1e1d] border border-[#3d3d3a] rounded-xl p-4 sm:p-5 relative">
+                    <div className="flex items-center gap-2 mb-2 text-xs font-medium text-[#d97757]">
                       <Brain className="w-4 h-4" />
                       <span>AI Performance Coach Memory Debrief</span>
                     </div>
-                    <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed whitespace-pre-line font-body">
+                    <p className="text-xs sm:text-sm text-[#faf9f5]/90 leading-relaxed whitespace-pre-line font-sans">
                       {debriefData?.coach_message || "Congratulations on finishing your sprint! Take a well-deserved rest before planning your next challenge."}
                     </p>
                   </div>
@@ -1585,14 +1452,14 @@ interface ActiveDistractionInfo {
                         setShowDebrief(false);
                         setIsReportOpen(true);
                       }}
-                      className="px-4 py-2 text-xs font-semibold rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-100 transition-colors flex items-center gap-1.5 cursor-pointer"
+                      className="px-4 py-2 text-xs font-medium rounded-xl bg-[#262624] hover:bg-[#30302e] border border-[#3d3d3a] text-[#faf9f5] transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
-                      <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#a3a299]" />
                       View Analytics
                     </button>
                     <button
                       onClick={() => setShowDebrief(false)}
-                      className="px-5 py-2 text-xs font-semibold rounded-xl bg-white hover:bg-zinc-200 text-black transition-colors cursor-pointer shadow-sm"
+                      className="px-5 py-2 text-xs font-medium rounded-xl bg-[#d97757] hover:bg-[#c86b4c] text-[#faf9f5] transition-colors cursor-pointer shadow-none"
                     >
                       Continue
                     </button>

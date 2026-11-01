@@ -62,7 +62,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
           <Button
             onClick={handleStartFocus}
             size="lg"
-            className="bg-white hover:bg-zinc-200 text-black px-8 py-6 text-base font-bold rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+            className="bg-[#d97757] hover:bg-[#c86b4c] text-[#faf9f5] px-8 py-6 text-base font-medium rounded-xl border border-[#d97757] shadow-none transition-colors"
           >
             <Play className="w-5 h-5 mr-2" />
             Start Focus
@@ -74,7 +74,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={handlePauseFocus}
               size="lg"
-              className="bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 px-6 py-6 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-[#262624] text-[#d4a24c] border border-[#3d3d3a] hover:bg-[#30302e] px-6 py-6 rounded-xl transition-colors font-medium shadow-none"
             >
               <Pause className="w-5 h-5 mr-2" />
               Pause
@@ -83,7 +83,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
               onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
-              className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"
+              className="text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e] px-4 py-6 rounded-xl transition-colors"
             >
               <RotateCcw className="w-5 h-5" />
             </Button>
@@ -95,7 +95,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={handleStartFocus}
               size="lg"
-              className="bg-white hover:bg-zinc-200 text-black px-8 py-6 rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-[#d97757] hover:bg-[#c86b4c] text-[#faf9f5] px-8 py-6 rounded-xl border border-[#d97757] shadow-none transition-colors font-medium"
             >
               <Play className="w-5 h-5 mr-2" />
               Resume
@@ -104,7 +104,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
               onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
-              className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"
+              className="text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e] px-4 py-6 rounded-xl transition-colors"
             >
               <RotateCcw className="w-5 h-5" />
             </Button>
@@ -116,7 +116,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={() => handleAction(startBreak)}
               size="lg"
-              className="bg-white hover:bg-zinc-200 text-black px-8 py-6 rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-[#d97757] hover:bg-[#c86b4c] text-[#faf9f5] px-8 py-6 rounded-xl border border-[#d97757] shadow-none transition-colors font-medium"
             >
               <Coffee className="w-5 h-5 mr-2" />
               Start Break
@@ -125,7 +125,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
               onClick={handleStartFocus}
               size="lg"
               variant="outline"
-              className="border border-zinc-800 text-white bg-transparent hover:bg-zinc-900 px-6 py-6 rounded-2xl"
+              className="border border-[#3d3d3a] text-[#faf9f5] bg-[#262624] hover:bg-[#30302e] px-6 py-6 rounded-xl transition-colors font-medium shadow-none"
             >
               <Zap className="w-5 h-5 mr-2" />
               New Focus
@@ -138,7 +138,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={() => handleAction(pauseBreak)}
               size="lg"
-              className="bg-zinc-800 text-white border border-zinc-800 hover:bg-zinc-900 px-6 py-6 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-[#262624] text-[#7fa37a] border border-[#3d3d3a] hover:bg-[#30302e] px-6 py-6 rounded-xl transition-colors font-medium shadow-none"
             >
               <Pause className="w-5 h-5 mr-2" />
               Pause Break
@@ -147,7 +147,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
               onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
-              className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"
+              className="text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e] px-4 py-6 rounded-xl transition-colors"
             >
               <RotateCcw className="w-5 h-5" />
             </Button>
@@ -159,7 +159,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
             <Button
               onClick={() => handleAction(resumeBreak)}
               size="lg"
-              className="bg-white hover:bg-zinc-200 text-black px-8 py-6 rounded-2xl shadow-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="bg-[#d97757] hover:bg-[#c86b4c] text-[#faf9f5] px-8 py-6 rounded-xl border border-[#d97757] shadow-none transition-colors font-medium"
             >
               <Play className="w-5 h-5 mr-2" />
               Resume Break
@@ -168,7 +168,7 @@ export default function TimerControls({ state, timeRemaining, totalDuration, can
               onClick={() => handleAction(resetTimer)}
               variant="ghost"
               size="lg"
-              className="text-muted-foreground hover:text-foreground px-4 py-6 rounded-2xl"
+              className="text-[#a3a299] hover:text-[#faf9f5] hover:bg-[#30302e] px-4 py-6 rounded-xl transition-colors"
             >
               <RotateCcw className="w-5 h-5" />
             </Button>

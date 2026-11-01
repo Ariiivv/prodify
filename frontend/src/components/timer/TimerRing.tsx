@@ -25,9 +25,6 @@ export default function TimerRing({ timeRemaining, totalDuration, state, themeCo
   const isRunning = state === 'FOCUS_RUNNING' || state === 'BREAK_RUNNING';
   const isBreak = state === 'BREAK_RUNNING' || state === 'BREAK_PAUSED';
   const isPaused = state === 'FOCUS_PAUSED' || state === 'BREAK_PAUSED';
-  const isCompleted = state === 'SESSION_COMPLETED';
-
-
 
   const minutes = Math.floor(timeRemaining / 60).toString().padStart(2, '0');
   const seconds = (timeRemaining % 60).toString().padStart(2, '0');

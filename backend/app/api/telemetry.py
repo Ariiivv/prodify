@@ -58,6 +58,8 @@ class ActivityClassification(BaseModel):
     is_focused: bool
     similarity_score: float
     local_rule_match: str
+    engagement_mode: str = "mixed"
+    idle_allowance_seconds: int = 300
 
 
 class InputActivityLog(BaseModel):
@@ -526,7 +528,7 @@ async def log_activity(
             _safe_rollback(db)
             logger.warning("[OFFLINE] Telemetry metadata unavailable; returning local classification: %s", exc)
 
-    status, reason, summary, similarity_score, local_rule_match = await classify_with_intent(
+    status, reason, summary, similarity_score, local_rule_match, engagement_mode, idle_allowance_seconds = await classify_with_intent(
         window_title=payload.window_title,
         app_name=payload.app_name,
         intent=payload.intent,
@@ -589,6 +591,8 @@ async def log_activity(
         is_focused=status == "focused",
         similarity_score=similarity_score,
         local_rule_match=local_rule_match,
+        engagement_mode=engagement_mode,
+        idle_allowance_seconds=idle_allowance_seconds,
     )
 
 

@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BarChart3,
   Clock,
   Flame,
   Brain,
@@ -12,9 +11,9 @@ import {
   Layers,
   ArrowRight,
   CheckCircle2,
-  Target,
   ChevronDown,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { useCacheStore } from '@/store/cacheStore';
@@ -120,6 +119,8 @@ export default function Report() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [isDistractionsOpen, setIsDistractionsOpen] = useState(false);
 
   // Sync state whenever cached dashboard refreshes
   useEffect(() => {
@@ -157,6 +158,30 @@ export default function Report() {
   useEffect(() => {
     fetchReport();
   }, [fetchReport, cachedDash.lastFetched]);
+
+  // Handle ESC key to dismiss modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsLeaderboardOpen(false);
+        setIsDistractionsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Prevent background scrolling when modal is active
+  useEffect(() => {
+    if (isLeaderboardOpen || isDistractionsOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isLeaderboardOpen, isDistractionsOpen]);
 
   const earliestCreatedDate = useMemo(() => {
     if (!workspaces || workspaces.length === 0) return '';
@@ -273,223 +298,238 @@ export default function Report() {
   const distractions_breakdown = reportData?.distractions_breakdown;
 
   return (
-    <div className="p-6 md:p-10 max-w-6xl mx-auto space-y-8">
-      {/* ── Page Header ── */}
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-3.5">
+      {/* ── Page Header with Quick-Action Buttons ── */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-3"
       >
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] font-mono font-semibold text-zinc-100 bg-zinc-800 px-2 py-0.5 rounded tracking-[0.2em] uppercase border border-zinc-700/60">Global Analytics</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-heading font-bold text-zinc-100 tracking-tight">
+          <h1 className="text-xl md:text-2xl font-heading font-bold text-zinc-100 tracking-tight">
             Focus & Performance Report
           </h1>
-          <p className="text-sm text-zinc-400 mt-1 font-body">
+          <p className="text-xs text-zinc-400 mt-0.5 font-body">
             30-day aggregated focus volume, consistency momentum, deep work purity, and distraction intelligence.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsLeaderboardOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800 text-xs font-medium text-zinc-200 transition-colors shadow-sm cursor-pointer"
+          >
+            <Layers className="w-3.5 h-3.5 text-zinc-300" />
+            <span>Workspace Leaderboard</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDistractionsOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800 text-xs font-medium text-zinc-200 transition-colors shadow-sm cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Distraction Intelligence</span>
+          </button>
         </div>
       </motion.div>
 
       {isLoading && !reportData ? (
-        <div className="flex flex-col items-center justify-center py-24 space-y-3">
+        <div className="flex flex-col items-center justify-center py-20 space-y-3">
           <div className="w-8 h-8 border-2 border-zinc-600 border-t-zinc-200 rounded-full animate-spin" />
           <p className="text-xs text-zinc-400 font-mono">Loading telemetry and behavior analytics...</p>
         </div>
       ) : reportData ? (
         <>
-          {/* ── 1. Hero AI Verdict Banner (Single-Sentence Insight) ── */}
-          {heroInsight && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-5 backdrop-blur-md shadow-sm"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700/40 flex items-center justify-center text-base shrink-0 shadow-inner">
-                  {heroInsight.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[11px] font-mono font-semibold tracking-wider text-zinc-400 uppercase">
-                      AI Performance Verdict
-                    </span>
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${heroInsight.badgeClass}`}>
-                      {heroInsight.badge}
-                    </span>
-                  </div>
-                  <p className="text-xs sm:text-sm text-zinc-100 leading-relaxed font-body font-medium">
-                    {heroInsight.sentence}
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── 2. Four Core KPI Cards (Clean, Modular) ── */}
+          {/* ── 1. Hero AI Verdict + Core KPIs (Side-by-side Row) ── */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+            className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch"
           >
-            {/* Card 1: 7D Momentum */}
-            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                    7D Consistency
-                  </span>
-                  <MetricInfoPopover
-                    title="7D Consistency & Momentum"
-                    description="Calculated from rolling 7-day consistency (active days), volume delivered vs target, and quality."
-                    formula="(Consistency + Volume + Deep Work Ratio) / 3"
-                    benchmark=">=80% Strong · 60-79% Solid · 40-59% Shaky · <40% Slipping"
-                  />
-                </div>
-                <Activity className="w-4 h-4 text-zinc-300" />
-              </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-zinc-100">
-                  {reportData.summary.momentum_or_pace_score}%
-                </span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getTierBadgeClass(reportData.summary.tier_label)}`}>
-                  {reportData.summary.tier_label}
-                </span>
-              </div>
-              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
-                <div 
-                  className="bg-zinc-300 h-full rounded-full transition-all duration-300" 
-                  style={{ width: `${Math.min(100, Math.max(0, reportData.summary.momentum_or_pace_score))}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">Rolling consistency score</span>
-            </div>
-
-            {/* Card 2: Deep Work Ratio */}
-            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                    Focus Purity
-                  </span>
-                  <MetricInfoPopover
-                    title="Focus Purity"
-                    description="Percentage of session time spent undistracted in focused flow."
-                    formula="((Focus Time - Distracted Time) / Focus Time) × 100"
-                    benchmark="Target: >85% deep flow purity"
-                  />
-                </div>
-                <Brain className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                {reportData.summary.total_focus_hours > 0.05 ? (
-                  <>
-                    <span className="text-2xl font-bold font-mono text-emerald-400">
-                      {reportData.summary.deep_work_ratio_7d}%
+            {/* Left: AI Performance Verdict */}
+            {heroInsight && (
+              <div className="lg:col-span-4 rounded-xl border border-zinc-800/80 bg-zinc-900/60 p-3.5 flex flex-col justify-between shadow-sm backdrop-blur-md">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-7 h-7 rounded-lg bg-zinc-800 border border-zinc-700/40 flex items-center justify-center text-sm shrink-0 shadow-inner">
+                    {heroInsight.icon}
+                  </div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-mono font-semibold tracking-wider text-zinc-400 uppercase truncate">
+                      AI Verdict
                     </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      {reportData.summary.deep_work_ratio_7d >= 80 ? 'Elite' : reportData.summary.deep_work_ratio_7d >= 60 ? 'Solid' : 'Low'}
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border shrink-0 ${heroInsight.badgeClass}`}>
+                      {heroInsight.badge}
                     </span>
-                  </>
-                ) : (
-                  <span className="text-base font-bold font-mono text-zinc-500">
-                    — Calibrating
-                  </span>
-                )}
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-200 leading-relaxed font-body font-medium">
+                  {heroInsight.sentence}
+                </p>
               </div>
-              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
-                <div 
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-300" 
-                  style={{ width: `${reportData.summary.total_focus_hours > 0.05 ? reportData.summary.deep_work_ratio_7d : 0}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">Focus vs. distraction purity</span>
-            </div>
+            )}
 
-            {/* Card 3: Active Streak */}
-            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                    Active Streak
+            {/* Right: 4 Core KPI Cards */}
+            <div className={`${heroInsight ? 'lg:col-span-8' : 'lg:col-span-12'} grid grid-cols-2 sm:grid-cols-4 gap-2.5`}>
+              {/* Card 1: 7D Consistency */}
+              <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-xl p-3 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
+                      7D Consistency
+                    </span>
+                    <MetricInfoPopover
+                      title="7D Consistency & Momentum"
+                      description="Calculated from rolling 7-day consistency (active days), volume delivered vs target, and quality."
+                      formula="(Consistency + Volume + Deep Work Ratio) / 3"
+                      benchmark=">=80% Strong · 60-79% Solid · 40-59% Shaky · <40% Slipping"
+                    />
+                  </div>
+                  <Activity className="w-3.5 h-3.5 text-zinc-300" />
+                </div>
+                <div className="flex items-baseline gap-1.5 mb-1">
+                  <span className="text-xl font-bold font-mono text-zinc-100">
+                    {reportData.summary.momentum_or_pace_score}%
                   </span>
-                  <MetricInfoPopover
-                    title="Active Streak"
-                    description="Consecutive days where you met your daily quota. In-progress days are protected with grace."
-                    formula="Consecutive days with daily status >= Green"
-                    benchmark="Keep daily quota cleared"
-                    align="end"
+                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${getTierBadgeClass(reportData.summary.tier_label)}`}>
+                    {reportData.summary.tier_label}
+                  </span>
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1 mt-0.5 overflow-hidden">
+                  <div 
+                    className="bg-zinc-300 h-full rounded-full transition-all duration-300" 
+                    style={{ width: `${Math.min(100, Math.max(0, reportData.summary.momentum_or_pace_score))}%` }}
                   />
                 </div>
-                <Flame className="w-4 h-4 text-amber-400" />
+                <span className="text-[9px] text-zinc-400 font-mono mt-1 truncate">Rolling consistency score</span>
               </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-zinc-100">
-                  {reportData.summary.current_streak}d
-                </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  Best: {reportData.summary.longest_streak}d
-                </span>
-              </div>
-              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
-                <div 
-                  className="bg-amber-500 h-full rounded-full transition-all duration-300" 
-                  style={{ width: `${Math.min(100, (reportData.summary.current_streak / Math.max(1, reportData.summary.longest_streak || 7)) * 100)}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">Consecutive quota days</span>
-            </div>
 
-            {/* Card 4: Goal Execution / Completed Sessions */}
-            <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-2xl p-5 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
-                    Goal Execution
-                  </span>
-                  <MetricInfoPopover
-                    title="Goal Execution & Volume"
-                    description="Total focus hours logged alongside completed focus session count and daily volume velocity."
-                    formula="Σ(Session Duration) in hours + Total Completed Sessions"
-                    benchmark="Target: Steady daily session cadence"
-                    align="end"
+              {/* Card 2: Deep Work Ratio */}
+              <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-xl p-3 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
+                      Focus Purity
+                    </span>
+                    <MetricInfoPopover
+                      title="Focus Purity"
+                      description="Percentage of session time spent undistracted in focused flow."
+                      formula="((Focus Time - Distracted Time) / Focus Time) × 100"
+                      benchmark="Target: >85% deep flow purity"
+                    />
+                  </div>
+                  <Brain className="w-3.5 h-3.5 text-emerald-400" />
+                </div>
+                <div className="flex items-baseline gap-1.5 mb-1">
+                  {reportData.summary.total_focus_hours > 0.05 ? (
+                    <>
+                      <span className="text-xl font-bold font-mono text-emerald-400">
+                        {reportData.summary.deep_work_ratio_7d}%
+                      </span>
+                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        {reportData.summary.deep_work_ratio_7d >= 80 ? 'Elite' : reportData.summary.deep_work_ratio_7d >= 60 ? 'Solid' : 'Low'}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-sm font-bold font-mono text-zinc-500">
+                      — Calibrating
+                    </span>
+                  )}
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1 mt-0.5 overflow-hidden">
+                  <div 
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-300" 
+                    style={{ width: `${reportData.summary.total_focus_hours > 0.05 ? reportData.summary.deep_work_ratio_7d : 0}%` }}
                   />
                 </div>
-                <CheckCircle2 className="w-4 h-4 text-zinc-300" />
+                <span className="text-[9px] text-zinc-400 font-mono mt-1 truncate">Focus vs. distraction purity</span>
               </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold font-mono text-zinc-100">
-                  {reportData.summary.total_focus_hours}h
+
+              {/* Card 3: Active Streak */}
+              <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-xl p-3 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
+                      Active Streak
+                    </span>
+                    <MetricInfoPopover
+                      title="Active Streak"
+                      description="Consecutive days where you met your daily quota. In-progress days are protected with grace."
+                      formula="Consecutive days with daily status >= Green"
+                      benchmark="Keep daily quota cleared"
+                      align="end"
+                    />
+                  </div>
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                </div>
+                <div className="flex items-baseline gap-1.5 mb-1">
+                  <span className="text-xl font-bold font-mono text-zinc-100">
+                    {reportData.summary.current_streak}d
+                  </span>
+                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    Best: {reportData.summary.longest_streak}d
+                  </span>
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1 mt-0.5 overflow-hidden">
+                  <div 
+                    className="bg-amber-500 h-full rounded-full transition-all duration-300" 
+                    style={{ width: `${Math.min(100, (reportData.summary.current_streak / Math.max(1, reportData.summary.longest_streak || 7)) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[9px] text-zinc-400 font-mono mt-1 truncate">Consecutive quota days</span>
+              </div>
+
+              {/* Card 4: Goal Execution / Completed Sessions */}
+              <div className="bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700/70 rounded-xl p-3 flex flex-col justify-between shadow-sm backdrop-blur-md transition-all duration-150">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider font-mono">
+                      Goal Execution
+                    </span>
+                    <MetricInfoPopover
+                      title="Goal Execution & Volume"
+                      description="Total focus hours logged alongside completed focus session count and daily volume velocity."
+                      formula="Σ(Session Duration) in hours + Total Completed Sessions"
+                      benchmark="Target: Steady daily session cadence"
+                      align="end"
+                    />
+                  </div>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-zinc-300" />
+                </div>
+                <div className="flex items-baseline gap-1.5 mb-1">
+                  <span className="text-xl font-bold font-mono text-zinc-100">
+                    {reportData.summary.total_focus_hours}h
+                  </span>
+                  <span className="text-[9px] font-mono px-1 py-0.2 rounded-md bg-zinc-800 text-zinc-200 border border-zinc-700/50">
+                    {reportData.summary.total_sessions ?? sessions.length} S
+                  </span>
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1 mt-0.5 overflow-hidden">
+                  <div 
+                    className="bg-zinc-200 h-full rounded-full transition-all duration-300" 
+                    style={{ width: `${Math.min(100, (reportData.summary.total_focus_hours / 60) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[9px] text-zinc-400 font-mono mt-1 truncate">
+                  {Math.round((reportData.summary.total_focus_hours * 60) / 30)}m/d avg velocity
                 </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-200 border border-zinc-700/50">
-                  {reportData.summary.total_sessions ?? sessions.length} Sessions
-                </span>
               </div>
-              <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
-                <div 
-                  className="bg-zinc-200 h-full rounded-full transition-all duration-300" 
-                  style={{ width: `${Math.min(100, (reportData.summary.total_focus_hours / 60) * 100)}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-zinc-400 font-mono mt-1.5">
-                {Math.round((reportData.summary.total_focus_hours * 60) / 30)}m/day avg focus velocity
-              </span>
             </div>
           </motion.div>
 
-          {/* ── 3. Structured Goal Calendar & Day Inspector ── */}
+          {/* ── 2. Structured Goal Calendar & Day Inspector ── */}
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="rounded-2xl border border-zinc-800/80 bg-zinc-900/60 shadow-sm p-6 backdrop-blur-md"
+            className="rounded-xl border border-zinc-800/80 bg-zinc-900/60 shadow-sm p-4 backdrop-blur-md"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6 border-b border-zinc-800/80 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 border-b border-zinc-800/80 pb-2.5">
               <div>
-                <h3 className="text-base font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
                   <CalendarIcon className="w-4 h-4 text-zinc-300" />
                   <span>Structured Goal Calendar</span>
                 </h3>
@@ -499,9 +539,9 @@ export default function Report() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
               {/* Left: Monthly Calendar with Built-in Legend */}
-              <div className="lg:col-span-6 xl:col-span-5">
+              <div className="lg:col-span-5">
                 <StructuredGoalCalendar
                   workspaceId={0}
                   calendar={calendarData}
@@ -513,51 +553,51 @@ export default function Report() {
               </div>
 
               {/* Right: Interactive Day Inspector Panel */}
-              <div className="lg:col-span-6 xl:col-span-7 bg-zinc-950/70 border border-zinc-800/80 rounded-2xl p-5 sm:p-6 shadow-inner flex flex-col justify-between min-h-[360px]">
+              <div className="lg:col-span-7 bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-4 shadow-inner flex flex-col justify-between min-h-[320px]">
                 {selectedDayInfo && (
-                  <div className="space-y-5">
+                  <div className="space-y-3.5">
                     {/* Date Header + Status Badge */}
-                    <div className="flex items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
+                    <div className="flex items-center justify-between gap-3 border-b border-zinc-800/80 pb-2.5">
                       <div className="flex items-center gap-2">
                         <CalendarIcon className="w-4 h-4 text-zinc-400" />
-                        <h4 className="text-sm sm:text-base font-bold text-white tracking-tight font-mono">
+                        <h4 className="text-sm font-bold text-white tracking-tight font-mono">
                           {format(parseISO(selectedDayInfo.date), 'EEEE, MMMM d, yyyy')}
                         </h4>
                       </div>
                       {selectedDayInfo.dayStatus === 'golden' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-md bg-amber-400 text-zinc-950 flex items-center gap-1.5 shadow-sm">
-                          <span className="w-2 h-2 rounded-xs bg-zinc-950" /> Exceeded Goal (1.5x+)
+                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-400 text-zinc-950 flex items-center gap-1.5 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-xs bg-zinc-950" /> Exceeded Goal (1.5x+)
                         </span>
                       ) : selectedDayInfo.dayStatus === 'green' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-emerald-500 text-zinc-950 flex items-center gap-1.5 shadow-sm">
-                          <span className="w-2 h-2 rounded-xs bg-zinc-950" /> Goal Met
+                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-emerald-500 text-zinc-950 flex items-center gap-1.5 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-xs bg-zinc-950" /> Goal Met
                         </span>
                       ) : selectedDayInfo.dayStatus === 'yellow' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-500/25 text-amber-100 border border-amber-500/40 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-xs bg-amber-400" /> Partial Effort (0.5–1x)
+                        <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-amber-500/25 text-amber-100 border border-amber-500/40 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-xs bg-amber-400" /> Partial Effort (0.5–1x)
                         </span>
                       ) : selectedDayInfo.date === format(new Date(), 'yyyy-MM-dd') ? (
-                        <span className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-zinc-900 text-zinc-200 border border-zinc-700 flex items-center gap-1.5">
-                          <span className="w-2 h-0.5 rounded-full bg-zinc-300" /> Today (In Progress)
+                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-zinc-900 text-zinc-200 border border-zinc-700 flex items-center gap-1.5">
+                          <span className="w-1.5 h-0.5 rounded-full bg-zinc-300" /> Today (In Progress)
                         </span>
                       ) : selectedDayInfo.dayStatus === 'red' ? (
-                        <span className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-rose-950/70 text-rose-200 border border-rose-800/80 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-xs bg-rose-500" /> Under Target (&lt;0.5x)
+                        <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-rose-950/70 text-rose-200 border border-rose-800/80 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-xs bg-rose-500" /> Under Target (&lt;0.5x)
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-zinc-950 text-zinc-500 border border-zinc-800/80">
+                        <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-zinc-950 text-zinc-500 border border-zinc-800/80">
                           Inactive (0m logged)
                         </span>
                       )}
                     </div>
 
                     {/* Total Focus Time vs Target */}
-                    <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-4">
-                      <div className="flex items-baseline justify-between mb-2">
-                        <span className="text-xs uppercase tracking-wider font-semibold text-zinc-400 font-mono">
+                    <div className="bg-zinc-950 border border-zinc-800/80 rounded-xl p-3.5">
+                      <div className="flex items-baseline justify-between mb-1.5">
+                        <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400 font-mono">
                           Focus Time vs Target
                         </span>
-                        <span className="text-sm font-mono font-bold text-white">
+                        <span className="text-xs font-mono font-bold text-white">
                           {Math.round(selectedDayInfo.actualMinutes)}m
                           {selectedDayInfo.targetMinutes > 0 ? (
                             <span className="text-zinc-500 font-normal"> / {selectedDayInfo.targetMinutes}m required</span>
@@ -568,7 +608,7 @@ export default function Report() {
                       </div>
                       
                       {/* Progress Bar */}
-                      <div className="w-full h-2.5 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                      <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
                         <div 
                           className={`h-full transition-all duration-500 rounded-full ${
                             selectedDayInfo.dayStatus === 'golden'
@@ -587,7 +627,7 @@ export default function Report() {
                         />
                       </div>
 
-                      <div className="flex items-center justify-between mt-2.5 text-[11px] text-zinc-400 font-mono">
+                      <div className="flex items-center justify-between mt-2 text-[10px] text-zinc-400 font-mono">
                         <span>Purity / Alignment: <strong className="text-emerald-400">{selectedDayInfo.deepWorkRatio}%</strong></span>
                         <span>{selectedDayInfo.sessionsCount} completed session{selectedDayInfo.sessionsCount !== 1 ? 's' : ''}</span>
                       </div>
@@ -595,16 +635,16 @@ export default function Report() {
 
                     {/* Active Workspaces on that day */}
                     <div>
-                      <div className="flex items-center justify-between mb-2.5">
+                      <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-zinc-300 font-mono">
                           Active Workspaces ({selectedDayInfo.activeWorkspaces.length})
                         </span>
                       </div>
 
                       {selectedDayInfo.activeWorkspaces.length > 0 ? (
-                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
                           {selectedDayInfo.activeWorkspaces.map((ws, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800/80 rounded-xl">
+                            <div key={idx} className="flex items-center justify-between p-2.5 bg-zinc-950 border border-zinc-800/80 rounded-lg">
                               <div className="flex flex-col">
                                 <span className="text-xs font-bold text-zinc-200">{ws.name}</span>
                                 <span className="text-[10px] text-zinc-400 font-mono">{ws.sessionCount} session{ws.sessionCount !== 1 ? 's' : ''} completed</span>
@@ -623,7 +663,7 @@ export default function Report() {
                           ))}
                         </div>
                       ) : (
-                        <div className="text-center py-8 px-4 bg-zinc-950/40 border border-dashed border-zinc-800/80 rounded-xl">
+                        <div className="text-center py-6 px-4 bg-zinc-950/40 border border-dashed border-zinc-800/80 rounded-xl">
                           <Clock className="w-5 h-5 text-zinc-600 mx-auto mb-1.5" />
                           <p className="text-xs text-zinc-400 font-medium">No sessions logged for this day</p>
                           <p className="text-[11px] text-zinc-600 mt-0.5">Click any active date on the calendar to view its session breakdown.</p>
@@ -636,229 +676,322 @@ export default function Report() {
             </div>
           </motion.div>
 
-          {/* ── 4. Workspace Leaderboard & Distraction Intelligence ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left Card: Per-Workspace Performance Table */}
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="lg:col-span-6 xl:col-span-7 rounded-2xl border border-zinc-800/80 bg-zinc-900/60 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
+          {/* ── 3. Quick Action Buttons for Workspace Leaderboard & Distraction Intelligence ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setIsLeaderboardOpen(true)}
+              className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-zinc-700 text-left transition-all group shadow-sm cursor-pointer"
             >
-              <div>
-                <div className="flex items-center justify-between mb-4 border-b border-zinc-800/80 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/50 flex items-center justify-center shrink-0">
+                  <Layers className="w-4 h-4 text-zinc-300 group-hover:text-white transition-colors" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-zinc-200 group-hover:text-white flex items-center gap-1.5">
+                    <span>Workspace Performance Leaderboard</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-400 font-mono">
+                    Cumulative volume & consistency across tracks
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400 group-hover:text-zinc-200 font-mono shrink-0">
+                <span>Open</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsDistractionsOpen(true)}
+              className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-zinc-700 text-left transition-all group shadow-sm cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/50 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4 text-amber-400 group-hover:text-amber-300 transition-colors" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-zinc-200 group-hover:text-white flex items-center gap-1.5">
+                    <span>Distraction Intelligence</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-400 font-mono">
+                    {distractions_breakdown?.top_platforms?.length
+                      ? `${distractions_breakdown.top_platforms.length} off-task platforms identified`
+                      : 'Off-task telemetry & slips analysis'}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400 group-hover:text-zinc-200 font-mono shrink-0">
+                <span>Open</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      {/* ── Modal 1: Workspace Performance Leaderboard ── */}
+      <AnimatePresence>
+        {isLeaderboardOpen && reportData && (
+          <div
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsLeaderboardOpen(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.15 }}
+              className="w-full max-w-3xl max-h-[85vh] bg-[#262624] border border-[#3d3d3a] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-zinc-100"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-5 border-b border-[#3d3d3a]">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#30302e] border border-[#3d3d3a] flex items-center justify-center">
+                    <Layers className="w-4 h-4 text-zinc-300" />
+                  </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-zinc-300" />
-                      <span>Workspace Performance Leaderboard</span>
+                    <h3 className="text-sm font-semibold text-zinc-100 tracking-tight">
+                      Workspace Performance Leaderboard
                     </h3>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                    <p className="text-[11px] text-[#a3a299]">
                       Cumulative volume and consistency across your active tracks. Click any row to enter the workspace.
                     </p>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLeaderboardOpen(false)}
+                  className="p-1.5 rounded-lg text-[#a3a299] hover:text-white hover:bg-[#30302e] transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs font-mono">
-                    <thead>
-                      <tr className="border-b border-zinc-800/80 text-zinc-400 text-[10px] uppercase tracking-wider">
-                        <th className="pb-2.5 font-semibold">Workspace</th>
-                        <th className="pb-2.5 font-semibold">Track</th>
-                        <th className="pb-2.5 font-semibold text-right">Hours</th>
-                        <th className="pb-2.5 font-semibold text-right">Pace</th>
-                        <th className="pb-2.5 font-semibold text-right">Purity</th>
-                        <th className="pb-2.5 font-semibold text-right">Streak</th>
-                        <th className="pb-2.5 font-semibold text-right">Action</th>
+              {/* Modal Table Content */}
+              <div className="overflow-y-auto p-5 custom-scrollbar">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-[#3d3d3a] text-[#a3a299] text-[10px] uppercase tracking-wider">
+                      <th className="pb-2.5 font-semibold">Workspace</th>
+                      <th className="pb-2.5 font-semibold">Track</th>
+                      <th className="pb-2.5 font-semibold text-right">Hours</th>
+                      <th className="pb-2.5 font-semibold text-right">Pace</th>
+                      <th className="pb-2.5 font-semibold text-right">Purity</th>
+                      <th className="pb-2.5 font-semibold text-right">Streak</th>
+                      <th className="pb-2.5 font-semibold text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#3d3d3a]">
+                    {reportData.workspaces_table.map((ws) => (
+                      <tr
+                        key={ws.id}
+                        onClick={() => {
+                          setIsLeaderboardOpen(false);
+                          navigate(`/workspace/${ws.id}`);
+                        }}
+                        className="transition-colors cursor-pointer group hover:bg-[#30302e]"
+                        title={`Open ${ws.name}`}
+                      >
+                        <td className="py-3 pr-2">
+                          <span className="font-semibold text-zinc-100 group-hover:text-white transition-colors">
+                            {ws.name}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-2">
+                          <span className="px-2 py-0.5 text-[10px] font-sans font-medium rounded-md bg-[#30302e] text-[#a3a299] border border-[#3d3d3a] uppercase tracking-wider">
+                            {ws.category}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right font-bold text-zinc-100">
+                          {ws.total_hours}h
+                        </td>
+                        <td className="py-3 text-right">
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${getTierBadgeClass(ws.pace_label)}`}>
+                            {ws.pace_score}%
+                          </span>
+                        </td>
+                        <td className="py-3 text-right font-bold text-emerald-400">
+                          {ws.deep_work_ratio}%
+                        </td>
+                        <td className="py-3 text-right text-amber-400 font-bold">
+                          🔥 {ws.current_streak}d
+                        </td>
+                        <td className="py-3 text-right">
+                          <span className="text-[11px] text-[#a3a299] group-hover:text-zinc-100 transition-colors inline-flex items-center gap-1 font-sans">
+                            Open <ArrowRight className="w-3 h-3" />
+                          </span>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800/60">
-                      {reportData.workspaces_table.map((ws) => (
-                        <tr
-                          key={ws.id}
-                          onClick={() => navigate(`/workspace/${ws.id}`)}
-                          className="transition-colors cursor-pointer group hover:bg-zinc-800/60"
-                          title={`Open ${ws.name}`}
-                        >
-                          <td className="py-3 pr-2">
-                            <span className="font-semibold text-zinc-100 group-hover:text-white transition-colors">
-                              {ws.name}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-2">
-                            <span className="px-2 py-0.5 text-[10px] font-sans font-medium rounded-md bg-zinc-800 text-zinc-400 border border-zinc-700/50 uppercase tracking-wider">
-                              {ws.category}
-                            </span>
-                          </td>
-                          <td className="py-3 text-right font-bold text-zinc-100">
-                            {ws.total_hours}h
-                          </td>
-                          <td className="py-3 text-right">
-                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${getTierBadgeClass(ws.pace_label)}`}>
-                              {ws.pace_score}%
-                            </span>
-                          </td>
-                          <td className="py-3 text-right font-bold text-emerald-400">
-                            {ws.deep_work_ratio}%
-                          </td>
-                          <td className="py-3 text-right text-amber-400 font-bold">
-                            🔥 {ws.current_streak}d
-                          </td>
-                          <td className="py-3 text-right">
-                            <span className="text-[11px] text-zinc-400 group-hover:text-zinc-100 transition-colors inline-flex items-center gap-1 font-sans">
-                              Open <ArrowRight className="w-3 h-3" />
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
-            {/* Right Card: Distraction Intelligence */}
+      {/* ── Modal 2: Distraction Intelligence ── */}
+      <AnimatePresence>
+        {isDistractionsOpen && reportData && (
+          <div
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsDistractionsOpen(false);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+          >
             <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="lg:col-span-6 xl:col-span-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/60 shadow-sm p-6 flex flex-col justify-between backdrop-blur-md"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.15 }}
+              className="w-full max-w-3xl max-h-[85vh] bg-[#262624] border border-[#3d3d3a] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-zinc-100"
             >
-              <div>
-                <div className="flex items-center justify-between mb-4 border-b border-zinc-800/80 pb-3">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-5 border-b border-[#3d3d3a]">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#30302e] border border-[#3d3d3a] flex items-center justify-center">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                  </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span>Distraction Intelligence</span>
+                    <h3 className="text-sm font-semibold text-zinc-100 tracking-tight">
+                      Distraction Intelligence
                     </h3>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                    <p className="text-[11px] text-[#a3a299]">
                       Off-task activity telemetry classified by the semantic engine.
                     </p>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDistractionsOpen(false)}
+                  className="p-1.5 rounded-lg text-[#a3a299] hover:text-white hover:bg-[#30302e] transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
+              {/* Modal Content */}
+              <div className="overflow-y-auto p-5 custom-scrollbar">
                 {!distractions_breakdown || distractions_breakdown.top_platforms.length === 0 ? (
-                  <div className="text-center py-12 px-4 border border-dashed border-zinc-800 rounded-xl">
+                  <div className="text-center py-12 px-4 border border-dashed border-[#3d3d3a] rounded-xl">
                     <Brain className="w-8 h-8 text-emerald-400/40 mx-auto mb-2" />
                     <p className="text-xs font-semibold text-zinc-300">Zero Distractions Recorded</p>
-                    <p className="text-[11px] text-zinc-500 mt-1">
+                    <p className="text-[11px] text-[#a3a299] mt-1">
                       You maintained a pristine focus session record across this window!
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Top Off-Task Platforms: Interactive Action Buttons (Expandable) */}
-                    <div>
-                      <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-                        Top Off-Task Platforms & Apps
-                      </div>
-                      <div className="space-y-2">
-                        {distractions_breakdown.top_platforms.map((platform, index) => {
-                          const isExpanded = selectedPlatform === platform.name;
+                    <div className="text-xs font-semibold text-[#a3a299] uppercase tracking-wider mb-3">
+                      Top Off-Task Platforms & Apps
+                    </div>
+                    <div className="space-y-2">
+                      {distractions_breakdown.top_platforms.map((platform, index) => {
+                        const isExpanded = selectedPlatform === platform.name;
+                        const matchingInterventions = distractions_breakdown.recent_distraction_items.filter(
+                          (item) =>
+                            item.platform_name.toLowerCase() === platform.name.toLowerCase() ||
+                            item.clean_app_name.toLowerCase() === platform.name.toLowerCase() ||
+                            platform.name.toLowerCase().includes(item.platform_name.toLowerCase()) ||
+                            item.platform_name.toLowerCase().includes(platform.name.toLowerCase())
+                        );
 
-                          // Match content items for this specific platform
-                          const matchingInterventions = distractions_breakdown.recent_distraction_items.filter(
-                            (item) =>
-                              item.platform_name.toLowerCase() === platform.name.toLowerCase() ||
-                              item.clean_app_name.toLowerCase() === platform.name.toLowerCase() ||
-                              platform.name.toLowerCase().includes(item.platform_name.toLowerCase()) ||
-                              item.platform_name.toLowerCase().includes(platform.name.toLowerCase())
-                          );
-
-                          return (
-                            <div key={index} className="space-y-1">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedPlatform(isExpanded ? null : platform.name)}
-                                className={`w-full flex items-center justify-between p-3.5 rounded-lg border transition-colors cursor-pointer text-left ${
-                                  isExpanded
-                                    ? 'bg-zinc-800/60 border-zinc-700'
-                                    : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/60'
-                                }`}
-                              >
-                                {/* Left: Full Platform Name, Process Name, Thin Proportion Bar */}
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 min-w-0 pr-3">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-medium text-zinc-100 whitespace-nowrap">
-                                      {platform.name}
+                        return (
+                          <div key={index} className="space-y-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPlatform(isExpanded ? null : platform.name)}
+                              className={`w-full flex items-center justify-between p-3.5 rounded-lg border transition-colors cursor-pointer text-left ${
+                                isExpanded
+                                  ? 'bg-[#30302e] border-zinc-600'
+                                  : 'bg-[#1f1e1d] border-[#3d3d3a] hover:border-zinc-600 hover:bg-[#30302e]'
+                              }`}
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 min-w-0 pr-3">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-medium text-zinc-100 whitespace-nowrap">
+                                    {platform.name}
+                                  </span>
+                                  {platform.clean_app && platform.clean_app.toLowerCase() !== platform.name.toLowerCase() && (
+                                    <span className="text-xs text-[#a3a299] whitespace-nowrap">
+                                      ({platform.clean_app})
                                     </span>
-                                    {platform.clean_app && platform.clean_app.toLowerCase() !== platform.name.toLowerCase() && (
-                                      <span className="text-xs text-zinc-500 whitespace-nowrap">
-                                        ({platform.clean_app})
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="w-20 sm:w-28 h-1 bg-zinc-800 rounded-full overflow-hidden shrink-0">
-                                    <div
-                                      className="bg-gradient-to-r from-amber-500 to-rose-500 h-full rounded-full transition-all duration-300"
-                                      style={{ width: `${Math.max(4, platform.pct_of_distractions)}%` }}
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* Right: Monospace badges, Lost Minutes, Chevron Icon */}
-                                <div className="flex items-center gap-2.5 shrink-0">
-                                  <span className="font-mono text-xs px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700/60">
-                                    {platform.count} events
-                                  </span>
-                                  <span className="font-mono text-xs text-zinc-400 hidden sm:inline">
-                                    ~{platform.estimated_minutes}m lost
-                                  </span>
-                                  {isExpanded ? (
-                                    <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4 text-zinc-500 shrink-0" />
                                   )}
                                 </div>
-                              </button>
+                                <div className="w-20 sm:w-28 h-1 bg-zinc-800 rounded-full overflow-hidden shrink-0">
+                                  <div
+                                    className="bg-gradient-to-r from-amber-500 to-rose-500 h-full rounded-full transition-all duration-300"
+                                    style={{ width: `${Math.max(4, platform.pct_of_distractions)}%` }}
+                                  />
+                                </div>
+                              </div>
 
-                              {/* Click-to-Expand Interventions Accordion Drawer */}
-                              <AnimatePresence>
-                                {isExpanded && (
-                                  <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    className="overflow-hidden pl-1 sm:pl-2 space-y-1 pt-1"
-                                  >
-                                    {matchingInterventions.length > 0 ? (
-                                      matchingInterventions.map((item, idx) => (
-                                        <div
-                                          key={idx}
-                                          className="border-l-2 border-zinc-700 pl-3 py-2 my-1 bg-zinc-950/50 rounded-r-md text-left"
-                                        >
-                                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] font-mono">
-                                            <span className="text-zinc-200 font-medium">
-                                              "{item.content_title || item.platform_name}" — <span className="text-zinc-400">{item.count} slip{item.count !== 1 ? 's' : ''}</span> • <span className="text-zinc-500">Peak: {item.peak_hour}</span>
-                                            </span>
-                                          </div>
-                                          {item.ai_summary && (
-                                            <span className="inline-block text-[10px] font-mono bg-zinc-800/90 text-zinc-300 border border-zinc-700/60 px-2 py-0.5 rounded mt-1.5">
-                                              {item.ai_summary}
-                                            </span>
-                                          )}
-                                        </div>
-                                      ))
-                                    ) : (
-                                      <div className="border-l-2 border-zinc-700 pl-3 py-2 my-1 bg-zinc-950/50 rounded-r-md text-[11px] font-mono text-zinc-400">
-                                        "{platform.name}" — {platform.count} slips • Peak window across telemetry • ~{platform.estimated_minutes}m lost
-                                      </div>
-                                    )}
-                                  </motion.div>
+                              <div className="flex items-center gap-2.5 shrink-0">
+                                <span className="font-mono text-xs px-2 py-0.5 rounded bg-[#30302e] text-zinc-300 border border-[#3d3d3a]">
+                                  {platform.count} events
+                                </span>
+                                <span className="font-mono text-xs text-[#a3a299] hidden sm:inline">
+                                  ~{platform.estimated_minutes}m lost
+                                </span>
+                                {isExpanded ? (
+                                  <ChevronDown className="w-4 h-4 text-[#a3a299] shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 text-[#a3a299] shrink-0" />
                                 )}
-                              </AnimatePresence>
-                            </div>
-                          );
-                        })}
-                      </div>
+                              </div>
+                            </button>
+
+                            <AnimatePresence>
+                              {isExpanded && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  transition={{ duration: 0.15 }}
+                                  className="overflow-hidden pl-1 sm:pl-2 space-y-1 pt-1"
+                                >
+                                  {matchingInterventions.length > 0 ? (
+                                    matchingInterventions.map((item, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="border-l-2 border-zinc-600 pl-3 py-2 my-1 bg-[#1f1e1d]/80 rounded-r-md text-left"
+                                      >
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] font-mono">
+                                          <span className="text-zinc-200 font-medium">
+                                            "{item.content_title || item.platform_name}" — <span className="text-[#a3a299]">{item.count} slip{item.count !== 1 ? 's' : ''}</span> • <span className="text-zinc-500">Peak: {item.peak_hour}</span>
+                                          </span>
+                                        </div>
+                                        {item.ai_summary && (
+                                          <span className="inline-block text-[10px] font-mono bg-[#30302e] text-zinc-300 border border-[#3d3d3a] px-2 py-0.5 rounded mt-1.5">
+                                            {item.ai_summary}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="border-l-2 border-zinc-600 pl-3 py-2 my-1 bg-[#1f1e1d]/80 rounded-r-md text-[11px] font-mono text-[#a3a299]">
+                                      "{platform.name}" — {platform.count} slips • Peak window across telemetry • ~{platform.estimated_minutes}m lost
+                                    </div>
+                                  )}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
               </div>
             </motion.div>
           </div>
-        </>
-      ) : null}
+        )}
+      </AnimatePresence>
     </div>
   );
 }
