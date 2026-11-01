@@ -9,7 +9,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import TrackingConsentModal from './components/auth/TrackingConsentModal';
 import ScrollToTop from './components/ScrollToTop';
 import ErrorBoundary from './components/ErrorBoundary';
-import { Toaster } from '@/components/ui/sonner';
+import { Toaster } from './components/ui/sonner';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onOpenUrl, getCurrent } from '@tauri-apps/plugin-deep-link';
 import { supabase } from '@/lib/supabase';
