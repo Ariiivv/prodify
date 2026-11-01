@@ -11,9 +11,10 @@ import ScrollToTop from './components/ScrollToTop';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+
 import { supabase } from '@/lib/supabase';
 
-// Route-based code splitting — heavy pages are loaded on-demand
+// Route-based code splitting â€” heavy pages are loaded on-demand
 const HomePage = lazy(() => import('./pages/HomePage'));
 const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
 const Report = lazy(() => import('./pages/Report'));
@@ -35,11 +36,9 @@ function App() {
   useEffect(() => {
     initialize();
 
-    const isTauri = '__TAURI_INTERNALS__' in window;
     let unlisten: (() => void) | undefined;
 
-    if (isTauri) {
-      import('@tauri-apps/plugin-deep-link').then(({ onOpenUrl, getCurrent }) => {
+    import('@tauri-apps/plugin-deep-link').then(({ onOpenUrl, getCurrent }) => {
         const processUrls = async (urls: string[] | string | null) => {
           if (!urls) return;
           const urlArray = Array.isArray(urls) ? urls : [urls];
@@ -103,7 +102,6 @@ function App() {
           unlisten = u;
         }).catch(err => console.error("Failed to setup deep link listener:", err));
       });
-    }
 
     return () => {
       if (unlisten) unlisten();

@@ -147,11 +147,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signUp: async (email: string, password: string, username?: string) => {
     try {
+      const redirectUrl = 'prodify://auth/callback';
+
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { username },
+          emailRedirectTo: redirectUrl,
         },
       });
 
@@ -184,41 +187,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signInWithGoogle: async () => {
     try {
-      const isTauri = '__TAURI_INTERNALS__' in window;
+      const redirectUrl = 'prodify://auth/callback';
 
-      if (isTauri) {
-        // Tauri desktop environment: use deep link and external browser
-        const { open } = await import('@tauri-apps/plugin-shell');
-        
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: `${API_BASE}/api/auth/desktop-callback`,
-            skipBrowserRedirect: true,
-            queryParams: { prompt: 'select_account' }
-          },
-        });
-        
-        if (error) {
-          console.error('signInWithGoogle: Supabase error:', error);
-          throw error;
+      const { open } = await import('@tauri-apps/plugin-shell');
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+          queryParams: { prompt: 'select_account' }
+        },
+      });
+      
+      if (error) {
+        console.error('signInWithGoogle: Supabase error:', error);
+        throw error;
+      }
+      
+      if (data?.url) {
+        try {
+          await open(data.url);
+        } catch (openErr) {
+          console.error('signInWithGoogle: ERROR in Tauri shell open():', openErr);
         }
-        
-        if (data?.url) {
-          try {
-            await open(data.url);
-          } catch (openErr) {
-            console.error('signInWithGoogle: ERROR in Tauri shell open():', openErr);
-          }
-        }
-      } else {
-        // Standard web environment
-        await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: `${window.location.origin}/auth/callback`,
-          },
-        });
       }
     } catch (err: any) {
       console.error('Google sign in error:', err);

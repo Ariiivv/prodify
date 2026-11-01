@@ -7,7 +7,8 @@ from .schemas import Base
 import logging
 from dotenv import load_dotenv
 
-load_dotenv()
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 logger = logging.getLogger("prodify_backend")
 
@@ -64,6 +65,50 @@ import time
 def create_db_and_tables():
     max_retries = 5
     migrations = [
+        # Users columns
+        ("users", "full_name", "VARCHAR"),
+        ("users", "age", "INTEGER"),
+        ("users", "avatar_url", "VARCHAR"),
+        ("users", "google_id", "VARCHAR"),
+        ("users", "auth_provider", "VARCHAR DEFAULT 'email'"),
+        ("users", "created_at", "DATETIME"),
+        ("users", "updated_at", "DATETIME"),
+        # Workspace columns
+        ("workspaces", "description", "VARCHAR"),
+        ("workspaces", "mode", "VARCHAR DEFAULT 'pomodoro'"),
+        ("workspaces", "category", "VARCHAR DEFAULT 'mastery'"),
+        ("workspaces", "target_hours", "FLOAT"),
+        ("workspaces", "deadline", "DATE"),
+        ("workspaces", "daily_target_minutes", "INTEGER DEFAULT 60"),
+        ("workspaces", "work_duration", "INTEGER DEFAULT 45"),
+        ("workspaces", "break_duration", "INTEGER DEFAULT 5"),
+        ("workspaces", "long_break_duration", "INTEGER DEFAULT 15"),
+        ("workspaces", "long_break_interval", "INTEGER DEFAULT 4"),
+        ("workspaces", "focus_keywords", "VARCHAR"),
+        ("workspaces", "current_streak", "INTEGER DEFAULT 0"),
+        ("workspaces", "longest_streak", "INTEGER DEFAULT 0"),
+        ("workspaces", "current_goal", "VARCHAR"),
+        ("workspaces", "theme_color", "VARCHAR DEFAULT '#3b82f6'"),
+        ("workspaces", "status", "VARCHAR DEFAULT 'active'"),
+        ("workspaces", "camera_enabled", "INTEGER DEFAULT 0"),
+        # Session columns
+        ("sessions", "user_id", "VARCHAR"),
+        ("sessions", "session_index_today", "INTEGER NOT NULL DEFAULT 1"),
+        ("sessions", "track_day_number", "INTEGER NOT NULL DEFAULT 1"),
+        ("sessions", "distraction_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("sessions", "distracted_seconds", "FLOAT NOT NULL DEFAULT 0.0"),
+        ("sessions", "timezone", "VARCHAR"),
+        # UserStats columns
+        ("user_stats", "user_id", "VARCHAR"),
+        ("user_stats", "momentum_score", "FLOAT NOT NULL DEFAULT 0.0"),
+        ("user_stats", "last_evaluated_date", "DATE"),
+        ("user_stats", "last_global_perfect_date", "DATE"),
+        # DailyWorkspaceLogs columns
+        ("daily_workspace_logs", "category", "VARCHAR"),
+        ("daily_workspace_logs", "target_minutes_required", "INTEGER NOT NULL DEFAULT 0"),
+        ("daily_workspace_logs", "minutes_logged", "INTEGER NOT NULL DEFAULT 0"),
+        ("daily_workspace_logs", "intent_score", "FLOAT NOT NULL DEFAULT 0.0"),
+        ("daily_workspace_logs", "target_met", "BOOLEAN NOT NULL DEFAULT 0"),
         # ActivityLog columns
         ("activity_logs", "clean_app_name", "VARCHAR"),
         ("activity_logs", "platform_name", "VARCHAR"),
@@ -75,16 +120,7 @@ def create_db_and_tables():
         ("activity_logs", "session_index_today", "INTEGER"),
         ("activity_logs", "minute_into_session", "FLOAT"),
         ("activity_logs", "clock_hour", "INTEGER"),
-        ("activity_logs", "similarity_score", "FLOAT"),
-        # Session columns
-        ("sessions", "user_id", "VARCHAR"),
-        ("sessions", "session_index_today", "INTEGER NOT NULL DEFAULT 1"),
-        ("sessions", "track_day_number", "INTEGER NOT NULL DEFAULT 1"),
-        # Workspace columns
-        ("workspaces", "description", "VARCHAR"),
-        # UserStats columns
-        ("user_stats", "momentum_score", "FLOAT NOT NULL DEFAULT 0.0"),
-        ("user_stats", "last_evaluated_date", "DATE"),
+        ("activity_logs", "similarity_score", "FLOAT DEFAULT 0.0"),
         # TelemetryLog columns
         ("telemetry_logs", "track_day_number", "INTEGER"),
         ("telemetry_logs", "session_index_today", "INTEGER"),
