@@ -34,14 +34,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Prodify API (Tauri Edition)", lifespan=lifespan)
 
-# Configure CORS for local development and production
+# Configure CORS for local development, web, and Tauri desktop apps
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "http://localhost",
     "tauri://localhost",
     "https://tauri.localhost",
-    "http://tauri.localhost"
+    "http://tauri.localhost",
 ]
 
 frontend_url = os.getenv("FRONTEND_URL")
@@ -51,6 +52,7 @@ if frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https?://(tauri\.localhost|localhost|127\.0\.0\.1)(:\d+)?|tauri://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

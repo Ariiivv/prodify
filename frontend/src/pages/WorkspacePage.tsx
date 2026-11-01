@@ -452,7 +452,7 @@ interface ActiveDistractionInfo {
     const windowTitle = distraction?.rawWindowTitle || distraction?.contentTitle || '';
 
     // Clear the modal and restore the local timer immediately.
-    markAsRelevant();
+    markAsRelevant?.();
     setActiveDistraction(null);
     const store = useTimerStore.getState();
     store.decrementDistraction();

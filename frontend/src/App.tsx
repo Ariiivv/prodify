@@ -11,10 +11,10 @@ import ScrollToTop from './components/ScrollToTop';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-
+import { onOpenUrl, getCurrent } from '@tauri-apps/plugin-deep-link';
 import { supabase } from '@/lib/supabase';
 
-// Route-based code splitting â€” heavy pages are loaded on-demand
+// Route-based code splitting - heavy pages are loaded on-demand
 const HomePage = lazy(() => import('./pages/HomePage'));
 const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
 const Report = lazy(() => import('./pages/Report'));
@@ -38,70 +38,76 @@ function App() {
 
     let unlisten: (() => void) | undefined;
 
-    import('@tauri-apps/plugin-deep-link').then(({ onOpenUrl, getCurrent }) => {
-        const processUrls = async (urls: string[] | string | null) => {
-          if (!urls) return;
-          const urlArray = Array.isArray(urls) ? urls : [urls];
-          
-          for (const url of urlArray) {
-            if (url && url.includes('prodify://auth/callback')) {
-              if (sessionStorage.getItem('processed_deep_link') === url) continue;
-              sessionStorage.setItem('processed_deep_link', url);
+    const processUrls = async (urls: string[] | string | null) => {
+      if (!urls) return;
+      const urlArray = Array.isArray(urls) ? urls : [urls];
 
-              try {
-                // Strip out any surrounding quotes, brackets, or whitespace injected by the OS
-                const cleanUrl = url.replace(/^["'\[]+|["'\]]+$/g, '').trim();
-                const parsedUrl = new URL(cleanUrl);
-                
-                // Check for OAuth errors in the URL
-                const errCode = parsedUrl.searchParams.get('error') || new URLSearchParams(parsedUrl.hash.substring(1)).get('error');
-                const errDesc = parsedUrl.searchParams.get('error_description') || new URLSearchParams(parsedUrl.hash.substring(1)).get('error_description');
-                if (errCode) {
-                  throw new Error(`${errCode}: ${errDesc || 'Unknown error'}`);
-                }
+      for (const url of urlArray) {
+        if (url && url.includes('prodify://auth/callback')) {
+          if (sessionStorage.getItem('processed_deep_link') === url) continue;
+          sessionStorage.setItem('processed_deep_link', url);
 
-                const code = parsedUrl.searchParams.get('code');
-                
-                if (code) {
-                  const { error } = await supabase.auth.exchangeCodeForSession(code);
-                  if (error) throw error;
-                } else {
-                  const hashParams = new URLSearchParams(parsedUrl.hash.substring(1));
-                  const access_token = hashParams.get('access_token');
-                  const refresh_token = hashParams.get('refresh_token');
-                  
-                  if (access_token && refresh_token) {
-                    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-                    if (error) throw error;
-                  }
-                }
-                
-                await initialize();
-                
-                try {
-                  await getCurrentWindow().setFocus();
-                } catch (e) {
-                  console.error('Failed to focus window:', e);
-                }
-                
-                window.location.href = '/';
-              } catch (err: any) {
-                console.error('Deep link auth error:', err);
-                alert(`Deep Link Error: ${err.message || err}\nURL: ${url}`);
-                window.location.href = '/auth';
+          try {
+            const cleanUrl = url.replace(/^["'[]+|["'\]]+$/g, '').trim();
+            const parsedUrl = new URL(cleanUrl);
+
+            const errCode =
+              parsedUrl.searchParams.get('error') ||
+              new URLSearchParams(parsedUrl.hash.substring(1)).get('error');
+            const errDesc =
+              parsedUrl.searchParams.get('error_description') ||
+              new URLSearchParams(parsedUrl.hash.substring(1)).get('error_description');
+            if (errCode) {
+              throw new Error(`${errCode}: ${errDesc || 'Unknown error'}`);
+            }
+
+            const code = parsedUrl.searchParams.get('code');
+
+            if (code) {
+              const { error } = await supabase.auth.exchangeCodeForSession(code);
+              if (error) throw error;
+            } else {
+              const hashParams = new URLSearchParams(parsedUrl.hash.substring(1));
+              const access_token = hashParams.get('access_token');
+              const refresh_token = hashParams.get('refresh_token');
+
+              if (access_token && refresh_token) {
+                const { error } = await supabase.auth.setSession({
+                  access_token,
+                  refresh_token,
+                });
+                if (error) throw error;
               }
             }
+
+            await initialize();
+
+            try {
+              await getCurrentWindow().setFocus();
+            } catch (focusErr) {
+              console.error('Failed to focus window:', focusErr);
+            }
+
+            window.location.href = '/';
+          } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            console.error('Deep link auth error:', err);
+            alert(`Deep Link Error: ${errorMessage}\nURL: ${url}`);
+            window.location.href = '/auth';
           }
-        };
+        }
+      }
+    };
 
-        // Check if started with a deep link
-        getCurrent().then(processUrls).catch(err => alert("getCurrent error: " + err));
+    getCurrent()
+      .then(processUrls)
+      .catch((err: unknown) => console.error('getCurrent error:', err));
 
-        // Listen for deep links while running
-        onOpenUrl(processUrls).then(u => {
-          unlisten = u;
-        }).catch(err => console.error("Failed to setup deep link listener:", err));
-      });
+    onOpenUrl(processUrls)
+      .then((u) => {
+        unlisten = u;
+      })
+      .catch((err: unknown) => console.error('Failed to setup deep link listener:', err));
 
     return () => {
       if (unlisten) unlisten();
