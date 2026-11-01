@@ -33,7 +33,6 @@ class WorkspacePayload(BaseModel):
     focus_keywords: Optional[str] = Field(default=None, max_length=2000)
     current_goal: Optional[str] = Field(default=None, max_length=2000)
     theme_color: Optional[str] = Field(default='#3b82f6', max_length=20)
-    camera_enabled: bool = False
     status: Optional[str] = Field(default="active", pattern="^(active|paused|completed)$")
 
     @field_validator('category', mode='after')

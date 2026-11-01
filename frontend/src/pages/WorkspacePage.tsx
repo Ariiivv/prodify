@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, CameraOff, AlertTriangle, Webcam, Activity, Brain, Clock, Settings, Target, Pencil, Check, X, ShieldCheck, Trophy, Award, Pause, Play, CheckCircle2, HeartPulse } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Activity, Brain, Clock, Settings, Target, Pencil, Check, X, ShieldCheck, Trophy, Award, Pause, Play, CheckCircle2, HeartPulse } from 'lucide-react';
 import { MetricInfoPopover } from '@/components/ui/MetricInfoPopover';
 import { SpotlightTour } from '@/components/onboarding/SpotlightTour';
 import { useTimerStore, initTimer, useTimer, switchMode } from '@/lib/timerStore';
@@ -13,7 +13,7 @@ import { computeDeepFlowRatio, computeTotalDailySessions } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 
-import WebcamStream from '@/components/workspace/WebcamStream';
+import InputActivityMonitor from '@/components/workspace/InputActivityMonitor';
 import TimerRing from '@/components/timer/TimerRing';
 import TimerControls from '@/components/timer/TimerControls';
 
@@ -23,8 +23,6 @@ import { StructuredGoalCalendar } from '@/components/workspace/StructuredGoalCal
 import { TimerSettingsModal } from '@/components/timer/TimerSettingsModal';
 import { WorkspaceReportModal } from '@/components/workspace/WorkspaceReportModal';
 import { EditWorkspaceModal } from '@/components/workspace/EditWorkspaceModal';
-
-type CameraStatus = 'loading' | 'streaming' | 'error' | 'disabled';
 
 interface WorkspaceMetrics {
   pace: {
@@ -172,9 +170,6 @@ interface ActiveDistractionInfo {
     }
   }, [cachedMet]);
   const [isManualOverride, setIsManualOverride] = useState(false);
-  const [cameraStatus, setCameraStatus] = useState<CameraStatus>('disabled');
-  const [cameraErrorMessage, setCameraErrorMessage] = useState<string | null>(null);
-  const [engagementState, setEngagementState] = useState<string>('ACTIVE_WORK');
   const [lastFocusedWindow, setLastFocusedWindow] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -301,6 +296,19 @@ interface ActiveDistractionInfo {
     });
     store.incrementDistraction();
     store.pauseFocus(displayReason);
+  }, []);
+
+  const handleInputInactivity = useCallback((reason: string) => {
+    const store = useTimerStore.getState();
+    const ws = store.workspaces[store.activeWorkspaceId ?? -1];
+    if (!ws || ws.currentState !== 'FOCUS_RUNNING') return;
+    setActiveDistraction({ reason });
+    store.incrementDistraction();
+    store.pauseFocus(reason);
+    toast.warning('Input inactivity detected', {
+      description: `${reason}. Timer paused.`,
+      duration: 4000,
+    });
   }, []);
 
   // --- Adaptive Focus Tracking ---
@@ -468,28 +476,10 @@ interface ActiveDistractionInfo {
 
   const isTabDistracted = !isTabFocused;
 
+  useEffect(() => {
+    if (isTabFocused && currentTabTitle) setLastFocusedWindow(currentTabTitle);
+  }, [currentTabTitle, isTabFocused]);
 
-  // --- Camera Status Handler ---
-  const handleCameraStatus = useCallback((status: CameraStatus, error?: { type: string; message: string }) => {
-    setCameraStatus(status);
-    setCameraErrorMessage(error?.message || null);
-
-    if (status === 'error') {
-      const isPermission = error?.type === 'NotAllowedError';
-      const isNotFound = error?.type === 'NotFoundError';
-      if (isPermission) {
-        toast.warning("Camera permission denied", {
-          description: "Focus tracking won't work without camera access.",
-          duration: 4000,
-        });
-      } else if (isNotFound) {
-        toast.warning("No camera detected", {
-          description: "Plug in a webcam or disable tracking to proceed.",
-          duration: 4000,
-        });
-      }
-    }
-  }, []);
 
   // Fetch workspace (stale-while-revalidate for instantaneous render)
   useEffect(() => {
@@ -773,8 +763,6 @@ interface ActiveDistractionInfo {
     : timerState.sessionMode === 'SHORT_BREAK' 
       ? timerState.breakDuration 
       : timerState.focusDuration;
-  const isCameraBlocked = cameraStatus === 'error';
-
   if (isLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" /></div>;
   if (!workspace) return <div className="flex flex-col items-center justify-center min-h-screen gap-4"><p className="text-muted-foreground">Workspace not found</p><Link to="/" className="text-white hover:underline text-sm">Go back</Link></div>;
 
@@ -785,28 +773,6 @@ interface ActiveDistractionInfo {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
-      {isCameraBlocked && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6 flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30"
-        >
-          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-amber-400">Focus Tracking Unavailable</p>
-            <p className="text-xs text-zinc-400 mt-0.5">
-              {cameraErrorMessage || "Camera is not accessible. The timer will still work, but distraction detection is disabled."}
-            </p>
-          </div>
-          <button
-            onClick={() => setIsManualOverride(true)}
-            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
-          >
-            Dismiss
-          </button>
-        </motion.div>
-      )}
-
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-10">
         <div className="flex items-center gap-4">
           <Link to="/" className="w-10 h-10 rounded-xl border border-zinc-800/80 bg-zinc-900/60 flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-all">
@@ -838,7 +804,7 @@ interface ActiveDistractionInfo {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[250px] text-center bg-zinc-900/60 border-zinc-800/80 text-zinc-100">
-                Prodify is actively monitoring your window activity, keyboard input, and camera (if enabled) to track your focus.
+                Prodify is actively monitoring your window activity and keyboard/mouse input to track your focus.
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -1177,38 +1143,10 @@ interface ActiveDistractionInfo {
               </div>
             </div>
 
-            {isDetectionEnabled && timerState.currentState === 'IDLE' && cameraStatus === 'streaming' && engagementState === 'FACE_ABSENT' && (
-              <div className="mb-6 w-full max-w-sm rounded-xl border bg-amber-500/10 border-amber-500/20 p-4 shadow-sm animate-in fade-in slide-in-from-bottom-2">
-                <div className="flex items-start gap-3">
-                  <div className="shrink-0 mt-0.5 w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400">
-                    <AlertTriangle className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-amber-400">Poor Lighting / Face Not Visible</h4>
-                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                      The camera cannot clearly see your face. It may be too dark, or you might be out of frame. Please move to a well-lit area to start your session.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
           <TimerControls 
             state={timerState.currentState} 
             timeRemaining={timerState.timeRemaining} 
             totalDuration={totalDuration} 
-            canStartFocus={
-              (isDetectionEnabled && workspace.camera_enabled)
-                ? (cameraStatus === 'streaming' && engagementState !== 'FACE_ABSENT' && engagementState !== 'STRANGER')
-                : true
-            }
-            onStartFocusBlocked={() => {
-              if (cameraStatus !== 'streaming') {
-                toast.error("Camera is not ready. Please wait or ensure it is not blocked.");
-              } else {
-                toast.error("No face detected. Please face the camera to start.");
-              }
-            }}
           />
 
           {timerState.currentState === 'FOCUS_PAUSED' && activeDistraction && !['Manual', 'manual_pause'].includes(timerState.pauseReason || '') && (
@@ -1288,7 +1226,7 @@ interface ActiveDistractionInfo {
             <div className="rounded-xl border border-zinc-800/80 p-4 bg-zinc-900/60">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
-                  <CameraOff className="w-4 h-4 text-amber-500" />
+                  <Activity className="w-4 h-4 text-amber-500" />
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-zinc-100">Tracking Disabled</p>
@@ -1300,65 +1238,37 @@ interface ActiveDistractionInfo {
             </div>
           )}
 
-          {(isDetectionEnabled && workspace.camera_enabled) && (
-            <div className="rounded-xl border border-zinc-800/80 overflow-hidden bg-zinc-900/60 backdrop-blur-md">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/80 bg-zinc-950/40">
-                <span className="text-xs font-medium text-zinc-400 flex items-center gap-1.5">
-                  <Webcam className="w-3.5 h-3.5" />
-                  Camera Feed
-                </span>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
-                  cameraStatus === 'streaming'
-                    ? 'bg-emerald-500/15 text-emerald-400'
-                    : cameraStatus === 'loading'
-                      ? 'bg-sky-500/15 text-sky-400'
-                      : 'bg-rose-500/15 text-rose-400'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    cameraStatus === 'streaming'
-                      ? 'bg-emerald-400 animate-pulse'
-                      : cameraStatus === 'loading'
-                        ? 'bg-sky-400 animate-pulse'
-                        : 'bg-rose-400'
-                  }`} />
-                  {cameraStatus === 'streaming' && 'Live'}
-                  {cameraStatus === 'loading' && 'Starting'}
-                  {cameraStatus === 'error' && 'Offline'}
-                  {cameraStatus === 'disabled' && 'Off'}
-                </span>
-              </div>
-              <div className="p-3">
-                <WebcamStream 
-                  onDistractionDetected={handleDistraction} 
-                  onStatus={handleCameraStatus}
-                  onEngagementState={(state) => {
-                    setEngagementState(state);
-                    // Track the last focused window when user is actively working
-                    if (state === 'ACTIVE_WORK' || state === 'FOCUSED_THINKING') {
-                      if (currentTabTitle) setLastFocusedWindow(currentTabTitle);
-                    }
-                  }}
-                  isEnabled={isDetectionEnabled}
-                  isTimerRunning={timerState.currentState === 'FOCUS_RUNNING'}
-                />
-                {cameraStatus === 'disabled' && (
-                  <div className="flex flex-col items-center justify-center py-6 text-zinc-400">
-                    <CameraOff className="w-8 h-8 mb-2 opacity-50" />
-                    <p className="text-xs">Camera not initialized</p>
-                  </div>
-                )}
-                {cameraStatus === 'loading' && (
-                  <div className="flex items-center justify-center py-6">
-                    <div className="w-6 h-6 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
-                  </div>
-                )}
-              </div>
+          <div className="rounded-xl border border-zinc-800/80 overflow-hidden bg-zinc-900/60 backdrop-blur-md">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/80 bg-zinc-950/40">
+              <span className="text-xs font-medium text-zinc-400 flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5" />
+                Input Activity Monitor
+              </span>
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
+                timerState.currentState === 'FOCUS_RUNNING'
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'bg-zinc-800 text-zinc-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${timerState.currentState === 'FOCUS_RUNNING' ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} />
+                {timerState.currentState === 'FOCUS_RUNNING' ? 'Live' : 'Standby'}
+              </span>
             </div>
-          )}
+            <div className="p-3">
+              <InputActivityMonitor
+                isActive={timerState.currentState === 'FOCUS_RUNNING' && isDetectionEnabled}
+                category={workspace.category}
+                workspaceId={wsId}
+                windowTitle={currentTabTitle}
+                intent={sessionIntent}
+                isContextAligned={isTabFocused}
+                onInactivityDetected={handleInputInactivity}
+              />
+            </div>
+          </div>
 
           {timerState.currentState === 'FOCUS_RUNNING' && (
             <CoachInsightPanel
-              engagementState={engagementState}
+              engagementState={isTabDistracted ? 'DISTRACTED' : 'ACTIVE_WORK'}
               isSessionActive={true}
               currentHour={new Date().getHours()}
               workspaceName={workspace.name}

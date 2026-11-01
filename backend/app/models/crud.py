@@ -28,7 +28,6 @@ def create_workspace(
     focus_keywords: Optional[str] = None,
     theme_color: Optional[str] = '#3b82f6',
     current_goal: Optional[str] = None,
-    camera_enabled: bool = False,
     status: Optional[str] = "active",
 ) -> models.Workspace:
     """Create a new workspace for a given user."""
@@ -47,7 +46,6 @@ def create_workspace(
         focus_keywords=focus_keywords,
         theme_color=theme_color,
         current_goal=current_goal,
-        camera_enabled=camera_enabled,
         status=status or "active",
     )
     db.add(workspace)
@@ -92,7 +90,6 @@ def update_workspace(
     focus_keywords: Optional[str] = None,
     theme_color: Optional[str] = '#3b82f6',
     current_goal: Optional[str] = None,
-    camera_enabled: bool = False,
     status: Optional[str] = "active",
 ) -> models.Workspace:
     """Update an existing workspace's fields."""
@@ -115,7 +112,6 @@ def update_workspace(
     if theme_color is not None:
         workspace.theme_color = theme_color
     workspace.current_goal = current_goal
-    workspace.camera_enabled = camera_enabled
     if status is not None:
         workspace.status = status
 

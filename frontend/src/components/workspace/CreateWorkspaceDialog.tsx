@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Switch } from '@/components/ui/switch';
 import { format } from 'date-fns';
 import { API_BASE, getAuthHeaders } from '@/lib/config';
 import { toast } from 'sonner';
@@ -30,7 +29,6 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
   const [dailyHours, setDailyHours] = useState('1');
   const [dailyMinutes, setDailyMinutes] = useState('0');
   const [sessionIntent, setSessionIntent] = useState('');
-  const [cameraEnabled, setCameraEnabled] = useState(false);
   const [themeColor, setThemeColor] = useState<string>('#3b82f6');
   const THEME_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -97,7 +95,6 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
         focus_keywords: sessionIntent.trim() || null,
         current_goal: sessionIntent.trim() || null,
         theme_color: themeColor,
-        camera_enabled: cameraEnabled,
       };
 
       const response = await fetch(`${API_BASE}/workspaces`, {
@@ -135,7 +132,6 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
       setDailyHours('1');
       setDailyMinutes('0');
       setSessionIntent('');
-      setCameraEnabled(false);
 
       onCreated?.();
       toast.success("Workspace created successfully!");
@@ -298,23 +294,6 @@ export default function CreateWorkspaceDialog({ onCreated, variant = 'primary' }
                       min="1"
                       className="bg-zinc-900 border-zinc-800 text-white rounded-xl focus-visible:ring-1 focus-visible:ring-blue-500"
                     />
-                  </div>
-                </div>
-
-                {/* Camera Tracking Toggle */}
-                <div className="flex items-start gap-3">
-                  <Switch
-                    checked={cameraEnabled}
-                    onCheckedChange={setCameraEnabled}
-                    className="mt-0.5 data-[state=checked]:bg-blue-500 data-[state=unchecked]:bg-zinc-800 border-transparent"
-                  />
-                  <div className="flex flex-col">
-                    <label className="text-sm font-bold text-white leading-none mb-1">
-                      Enable Camera Tracking (Optional)
-                    </label>
-                    <p className="text-xs text-muted-foreground">
-                      Adds face-presence detection on top of tab/app tracking. Works best in good lighting. Off by default.
-                    </p>
                   </div>
                 </div>
 

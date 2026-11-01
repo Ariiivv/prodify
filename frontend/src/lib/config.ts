@@ -25,7 +25,7 @@ export const WS_BASE = (() => {
  * Derives the full WebSocket URL for a given path.
  * Automatically handles protocol upgrades (ws -> wss) to avoid mixed-content blocking.
  *
- * @param path - The specific endpoint path (e.g., '/ws/vision' or '/workspaces/stream')
+ * @param path - The specific backend endpoint path.
  */
 export function getWsUrl(path: string): string {
   // Ensure the path begins with a leading slash if not present

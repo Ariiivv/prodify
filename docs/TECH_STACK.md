@@ -92,8 +92,8 @@ This project is strictly a **Web Application**. All libraries and code structure
 
 | Library | Version | Use-Case in Prodify |
 |---------|---------|---------------------|
-| **lucide-react** | ^1.17.0 | Open-source icon library. Used throughout for: Sparkles, Layers, Timer, TrendingUp, Flame, BarChart3, ArrowLeft, CameraOff, AlertTriangle, Webcam, Heart, Shield, Activity, and more. |
-| **sonner** | ^2.0.7 | Toast notification library. Used for: distraction alerts ("Focus lost!"), idle detection ("You walked away!"), welcome-back messages, camera permission warnings. |
+| **lucide-react** | ^1.17.0 | Open-source icon library used throughout the dashboard and input activity monitor. |
+| **sonner** | ^2.0.7 | Toast notification library used for distraction alerts, idle detection, and welcome-back messages. |
 
 ### Forms & Validation
 
@@ -109,7 +109,6 @@ This project is strictly a **Web Application**. All libraries and code structure
 |---------|---------|---------------------|
 | **date-fns** | ^4.4.0 | Date utility library. Used for date formatting in session logs (`format`, `parseISO`). |
 | **react-markdown** | ^10.1.0 | Markdown rendering for AI Coach chat responses. |
-| **react-webcam** | ^7.2.0 | Webcam capture component. Used in `WebcamStream.tsx` for camera feed display and frame capture for MediaPipe processing. |
 | **react-day-picker** | ^8.10.1 | Date picker component for deadline selection in workspace creation. |
 | **react-toastify** | ^11.1.0 | Alternative toast library. |
 
@@ -131,14 +130,6 @@ This project is strictly a **Web Application**. All libraries and code structure
 |---------|---------|---------------------|
 | **SQLAlchemy** | Latest | ORM for database interactions. Defines 4 models (User, Workspace, Session, TelemetryLog) and manages SQLite connections via `sessionmaker`. |
 | **SQLite** | Built-in | Local file-based database (`prodify.db`). Zero configuration, ideal for local MVP development. |
-
-### Computer Vision
-
-| Library | Version | Use-Case in Prodify |
-|---------|---------|---------------------|
-| **mediapipe** (tasks-vision) | Latest | Google's ML vision pipeline. Used for real-time face detection via `FaceDetector` from `mediapipe.tasks.python.vision`. Processes webcam frames to determine user presence. |
-| **opencv-python** (cv2) | Latest | Image processing. Decodes base64 frames, converts color spaces (BGR to RGB), computes brightness metrics for pitch-black detection. |
-| **numpy** | Latest | Numerical array operations. Handles frame buffer conversion and image data manipulation. |
 
 ### Machine Learning
 
@@ -168,8 +159,7 @@ This project is strictly a **Web Application**. All libraries and code structure
 |----|---------------------|
 | **Page Visibility API** (`document.visibilityState`) | Detects when user switches tabs (`hidden` to distraction). Used in `useTabVisibility` hook. |
 | **Window Focus Events** (`blur`/`focus`) | Detects when window loses/gains focus. Used in `useTabVisibility` hook. |
-| **WebRTC** (`navigator.mediaDevices.getUserMedia`) | Accesses webcam for real-time face detection. Used in `WebcamStream` component. |
-| **WebSocket API** | Establishes persistent connection to backend `/vision` endpoint for streaming webcam frames. |
+| **Keyboard/Pointer Events** | Measures local user input for inactivity monitoring while a focus timer is running. |
 | **Performance API** (`performance.now()`) | Drift-resistant timer interval correction in the Zustand timer store. |
 | **Keyboard Events** (`keydown`) | User activity detection for idle monitoring. |
 | **Pointer Events** (`mousemove`, `click`) | User activity detection for idle monitoring. |
@@ -196,4 +186,4 @@ This project is strictly a **Web Application**. All libraries and code structure
 | **npm** | 9+ |
 | **Browser** | Modern Chromium/Firefox/WebKit (required for WebRTC, WebSocket, ES2022) |
 | **WSL2** | Recommended for Windows development |
-| **Camera** | Any USB or built-in webcam for vision features |
+| **Input Devices** | Keyboard and pointer events captured locally by the browser |

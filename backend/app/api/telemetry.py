@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from datetime import datetime, timedelta, date
 from typing import Optional
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
@@ -19,6 +20,7 @@ from app.services.intent_classifier import (
     allow_window_for_session,
 )
 from app.services.activity_parser import parse_activity
+from app.services.input_activity import evaluate_input_activity
 
 client = AsyncOpenAI(
     api_key=os.getenv("GROQ_API_KEY", "missing_key"),
@@ -34,16 +36,6 @@ def _safe_rollback(db: Session) -> None:
         db.rollback()
     except Exception as rollback_exc:
         logger.warning("[OFFLINE] Database rollback also failed; discarding broken session: %s", rollback_exc)
-
-# Tracker instance (set from main.py on startup)
-_tracker = None
-
-
-def set_tracker(tracker):
-    """Called from main.py on startup to inject the FocusTracker instance"""
-    global _tracker
-    _tracker = tracker
-
 
 class ActivityLog(BaseModel):
     window_title: str
@@ -66,6 +58,24 @@ class ActivityClassification(BaseModel):
     is_focused: bool
     similarity_score: float
     local_rule_match: str
+
+
+class InputActivityLog(BaseModel):
+    workspace_id: int
+    window_title: str = ""
+    app_name: str = ""
+    intent: str = ""
+    idle_seconds: float = 0.0
+    keystrokes: int = 0
+    clicks: int = 0
+
+
+class InputActivityResponse(BaseModel):
+    status: str
+    reason: str
+    idle_seconds: float
+    threshold_seconds: int
+    contextual_alignment: str
 
 
 class SessionResponse(BaseModel):
@@ -500,8 +510,8 @@ async def log_activity(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    Receive desktop window activity, classify it as focused/distracted,
-    update the FocusTracker, and return classification.
+    Receive desktop window activity, classify it locally as focused/distracted,
+    and return the classification while persistence continues in the background.
     """
     coords = None
     if payload.workspace_id is not None:
@@ -526,14 +536,6 @@ async def log_activity(
     clean_app_name, platform_name, content_title = parse_activity(
         payload.window_title, payload.app_name
     )
-
-    if _tracker:
-        _tracker.update_window_activity(
-            window_title=payload.window_title,
-            app_name=payload.app_name,
-            window_status=status,
-            reason=reason
-        )
 
     background_tasks.add_task(
         crud.log_activity_record_async,
@@ -587,6 +589,58 @@ async def log_activity(
         is_focused=status == "focused",
         similarity_score=similarity_score,
         local_rule_match=local_rule_match,
+    )
+
+
+@router.post("/telemetry/input-activity", response_model=InputActivityResponse)
+async def log_input_activity(
+    payload: InputActivityLog,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Evaluate and persist local keyboard/mouse inactivity telemetry."""
+    workspace = require_owned_workspace(payload.workspace_id, current_user.id, db)
+    classification = await classify_with_intent(
+        window_title=payload.window_title,
+        app_name=payload.app_name,
+        intent=payload.intent or workspace.current_goal or workspace.focus_keywords or "",
+        workspace_id=payload.workspace_id,
+    )
+    verdict = evaluate_input_activity(
+        category=workspace.category,
+        idle_seconds=payload.idle_seconds,
+        keystrokes=max(0, payload.keystrokes),
+        clicks=max(0, payload.clicks),
+        aligned=classification[0] == "focused",
+        window_title=payload.window_title,
+        app_name=payload.app_name,
+    )
+
+    try:
+        db.add(models.TelemetryLog(
+            workspace_id=payload.workspace_id,
+            metric_type="INPUT_ACTIVITY",
+            value=max(0.0, payload.idle_seconds),
+            reason=verdict.reason,
+            metadata_json=json.dumps({
+                "keystrokes": max(0, payload.keystrokes),
+                "clicks": max(0, payload.clicks),
+                "window_title": payload.window_title,
+                "app_name": payload.app_name,
+                "contextual_alignment": verdict.contextual_alignment,
+            }),
+        ))
+        db.commit()
+    except Exception as exc:
+        _safe_rollback(db)
+        logger.warning("[OFFLINE] Input activity telemetry was not persisted: %s", exc)
+
+    return InputActivityResponse(
+        status=verdict.status,
+        reason=verdict.reason,
+        idle_seconds=max(0.0, payload.idle_seconds),
+        threshold_seconds=verdict.threshold_seconds,
+        contextual_alignment=verdict.contextual_alignment,
     )
 
 

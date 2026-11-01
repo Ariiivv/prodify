@@ -5,7 +5,7 @@ import { API_BASE, getAuthHeaders } from '@/lib/config';
 import ReactMarkdown from 'react-markdown';
 
 interface CoachInsightPanelProps {
-  /** Current vision engagement state from the backend (e.g. ACTIVE_WORK, FOCUSED_THINKING, FACE_ABSENT, EYES_CLOSED) */
+  /** Current local input engagement state. */
   engagementState?: string;
   /** Whether the user is currently in a focus session */
   isSessionActive?: boolean;
@@ -47,7 +47,7 @@ export default function CoachInsightPanel({
 
     if (engagementState === 'FOCUSED_THINKING') {
       setInsightMode('deep_work');
-    } else if (engagementState === 'FACE_ABSENT' || engagementState === 'EYES_CLOSED') {
+    } else if (engagementState === 'DISTRACTED' || engagementState === 'INPUT_INACTIVE') {
       setInsightMode('distracted');
     } else {
       setInsightMode('idle');
@@ -200,7 +200,7 @@ export default function CoachInsightPanel({
             >
               <p className="text-sm text-emerald-300 font-medium">🧠 Deep Work Detected</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Optimizing session timer — distraction detection temporarily dampened. Your flow state is protected.
+                Input monitoring is using a contextual allowance for sustained, aligned work.
               </p>
               <div className="flex items-center gap-2 mt-2">
                 <div className="flex-1 h-1 rounded-full bg-emerald-500/10 overflow-hidden">
@@ -225,12 +225,10 @@ export default function CoachInsightPanel({
               className="space-y-3"
             >
               <p className="text-sm text-amber-300 font-medium">
-                {engagementState === 'FACE_ABSENT' ? '👤 You walked away' : '😴 Eyes closed detected'}
+                Input activity paused the focus loop
               </p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {engagementState === 'FACE_ABSENT'
-                  ? 'Your face is no longer visible. Timer has been paused.'
-                  : 'Prolonged eye closure detected. Need a break?'}
+                Keyboard and mouse activity have been inactive beyond the contextual allowance. Timer has been paused.
               </p>
 
               {/* Resume Context Button */}

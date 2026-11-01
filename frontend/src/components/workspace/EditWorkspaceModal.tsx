@@ -113,7 +113,6 @@ export const EditWorkspaceModal: React.FC<EditWorkspaceModalProps> = ({
         focus_keywords: currentGoal.trim() || null,
         current_goal: currentGoal.trim() || null,
         theme_color: themeColor,
-        camera_enabled: workspace.camera_enabled ?? false,
         status,
       };
 

@@ -45,7 +45,7 @@
 
 | Day | Deliverable | Status |
 |:----|:------------|:-------|
-| **Day 4** | Analytics dashboard, MediaPipe vision, AI Autopilot, Codebase polish | ✅ |
+| **Day 4** | Analytics dashboard, local input activity, AI Autopilot, Codebase polish | ✅ |
 
 ### Sprint Tasks 1–5: Final Integration Sprint
 - [x] **Task 1:** Fix Console 404 — Added `/api/telemetry/total-sessions` endpoint
@@ -62,13 +62,11 @@
 - [x] Autonomous function calling for workspace creation (`POST /api/ai-coach/function-call`)
 - [x] Dynamic system prompt with live session context injection
 
-#### 👁️ MediaPipe Vision
-- [x] WebSocket endpoint at `/vision` for real-time face detection
-- [x] MediaPipe Tasks FaceDetector with BlazeFace short-range model
-- [x] Auto-download of `.tflite` model on first use
-- [x] Dark/pitch-black frame detection (brightness < 15 → no face)
-- [x] 5-second distraction timeout with `focused`/`distracted` state transitions
-- [x] Resilient per-frame error handling (single bad frame doesn't kill connection)
+#### ⌨️ Local Input Activity
+- [x] Keyboard/mouse activity counters and idle timer in the browser
+- [x] Context-aware inactivity thresholds for passive aligned work
+- [x] Local timer pause and telemetry logging on sustained inactivity
+- [x] Offline-safe background telemetry delivery
 
 #### 📊 Analytics & Metrics
 - [x] Focus Density Score (`/api/telemetry/focus-density/{workspace_id}`)
@@ -81,7 +79,7 @@
 #### 🖥️ Workspace Page
 - [x] Timer Ring (SVG circular countdown) with dynamic color states
 - [x] Timer Controls (Start, Pause, Resume, Reset, Skip-to-Break)
-- [x] Camera Feed Card with live/starting/offline/off status
+- [x] Input Activity Monitor card with live input counts, idle time, and contextual status
 - [x] User Activity status (Active/Away) with idle time display
 - [x] Burnout Gauge with fatigue risk visualization
 - [x] Session Stats panel
@@ -116,7 +114,6 @@
 
 - [ ] User authentication (JWT login/signup)
 - [ ] Workspace editing, deletion, filtering, and search UI
-- [ ] PERCLOS eye-closure metric using MediaPipe face landmarks
 - [ ] Structured goal mode with deadline velocity recalculation
 - [ ] Session history export (CSV/JSON)
 - [ ] Docker containerization and CI/CD pipeline

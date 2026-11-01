@@ -15,13 +15,6 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId, ShowWindow, SW_MINIMIZE
 };
-#[cfg(target_os = "windows")]
-use webview2_com::Microsoft::Web::WebView2::Win32::{
-    ICoreWebView2PermissionRequestedEventHandler,
-    COREWEBVIEW2_PERMISSION_KIND_CAMERA,
-    COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
-    COREWEBVIEW2_PERMISSION_STATE_ALLOW,
-};
 
 // The custom struct has been removed. We will use the macro-generated create method instead.
 
@@ -193,35 +186,6 @@ pub fn run() {
 
             // Start the background window poller
             start_window_poller(app.handle().clone());
-
-            // Auto-grant camera/microphone permissions in WebView2
-            #[cfg(target_os = "windows")]
-            {
-                use tauri::Manager;
-                if let Some(main_window) = app.get_webview_window("main") {
-                    let _ = main_window.with_webview(move |webview| {
-                        unsafe {
-                            if let Ok(core) = webview.controller().CoreWebView2() {
-                                let handler = webview2_com::PermissionRequestedEventHandler::create(Box::new(|_sender, args| {
-                                    if let Some(args) = args {
-                                        let mut kind = webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND(0);
-                                        args.PermissionKind(&mut kind)?;
-                                        if kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
-                                            || kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
-                                        {
-                                            args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
-                                        }
-                                    }
-                                    Ok(())
-                                }));
-                                let handler_interface: ICoreWebView2PermissionRequestedEventHandler = handler.into();
-                                let mut token: i64 = 0;
-                                let _ = core.add_PermissionRequested(&handler_interface, &mut token);
-                            }
-                        }
-                    });
-                }
-            }
 
             Ok(())
         })

@@ -15,7 +15,7 @@ backend/
 │   │   └── crud.py        # Synchronous and background async CRUD operations
 │   │
 │   ├── services/          # Core Business Logic & Intelligence ("The Brain")
-│   │   ├── vision_engine.py      # Developer-Intent posture & FaceLandmarker engagement machine
+│   │   ├── input_activity.py     # Local keyboard/mouse inactivity policy
 │   │   ├── star_ml.py            # Star ML Engine agentic tool-calling & persistent memory
 │   │   └── intent_classifier.py  # Llama 3.3 semantic window evaluator & TTL cache
 │   │
@@ -26,9 +26,9 @@ backend/
 ├── data/                  # Persistent Runtime Data (Git-ignored / local storage)
 │   ├── prodify.db         # SQLite relational database
 │   ├── user_profile.json  # Long-term AI Coach memory
-│   └── models/            # MediaPipe TFLite and Task assets
+│   └── models/            # Local model assets, when required
 │
-└── main.py                # Application Bootstrapper & WebSocket Gateway
+└── main.py                # Application Bootstrapper
 ```
 
 ---
@@ -48,7 +48,7 @@ API controllers should **not** contain heavy computational logic, machine learni
 ### 2. `app/services/` — Core Intelligence ("The Brain")
 **Why is `services/` the "Brain"?**
 The `services/` directory encapsulates all domain logic, machine learning models, external LLM integrations, and state machines:
-- **`vision_engine.py`**: Runs the 478-landmark MediaPipe Face Landmarker and implements the `EngagementState` machine. It distinguishes between actual distractions (face absent, eyes shut, stranger detected) and deep productive posture (head down / writing).
+- **`input_activity.py`**: Applies a local, category-aware keyboard/mouse inactivity policy, including extended allowances for aligned passive reading and lectures.
 - **`star_ml.py`**: Houses the agentic tool-calling loops for the AI Coach (`get_focus_metrics`, `get_top_distractions`, `get_session_history`), dynamic prompt building, and persistent disk-backed memory (`user_profile.json`).
 - **`intent_classifier.py`**: Manages window activity evaluation. It first screens against fast-path whitelists and IDE signatures, then invokes Llama 3.3 70B for semantic intent checking, caching results in a thread-safe `SemanticCache` (TTL 300s).
 
@@ -69,7 +69,6 @@ sequenceDiagram
     participant API as app/api/telemetry.py
     participant IntentService as app/services/intent_classifier.py
     participant Llama as Groq Llama 3.3 (70B)
-    participant VisionService as app/services/vision_engine.py
     participant DB as app/models/crud.py (SQLite)
 
     Note over Client,API: Window Activity Classification
@@ -82,25 +81,19 @@ sequenceDiagram
         IntentService->>IntentService: Store in SemanticCache
     end
     IntentService-->>API: (status: "focused"|"distracted", reason)
-    API->>VisionService: update_window_activity(window_title, app_name, status, reason)
     API->>DB: BackgroundTask(log_activity_record_async)
     API-->>Client: ActivityClassification JSON
-
-    Note over Client,VisionService: Real-Time Engagement WebSocket
-    Client->>VisionService: WS /vision (base64 camera frame)
-    VisionService->>VisionService: MediaPipe FaceLandmarker + EngagementState
-    VisionService-->>Client: Combined Status JSON (vision + window)
 ```
 
 ### Flow Walkthrough
 1. **Frontend / Desktop Shell**:
-   The Electron frontend continuously captures the active window title and user camera feed.
+   The desktop frontend continuously captures the active window title and local keyboard/mouse activity.
 2. **API Router Layer (`app/api/`)**:
    - HTTP requests land on `/api/telemetry/activity` or `/api/chat`.
    - The route validates Pydantic schemas and immediately invokes the appropriate service.
 3. **Service Execution (`app/services/`)**:
    - `intent_classifier.py` checks the semantic cache. If a new window is detected, it queries Groq Llama 3.3 and caches the verdict.
    - `star_ml.py` executes agentic tool queries (`get_focus_metrics`, etc.) against `app.models.crud`.
-   - `vision_engine.py` processes frames and combines posture classification with window activity status.
+   - `input_activity.py` evaluates idle duration against workspace category and active-window context.
 4. **Persistence (`app/models/` & `data/`)**:
    - Results are committed to `data/prodify.db` either synchronously (for critical state) or asynchronously via FastAPI background tasks.

@@ -34,24 +34,23 @@ The core timer element inside the active workspace layout must be driven by an e
 
 ---
 
-## 3. Deep Feature Specification: The Dual-Vector Telemetry & Enforcement Loop
+## 3. Deep Feature Specification: The Contextual Telemetry & Enforcement Loop
 The telemetry engine captures behavioral signs of distraction and fatigue, executing automated UI-blocking enforcement penalties if thresholds are violated.
 
-### The Visual Telemetry Engine (MediaPipe Face Mesh)
-* **Implementation:** Client-side `@mediapipe/tasks-vision` loaded directly into the browser viewport runtime.
-* **Metric Calculation (PERCLOS):** The frontend tracks facial landmarks around the eye vectors to assess eyelid closeness over a sliding 60-second window.
-  $$\text{PERCLOS} = \frac{\text{Frames where Eyelid Closure} \ge 80\%}{\text{Total Captured Frames in Window}}$$
-* **Fatigue Trigger:** If $\text{PERCLOS} \ge 0.15$ (meaning eyes are closed at least 80% of the way for more than 15% of the rolling minute), a fatigue warning flag is set to true.
+### The Local Input Activity Engine
+* **Implementation:** Browser keyboard, pointer, and wheel events are counted locally while a focus timer is running.
+* **Metric Calculation:** The frontend maintains elapsed time since the last input event and sends lightweight counts to `/api/telemetry/input-activity` when available.
+* **Contextual Allowance:** Aligned video lectures, documentation, readers, and passive research receive a longer inactivity threshold so legitimate thinking and consumption work are not treated as distractions.
 
 ### The Contextual Telemetry Engine (Browser Sandbox Tracking)
 * **Implementation:** Dual observers using the HTML5 Page Visibility API and the window blur interface.
-* **Distraction Trigger:** The instant `document.visibilityState === 'hidden'` or `window.has_focus === false`, an unexcused distraction event is initialized.
+* **Distraction Trigger:** Sustained input inactivity or an unexcused `document.visibilityState === 'hidden'`/window blur event initializes a distraction event.
 
 ### The 15-Second Enforcement Matrix Loop
-During `FOCUS_RUNNING`, a background polling loop evaluates telemetry every 1 second. If either a Contextual Distraction Trigger OR a Visual Fatigue Trigger remains constantly true for **15 consecutive seconds**, the application automatically executes the following enforcement sequence:
+During `FOCUS_RUNNING`, a local polling loop evaluates telemetry every second. If an input inactivity threshold or contextual distraction remains active, the application executes the following enforcement sequence:
 1. **State Mutation:** Forces the active Pomodoro FSM from `FOCUS_RUNNING` to `FOCUS_PAUSED`.
-2. **Viewport Blockade:** Spawns a full-screen, un-dismissible blur overlay modal across the entire application interface reading: *"Focus Interruption Detected. Timer Paused due to Tab Switch or Fatigue."*
-3. **Database Logging:** Fires a payload down to `/api/telemetry/distraction` containing the exact timestamp, the active workspace ID, and the distraction type (`TAB_SWITCH` or `FATIGUE_EYE_CLOSURE`).
+2. **Viewport Blockade:** Spawns a full-screen, un-dismissible blur overlay modal across the application interface reading: *"Focus Interruption Detected. Timer Paused due to Input Inactivity or Tab Switch."*
+3. **Database Logging:** Fires a payload down to `/api/telemetry/distraction` or `/api/telemetry/input-activity` containing the exact timestamp, active workspace ID, and local activity context.
 4. **Release Mechanism:** The user must click a prominent "Re-Engage Focus" button on the modal to clear the blockade and resume the timer loop.
 
 ---

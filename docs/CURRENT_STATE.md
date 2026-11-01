@@ -16,12 +16,10 @@
 - **Autonomous Function Calling** — `/api/ai-coach/function-call` endpoint parses natural language (e.g., *"Create a deep focus workspace for ML studying for 60 minutes"*) and autonomously creates workspaces via CRUD operations.
 - **Context-Aware Prompts** — System prompt dynamically injects live session context (focus duration, burnout risk, distraction count, idle time, timer state) for hyper-relevant coaching.
 
-#### 👁️ MediaPipe Vision Integration (WebSocket)
-- **Real-Time Face Detection** — WebSocket endpoint at `/vision` streams base64-encoded webcam frames from the frontend to the backend for MediaPipe Tasks FaceDetector processing.
-- **Dark/Pitch-Black Frame Detection** — Frames with mean brightness < 15 are treated as "no face" to handle covered cameras or dark rooms.
-- **5-Second Distraction Timeout** — If no face is detected for 5 continuous seconds, user status transitions from `focused` → `distracted`.
-- **Resilient Per-Frame Processing** — A single bad frame does not terminate the connection; errors are logged and processing continues.
-- **Auto-Downloading Model** — The `blaze_face_short_range.tflite` neural network model is downloaded on first use from Google's MediaPipe CDN.
+#### ⌨️ Local Input Activity Monitoring
+- **Keyboard/mouse telemetry** — The desktop client tracks local key and pointer activity without capturing media.
+- **Context-aware inactivity** — Aligned video lectures, documentation, and passive research receive an extended local allowance.
+- **Offline operation** — The browser computes the live idle state locally and sends lightweight telemetry to `/api/telemetry/input-activity` when available.
 
 #### ⏱️ Pomodoro Timer Engine (Zustand FSM)
 - **Finite State Machine** — States: `IDLE → FOCUS_RUNNING → FOCUS_PAUSED → BREAK_RUNNING → BREAK_PAUSED → SESSION_COMPLETED`.
@@ -35,8 +33,8 @@
 - **Workspace-Scoped Activity History** — Every classified activity record carries the active workspace ID; activity is neither recorded before a focus session starts nor silently assigned to another workspace.
 - **Tab Visibility Detection** — `useTabVisibility` hook monitors `document.visibilityState` and `window.blur` to detect tab switches.
 - **Idle Detection** — `useIdleDetection` hook monitors keyboard and mouse inactivity with a 60-second timeout; auto-pauses focus sessions on idle.
-- **Webcam-Based Distraction** — Camera absence + 5s timeout triggers distraction logging and timer pause.
-- **Telemetry Logging** — All distraction events (TAB_SWITCH, FATIGUE_EYE_CLOSURE, camera_absence, manual_override) logged to `TelemetryLog` table with metadata JSON.
+- **Input-Based Distraction** — Sustained absence of keyboard/mouse input triggers distraction logging and timer pause.
+- **Telemetry Logging** — Activity events (TAB_SWITCH, INPUT_ACTIVITY, manual_override) are logged to `TelemetryLog` with metadata JSON.
 - **Enforcement Modal** — Blurs the screen and pauses the timer upon significant distractions, demanding user acknowledgment.
 
 #### 📊 Analytics & Metrics
@@ -58,7 +56,7 @@
 #### 🖥️ Workspace Page
 - **Timer Ring** — SVG circular countdown ring with dynamic color based on state (focus/break).
 - **Timer Controls** — Start, Pause, Resume, Reset, Skip-to-Break buttons.
-- **Camera Feed Card** — Live webcam preview with status indicator (Live/Starting/Offline/Off).
+- **Input Activity Monitor Card** — Live keyboard/mouse counts, idle timer, contextual alignment, and threshold status.
 - **User Activity Status** — Real-time "Active/Away" indicator with idle time.
 - **Burnout Gauge** — Live fatigue risk visualization.
 - **Session Stats** — Session count, distraction count, and focus minutes display.
@@ -79,7 +77,7 @@
 | **Database** | SQLite + SQLAlchemy | 4 models: User, Workspace, Session, TelemetryLog |
 | **ML Engine** | scikit-learn (RandomForest) | Joblib serialization, Pandas data handling |
 | **AI Integration** | Groq API (Llama-3.3-70b) | Structured JSON output, function calling |
-| **Computer Vision** | MediaPipe Tasks API | BlazeFace short-range face detector (TFLite) |
+| **Local Activity Engine** | Browser Keyboard/Pointer APIs | Inactivity and contextual passive-work detection |
 
 ---
 
@@ -88,7 +86,7 @@
 ```
 POST /workspaces                          → Create workspace
 GET  /workspaces                          → List workspaces
-WS   /vision                              → WebSocket for face detection frames
+POST /api/telemetry/input-activity         → Local keyboard/mouse activity telemetry
 GET  /api/ml/burnout-prediction           → ML burnout probability
 POST /api/ai-coach/chat                   → AI Coach conversation
 POST /api/ai-coach/function-call          → AI autonomous workspace creation
@@ -109,7 +107,6 @@ POST /api/telemetry/activity               → Classify and record desktop activ
 - [ ] User authentication (login/signup with JWT)
 - [ ] Workspace editing and deletion UI
 - [ ] Workspace filtering and search
-- [ ] PERCLOS eye-closure metric from MediaPipe landmarks
 - [ ] Structured goal mode with velocity recalculation
 - [ ] Session history export (CSV/JSON)
 - [ ] Deployment CI/CD pipeline (Docker + cloud)

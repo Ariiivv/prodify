@@ -40,7 +40,6 @@ class Workspace(Base):
     long_break_duration = Column(Integer, nullable=False, default=15) # in minutes
     long_break_interval = Column(Integer, nullable=False, default=4) # number of sessions before long break
     focus_keywords = Column(String, nullable=True) # JSON array of focus keywords for adaptive tracking
-    camera_enabled = Column(Boolean, nullable=False, default=False)
     current_streak = Column(Integer, nullable=False, default=0)
     longest_streak = Column(Integer, nullable=False, default=0)
     current_goal = Column(String, nullable=True)
@@ -117,7 +116,7 @@ class TelemetryLog(Base):
     metric_type = Column(String, nullable=False) # e.g., "PERCLOS", "TAB_SWITCH"
     value = Column(Float, nullable=True) # e.g., PERCLOS score, duration of distraction
     distraction_type = Column(String, nullable=True) # e.g., "TAB_SWITCH", "FATIGUE_EYE_CLOSURE"
-    reason = Column(String, nullable=True)          # e.g., "camera_absence", "tab_switch", "manual_override"
+    reason = Column(String, nullable=True)          # e.g., "input_inactivity", "tab_switch", "manual_override"
     metadata_json = Column(String, nullable=True)   # JSON blob for extra context (perclos_score, grace_duration, etc.)
     track_day_number = Column(Integer, nullable=True)
     session_index_today = Column(Integer, nullable=True)

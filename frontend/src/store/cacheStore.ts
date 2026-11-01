@@ -16,7 +16,6 @@ export interface CachedWorkspace {
   focus_keywords?: string;
   current_goal?: string;
   theme_color?: string;
-  camera_enabled?: boolean;
   current_streak?: number;
   longest_streak?: number;
   created_at?: string;
