@@ -626,8 +626,12 @@ def build_user_performance_matrix(db: Session, user_id: str) -> dict:
             else:
                 raw_daily_target = min(480, max(15, ws.daily_target_minutes or 60))
         elif is_mastery:
-            # Normalize legacy Mastery quota: cap at 240m (4h) so 540m targets don't create 22 sessions
-            raw_daily_target = min(240, max(15, ws.daily_target_minutes or 60))
+            if ws.daily_target_minutes and ws.daily_target_minutes > 0:
+                raw_daily_target = min(480, max(15, ws.daily_target_minutes))
+            elif ws.target_hours and ws.target_hours > 0:
+                raw_daily_target = min(480, max(15, round(ws.target_hours * 60)))
+            else:
+                raw_daily_target = 60
         else:
             raw_daily_target = 0
 

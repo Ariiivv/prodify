@@ -128,8 +128,13 @@ def _get_workspace_daily_target(ws: models.Workspace, today: date) -> int:
         raw = ws.daily_target_minutes or 60
         return min(480, max(15, raw))
     if cat == "mastery":
-        raw = ws.daily_target_minutes or 60
-        return min(240, max(15, raw))
+        if ws.daily_target_minutes and ws.daily_target_minutes > 0:
+            raw = ws.daily_target_minutes
+        elif ws.target_hours and ws.target_hours > 0:
+            raw = round(ws.target_hours * 60)
+        else:
+            raw = 60
+        return min(480, max(15, raw))
     return 0
 
 

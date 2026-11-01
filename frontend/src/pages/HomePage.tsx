@@ -17,6 +17,7 @@ interface Workspace {
   id: number;
   name: string;
   mode: string;
+  status?: string;
   category?: string;
   target_hours?: number;
   daily_target_minutes?: number;
@@ -185,12 +186,24 @@ const HomePage: React.FC = () => {
     return cat === activeTab;
   });
 
-  // Dynamic daily quota calculation: sum ONLY daily quotas, never multi-week total hours
-  const calculateDailyQuotaMinutes = (ws: Workspace & { category?: string }) => {
-    const cat = (ws.category || 'mastery').toLowerCase();
-    if (cat === 'casual' || cat === 'quick_flow') {
+  // Dynamic daily quota calculation: sum ONLY daily quotas across active workspaces
+  const calculateDailyQuotaMinutes = (ws: Workspace & { category?: string; status?: string }) => {
+    const status = (ws.status || 'active').toLowerCase();
+    if (status === 'paused' || status === 'completed') {
       return 0;
     }
+    const cat = (ws.category || 'mastery').toLowerCase();
+    if (cat === 'casual' || cat === 'quick_flow' || cat === 'quick_work') {
+      return 0;
+    }
+
+    // 1. If backend matrix computed a daily_target_minutes for this active workspace, use it
+    const matrixItem = matrixByWsId[ws.id];
+    if (matrixItem && typeof matrixItem.daily_target_minutes === 'number' && matrixItem.daily_target_minutes > 0) {
+      return matrixItem.daily_target_minutes;
+    }
+
+    // 2. Sprint track: dynamic remaining quota based on deadline
     const isSprint = cat === 'sprint';
     if (isSprint) {
       if (!ws.target_hours || !ws.deadline) {
@@ -208,19 +221,52 @@ const HomePage: React.FC = () => {
       const totalMinutes = ws.target_hours * 60;
       return Math.min(480, Math.max(15, Math.round(totalMinutes / daysRemaining)));
     }
-    const raw = ws.daily_target_minutes || 60;
-    return Math.min(480, Math.max(15, raw));
+
+    // 3. Mastery / standard track: use daily_target_minutes, target_hours * 60, or default 60
+    if (ws.daily_target_minutes && ws.daily_target_minutes > 0) {
+      return Math.min(480, Math.max(15, ws.daily_target_minutes));
+    }
+    if (ws.target_hours && ws.target_hours > 0) {
+      return Math.min(480, Math.max(15, Math.round(ws.target_hours * 60)));
+    }
+    return 60;
   };
 
-  const dynamicDailyTargetMinutes = filteredWorkspaces.reduce((sum, ws) => sum + calculateDailyQuotaMinutes(ws), 0);
-  const allWorkspacesDailyTargetMinutes = workspaces.reduce((sum, ws) => sum + calculateDailyQuotaMinutes(ws), 0);
+  // Filter to active workspaces that carry a daily target
+  const activeWorkspacesWithTarget = workspaces.filter(ws => {
+    const status = (ws.status || 'active').toLowerCase();
+    if (status === 'paused' || status === 'completed') return false;
+    const cat = (ws.category || 'mastery').toLowerCase();
+    if (cat === 'casual' || cat === 'quick_flow' || cat === 'quick_work') return false;
+    return true;
+  });
 
-  // When viewing a specific tab (sprint, mastery, quick work), scope to that tab; when viewing 'all', use globalSummary or all active
+  const activeFilteredWorkspacesWithTarget = filteredWorkspaces.filter(ws => {
+    const status = (ws.status || 'active').toLowerCase();
+    if (status === 'paused' || status === 'completed') return false;
+    const cat = (ws.category || 'mastery').toLowerCase();
+    if (cat === 'casual' || cat === 'quick_flow' || cat === 'quick_work') return false;
+    return true;
+  });
+
+  const dynamicDailyTargetMinutes = activeFilteredWorkspacesWithTarget.reduce(
+    (sum, ws) => sum + calculateDailyQuotaMinutes(ws),
+    0
+  );
+  const allWorkspacesDailyTargetMinutes = activeWorkspacesWithTarget.reduce(
+    (sum, ws) => sum + calculateDailyQuotaMinutes(ws),
+    0
+  );
+
+  // When viewing a specific tab (sprint, mastery, quick work), scope to that tab;
+  // when viewing 'all', dynamically sum all active workspaces
   const computedTodayTargetMinutes = activeTab !== 'all'
     ? dynamicDailyTargetMinutes
-    : ((globalSummary && globalSummary.today_target_minutes > 0)
-        ? globalSummary.today_target_minutes
-        : allWorkspacesDailyTargetMinutes);
+    : (allWorkspacesDailyTargetMinutes > 0
+        ? allWorkspacesDailyTargetMinutes
+        : (globalSummary && globalSummary.today_target_minutes > 0
+            ? globalSummary.today_target_minutes
+            : 0));
 
   const todayLoggedHours = globalSummary ? (globalSummary.today_logged_minutes / 60).toFixed(1) : todayFocusHours;
   const todayTargetHours = (computedTodayTargetMinutes / 60).toFixed(1);
