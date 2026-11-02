@@ -404,6 +404,7 @@ def evaluate_semantics_offline(
     engagement_mode, idle_allowance_seconds = determine_engagement_mode(app_name, window_title, intent)
     is_ai = _is_generic_ai_assistant(app_name, platform, window_title)
     is_browser = platform in ["Google Chrome", "Brave Browser", "Edge", "Firefox", "Browser"] or "browser" in clean_app_lower
+    is_open_container = platform == "YouTube" or is_browser or is_ai or "reddit" in full_context or "twitch" in full_context
 
     # 1. STRICTNESS ENFORCEMENT
     if profile.strictness == "STRICT":
@@ -435,15 +436,18 @@ def evaluate_semantics_offline(
                 idle_allowance_seconds,
             )
 
-        return (
-            True,
-            f"Strict mode: Active tool '{clean_app}' matches your declared exclusive tool '{matched_named_tool}'.",
-            "Aligned Strict Tool",
-            1.0,
-            "strict_mode_tool_pass",
-            engagement_mode,
-            idle_allowance_seconds,
-        )
+        # If it matched a declared tool, BUT it's an open container (browser, YouTube, AI chat):
+        # Do not return True immediately! Proceed to content validation so off-topic content is flagged!
+        if not is_open_container:
+            return (
+                True,
+                f"Strict mode: Active tool '{clean_app}' matches your declared exclusive tool '{matched_named_tool}'.",
+                "Aligned Strict Tool",
+                1.0,
+                "strict_mode_tool_pass",
+                engagement_mode,
+                idle_allowance_seconds,
+            )
 
     # 2. GENERIC / UNINITIALIZED TITLES GET BENEFIT OF THE DOUBT
     if _is_generic_or_uninitialized(window_title, app_name) or _is_generic_or_uninitialized(title_clean, app_name):

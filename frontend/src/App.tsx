@@ -38,13 +38,10 @@ function App() {
     const fallbackTimer = setTimeout(() => {
       if (timerCleared) return;
       if (useAuthStore.getState().isLoading) {
-        console.warn('[App] Auth init timed out after 4s (cold start fallback). Navigating to /auth.');
+        console.warn('[App] Auth init timed out after 3s (cold start safety fallback). Releasing loading screen.');
         useAuthStore.setState({ isLoading: false });
-        if (!useAuthStore.getState().session && !window.location.pathname.startsWith('/auth')) {
-          window.location.href = '/auth';
-        }
       }
-    }, 4000);
+    }, 3000);
 
     initialize().finally(() => {
       timerCleared = true;

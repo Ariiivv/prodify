@@ -57,14 +57,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      // 1. Fetch Supabase session with a strict 2.5s safety timeout
+      const sessionPromise = supabase.auth.getSession();
+      const sessionTimeout = new Promise<{ data: { session: any }; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null }, error: null }), 2500)
+      );
+      const { data: { session }, error } = await Promise.race([sessionPromise, sessionTimeout]);
       
       if (error) {
         throw error;
       }
 
       if (session) {
-        // Fallback user from Supabase session
+        // Fallback user from Supabase session (instant unblock)
         let user: User = {
           id: session.user.id,
           email: session.user.email || '',
@@ -73,19 +78,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           avatar_url: session.user.user_metadata?.avatar_url || null,
         };
 
-        // Try to fetch the full profile from our backend
+        // Try to fetch the full profile from our backend with a 2-second timeout
         try {
           const profileRes = await fetch(`${API_BASE}/api/auth/me`, {
             headers: {
               'Authorization': `Bearer ${session.access_token}`
-            }
+            },
+            signal: AbortSignal.timeout(2000)
           });
           if (profileRes.ok) {
             const profileData = await profileRes.json();
             user = { ...user, ...profileData };
           }
         } catch (e) {
-          console.error("Failed to fetch full profile from backend:", e);
+          console.warn("Backend profile fetch deferred (Render sleeping/cold start):", e);
         }
 
         set({
@@ -120,14 +126,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const profileRes = await fetch(`${API_BASE}/api/auth/me`, {
             headers: {
               'Authorization': `Bearer ${session.access_token}`
-            }
+            },
+            signal: AbortSignal.timeout(2000)
           });
           if (profileRes.ok) {
             const profileData = await profileRes.json();
             user = { ...user, ...profileData };
           }
         } catch (e) {
-          console.error("Failed to fetch full profile from backend:", e);
+          console.warn("Backend profile fetch deferred on auth state change:", e);
         }
 
         set({
