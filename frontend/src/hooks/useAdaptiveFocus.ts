@@ -140,11 +140,7 @@ export function useAdaptiveFocus({
 
     if (!isFocusActive) return;
 
-    // 🛡️ Startup grace period 🛡️
-    const elapsed = Date.now() - startupTimeRef.current;
-    if (!isFocused && elapsed < GRACE_PERIOD_MS) {
-      return;
-    }
+    // Immediate evaluation (backend state machine handles hysteresis debounce)
 
     if (isFocused) {
       setFocusedState(true);
@@ -306,7 +302,7 @@ export function useAdaptiveFocus({
 
                 // Allow periodic ticks to backend state machine every 1.8s even on same window
                 const now = Date.now();
-                if (key === lastClassifiedRef.current && (now - lastTickTimeRef.current < 1800)) {
+                if (key === lastClassifiedRef.current && (now - lastTickTimeRef.current < 1000)) {
                   return;
                 }
                 lastClassifiedRef.current = key;
