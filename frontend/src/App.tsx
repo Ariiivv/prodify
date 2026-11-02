@@ -34,7 +34,22 @@ function App() {
   const isLoading = useAuthStore((state) => state.isLoading);
 
   useEffect(() => {
-    initialize();
+    let timerCleared = false;
+    const fallbackTimer = setTimeout(() => {
+      if (timerCleared) return;
+      if (useAuthStore.getState().isLoading) {
+        console.warn('[App] Auth init timed out after 4s (cold start fallback). Navigating to /auth.');
+        useAuthStore.setState({ isLoading: false });
+        if (!useAuthStore.getState().session && !window.location.pathname.startsWith('/auth')) {
+          window.location.href = '/auth';
+        }
+      }
+    }, 4000);
+
+    initialize().finally(() => {
+      timerCleared = true;
+      clearTimeout(fallbackTimer);
+    });
 
     let unlisten: (() => void) | undefined;
 
@@ -110,6 +125,8 @@ function App() {
       .catch((err: unknown) => console.error('Failed to setup deep link listener:', err));
 
     return () => {
+      timerCleared = true;
+      clearTimeout(fallbackTimer);
       if (unlisten) unlisten();
     };
   }, [initialize]);

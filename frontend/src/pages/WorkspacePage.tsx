@@ -428,6 +428,7 @@ interface ActiveDistractionInfo {
       }
     },
     onFocused: () => {
+      setActiveDistraction(null);
     },
   });
 

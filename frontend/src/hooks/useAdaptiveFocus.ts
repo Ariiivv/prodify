@@ -78,6 +78,7 @@ export function useAdaptiveFocus({
   const workspaceIdRef = useRef<number | null>(null);
 
   const lastClassifiedRef = useRef<string>('');
+  const lastTickTimeRef = useRef<number>(0);
   // New refs for strict target isolation
   const activeWindowRef = useRef<{ title: string; processName: string } | null>(null);
   const lastDistractedWindowRef = useRef<{ title: string; processName: string } | null>(null);
@@ -147,31 +148,27 @@ export function useAdaptiveFocus({
 
     if (isFocused) {
       setFocusedState(true);
-      if (!prevFocusedRef.current) {
-        prevFocusedRef.current = true;
-        onFocusedRef.current?.();
-      }
+      prevFocusedRef.current = true;
+      onFocusedRef.current?.();
     } else {
-      if (prevFocusedRef.current) {
-        console.debug(`[useAdaptiveFocus] DISTRACTED: "${title}" (${appName})`);
-        setFocusedState(false);
-        prevFocusedRef.current = false;
-        
-        // Save the exact window that caused the distraction so "This is relevant" whitelists IT, not Prodify
-        lastDistractedWindowRef.current = { title, processName: appName || '' };
-        
-        const distractionMeta: DistractionMetadata = {
-          reason,
-          appName,
-          summary,
-          cleanAppName: meta?.clean_app_name,
-          platformName: meta?.platform_name,
-          contentTitle: meta?.content_title,
-          windowTitle: title,
-        };
+      console.debug(`[useAdaptiveFocus] DISTRACTED: "${title}" (${appName})`);
+      setFocusedState(false);
+      prevFocusedRef.current = false;
+      
+      // Save the exact window that caused the distraction so "This is relevant" whitelists IT, not Prodify
+      lastDistractedWindowRef.current = { title, processName: appName || '' };
+      
+      const distractionMeta: DistractionMetadata = {
+        reason,
+        appName,
+        summary,
+        cleanAppName: meta?.clean_app_name,
+        platformName: meta?.platform_name,
+        contentTitle: meta?.content_title,
+        windowTitle: title,
+      };
 
-        onDistractedRef.current?.(reason, appName, summary, distractionMeta);
-      }
+      onDistractedRef.current?.(reason, appName, summary, distractionMeta);
     }
   }, []);
 
@@ -307,9 +304,13 @@ export function useAdaptiveFocus({
                 activeWindowRef.current = { title: active.title, processName: active.processName };
                 setCurrentTabTitle(active.title);
 
-                // Skip re-classification if the window hasn't changed (heartbeat dedup)
-                if (key === lastClassifiedRef.current) return;
+                // Allow periodic ticks to backend state machine every 1.8s even on same window
+                const now = Date.now();
+                if (key === lastClassifiedRef.current && (now - lastTickTimeRef.current < 1800)) {
+                  return;
+                }
                 lastClassifiedRef.current = key;
+                lastTickTimeRef.current = now;
                 
                 if (whitelistedWindowsRef.current.has(active.title.toLowerCase())) {
                    checkFocus(active.title, true, "Marked as relevant", active.processName);
