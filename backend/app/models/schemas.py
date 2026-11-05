@@ -215,3 +215,21 @@ class FriendMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 DirectMessage = FriendMessage
+
+class PrivateFocusSession(Base):
+    __tablename__ = "private_focus_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    task_context = Column(String, nullable=False)  # e.g., "Coding project, IKS assignment, editing"
+    total_duration_mins = Column(Integer, nullable=False, default=420)  # e.g., 420 for 7 hours
+    focus_mins = Column(Integer, nullable=False, default=25)
+    break_mins = Column(Integer, nullable=False, default=5)
+    allowed_apps = Column(String, nullable=False)  # JSON-encoded string array: e.g. '["code", "kitty", "libreoffice", "firefox"]'
+    completed_cycles = Column(Integer, nullable=False, default=0)
+    status = Column(String, nullable=False, default="clarifying")  # "clarifying", "active", "paused", "completed"
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
+

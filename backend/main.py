@@ -15,7 +15,7 @@ load_dotenv(dotenv_path=env_path)
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import ai_coach, auth, telemetry, workspaces, analytics, users, metrics, friends
+from app.api import ai_coach, auth, telemetry, workspaces, analytics, users, metrics, friends, private_space
 from app.models.connection import create_db_and_tables
 
 # Setup Logging
@@ -71,6 +71,7 @@ app.include_router(analytics.router, prefix="/api")
 app.include_router(metrics.router, prefix="/api")
 app.include_router(friends.router, prefix="/api")
 app.include_router(friends.router, prefix="")
+app.include_router(private_space.router, prefix="/api")
 
 @app.get("/api/leaderboard/global")
 @app.get("/leaderboard/global")

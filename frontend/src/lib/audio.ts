@@ -91,6 +91,47 @@ class SFXEngine {
     playUrgentNote(698.46, now, 0.25);
     playUrgentNote(523.25, now + 0.25, 0.4);
   }
+
+  public unlockAudioContext() {
+    this.init();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  public playRockyFinalBell() {
+    this.init();
+    if (!this.ctx) return;
+
+    // Resonant boxing ring bell strike (multiple harmonic partials)
+    const ringStrikes = [0.0, 0.2, 0.4, 0.65, 0.9, 1.2, 1.5, 2.0];
+    const baseFreqs = [840, 1260, 1680, 2520];
+
+    ringStrikes.forEach((offset, idx) => {
+      const strikeTime = this.ctx!.currentTime + offset;
+      const isFinalStrike = idx === ringStrikes.length - 1;
+      const decay = isFinalStrike ? 3.0 : 0.6;
+      const gainScale = isFinalStrike ? 0.35 : 0.22;
+
+      baseFreqs.forEach((freq, fIdx) => {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq + (fIdx * 15), strikeTime);
+
+        gain.gain.setValueAtTime(0, strikeTime);
+        gain.gain.linearRampToValueAtTime(gainScale / (fIdx + 1), strikeTime + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, strikeTime + decay);
+
+        osc.start(strikeTime);
+        osc.stop(strikeTime + decay);
+      });
+    });
+  }
 }
 
 export const audioEngine = new SFXEngine();

@@ -1,11 +1,12 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, Settings, Users } from 'lucide-react';
+import { Home, LayoutGrid, BarChart3, Sparkles, LogOut, Settings, Users, Lock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
   { path: '/#workspaces', icon: LayoutGrid, label: 'Tracks' },
+  { path: '/private-space', icon: Lock, label: 'Private', isPrivate: true },
   { path: '/friends', icon: Users, label: 'Friends' },
   { path: '/report', icon: BarChart3, label: 'Report' },
   { path: '/settings', icon: Settings, label: 'Settings' },
@@ -32,7 +33,8 @@ export default function AppLayout() {
 
         {/* Navigation list */}
         <nav className="flex flex-col gap-4 flex-1 w-full overflow-y-auto custom-scrollbar">
-          {navItems.map(({ path, icon: Icon, label }) => {
+          {navItems.map((item) => {
+            const { path, icon: Icon, label } = item;
             const isActive = location.pathname === path || (path === '/#workspaces' && location.hash === '#workspaces');
             return (
               <Link
@@ -43,8 +45,12 @@ export default function AppLayout() {
                 <div
                   className={`relative w-11 h-11 flex items-center justify-center transition-all duration-150 rounded-xl ${
                     isActive
-                      ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/50'
-                      : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60'
+                      ? (item as any).isPrivate
+                        ? 'bg-violet-950/60 text-violet-200 shadow-[0_0_15px_rgba(139,92,246,0.3)] border border-violet-500/50'
+                        : 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/50'
+                      : (item as any).isPrivate
+                        ? 'text-violet-400 hover:text-violet-200 hover:bg-violet-950/30 border border-violet-500/20'
+                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60'
                   }`}
                 >
                   {isActive && (
@@ -88,7 +94,8 @@ export default function AppLayout() {
       {/* ── Mobile Bottom Navigation Bar ── */}
       <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#09090b]/95 border-t border-zinc-800/80 backdrop-blur-md">
         <nav className="flex justify-around py-2">
-          {navItems.map(({ path, icon: Icon, label }) => {
+          {navItems.map((item) => {
+            const { path, icon: Icon, label } = item;
             const isActive = location.pathname === path;
             return (
               <Link

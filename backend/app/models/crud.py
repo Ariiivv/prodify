@@ -894,3 +894,68 @@ def compute_total_daily_sessions(
 
     import math
     return max(1, math.ceil(daily_quota_minutes / work_duration_minutes))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Private Focus Session (Antigravity Mode) CRUD
+# ──────────────────────────────────────────────────────────────────────
+import json
+
+def create_private_focus_session(
+    db: Session,
+    task_context: str,
+    total_duration_mins: int = 420,
+    focus_mins: int = 25,
+    break_mins: int = 5,
+    allowed_apps: Optional[List[str]] = None,
+    user_id: Optional[str] = None,
+    status: str = "active",
+) -> models.PrivateFocusSession:
+    allowed_apps_json = json.dumps(allowed_apps or [])
+    session_obj = models.PrivateFocusSession(
+        user_id=user_id,
+        task_context=task_context,
+        total_duration_mins=total_duration_mins,
+        focus_mins=focus_mins,
+        break_mins=break_mins,
+        allowed_apps=allowed_apps_json,
+        completed_cycles=0,
+        status=status,
+    )
+    db.add(session_obj)
+    db.commit()
+    db.refresh(session_obj)
+    return session_obj
+
+
+def get_private_focus_session(db: Session, session_id: int) -> Optional[models.PrivateFocusSession]:
+    return db.query(models.PrivateFocusSession).filter(models.PrivateFocusSession.id == session_id).first()
+
+
+def get_latest_active_private_session(db: Session, user_id: Optional[str] = None) -> Optional[models.PrivateFocusSession]:
+    q = db.query(models.PrivateFocusSession).filter(
+        models.PrivateFocusSession.status.in_(["active", "paused", "clarifying"])
+    )
+    if user_id:
+        q = q.filter(models.PrivateFocusSession.user_id == user_id)
+    return q.order_by(models.PrivateFocusSession.created_at.desc()).first()
+
+
+def update_private_focus_session(
+    db: Session,
+    session_id: int,
+    status: Optional[str] = None,
+    completed_cycles: Optional[int] = None,
+) -> Optional[models.PrivateFocusSession]:
+    session_obj = get_private_focus_session(db, session_id)
+    if not session_obj:
+        return None
+    if status is not None:
+        session_obj.status = status
+    if completed_cycles is not None:
+        session_obj.completed_cycles = completed_cycles
+    session_obj.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(session_obj)
+    return session_obj
+
